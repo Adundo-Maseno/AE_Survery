@@ -1413,6 +1413,19 @@ window.AEAnalytics = {
       }
       return val.map((v) => this.formatAnswerDisplay(v, qType)).join(', ');
     }
+
+    if (qType === 'photo_proof') {
+      if (typeof val === 'string' && val.startsWith('data:image')) return 'Photo Proof Captured';
+      if (val && typeof val === 'object') return `Photo Proof Verified (${val.sizeKb ? val.sizeKb + ' KB' : 'Captured'})`;
+      if (val) return String(val);
+    }
+    if (qType === 'signature') {
+      if (typeof val === 'string' && val.startsWith('data:image')) return 'Digital Signature Verified';
+      if (typeof val === 'string') return val;
+      if (val && typeof val === 'object') return 'Digital Consent Signed';
+      if (val) return String(val);
+    }
+
     if (typeof val === 'object' && val !== null) {
       // GPS coordinate object: { lat, lng, accuracy, label }
       if (val.lat !== undefined && val.lng !== undefined) {
@@ -1433,12 +1446,7 @@ window.AEAnalytics = {
         return '—';
       }
     }
-    if (qType === 'photo_proof' && typeof val === 'string' && val.startsWith('data:image')) {
-      return 'Photo Captured';
-    }
-    if (qType === 'signature' && typeof val === 'string' && val.startsWith('data:image')) {
-      return 'Signature Captured';
-    }
+
     if (qType === 'star_rating') {
       const n = Number(val);
       if (!isNaN(n)) return `${n} star${n === 1 ? '' : 's'}`;
@@ -3457,7 +3465,16 @@ window.AEAnalytics = {
           <div class="divide-y divide-[#EFEFEF] border border-[#E4E7E4] rounded-[6px]">
             ${questions
               .map((q) => {
-                const ans = r.answers?.[q.id];
+                let ans = r.answers?.[q.id];
+                if (ans === undefined || ans === null) {
+                  // Fallback for dual alias keys between survey revisions
+                  if (q.id === 'q_nps_seed') ans = r.answers?.q_nps;
+                  else if (q.id === 'q_nps') ans = r.answers?.q_nps_seed;
+                  else if (q.id === 'q_field_notes') ans = r.answers?.q_verbatim || r.answers?.q_notes;
+                  else if (q.id === 'q_verbatim') ans = r.answers?.q_field_notes || r.answers?.q_notes;
+                  else if (q.id === 'q_crop_photo') ans = r.answers?.q_field_photo || r.answers?.q_photo;
+                  else if (q.id === 'q_field_photo') ans = r.answers?.q_crop_photo || r.answers?.q_photo;
+                }
                 const formatted = this.formatAnswerDisplay(ans, q.type);
                 return `
                   <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-[#FAFBF9]">

@@ -21,7 +21,7 @@
 
 var DB_CONFIG = {
   APP_NAME: 'AE Survey — Agri Experience Limited',
-  VERSION: '3.1.0',
+  VERSION: '3.2.0',
   MAX_BATCH_ITEMS: 500,
   MAX_CELL_LENGTH: 32000,
   SHEETS: {
@@ -760,6 +760,8 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     var npsCat = r.calculated ? (r.calculated.npsCategory || '') : '';
     var calcJson = r.calculated ? JSON.stringify(r.calculated) : '';
 
+    var cleanAnswersJson = prepareAnswersJsonForSheet_(r.answers || {});
+
     var masterRow = [
       sanitizeSheetCell_(clientRespId),
       sanitizeSheetCell_(String(r.surveyId || '')),
@@ -778,7 +780,7 @@ function appendResponsesIdempotent_(responses, surveyMap) {
       sanitizeSheetCell_(npsCat),
       sanitizeSheetCell_(String(r.recordHash || '')),
       sanitizeSheetCell_(calcJson),
-      sanitizeSheetCell_(JSON.stringify(r.answers || {})),
+      sanitizeSheetCell_(cleanAnswersJson),
       nowIso
     ];
 
@@ -914,6 +916,96 @@ function getFlattenedQuestions_(survey) {
   return list;
 }
 
+function prepareAnswersJsonForSheet_(answers) {
+  if (!answers || typeof answers !== 'object') return '{}';
+  var clean = {};
+  for (var k in answers) {
+    if (!answers.hasOwnProperty(k)) continue;
+    var v = answers[k];
+    if (typeof v === 'string' && v.indexOf('data:image/') === 0) {
+      clean[k] = '[Digital Signature/Image Recorded]';
+    } else if (v && typeof v === 'object' && v.dataUrl) {
+      clean[k] = {
+        capturedAt: v.capturedAt || '',
+        width: v.width || 0,
+        height: v.height || 0,
+        sizeKb: v.sizeKb || 0,
+        summary: 'Photo proof attached (' + (v.sizeKb || 0) + ' KB)'
+      };
+    } else {
+      clean[k] = v;
+    }
+  }
+  return JSON.stringify(clean);
+}
+
+function readAnswersFromDedicatedSheet_(ss, surveyId, clientRespId) {
+  try {
+    var sheets = ss.getSheets();
+    var targetSheet = null;
+    for (var i = 0; i < sheets.length; i++) {
+      var sName = sheets[i].getName();
+      if (sName.indexOf('Resp_') === 0 && (sName.indexOf(String(surveyId).substring(0, 10)) !== -1 || sName.indexOf('2026') !== -1)) {
+        targetSheet = sheets[i];
+        break;
+      }
+    }
+    if (!targetSheet) {
+      for (var j = 0; j < sheets.length; j++) {
+        if (sheets[j].getName().indexOf('Resp_') === 0) {
+          targetSheet = sheets[j];
+          break;
+        }
+      }
+    }
+    if (!targetSheet || targetSheet.getLastRow() <= 1) return null;
+
+    var lastCol = targetSheet.getLastColumn();
+    var lastRow = targetSheet.getLastRow();
+    var headers = targetSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var ids = targetSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+
+    var rowIndex = -1;
+    for (var r = 0; r < ids.length; r++) {
+      if (String(ids[r][0]).trim() === String(clientRespId).trim()) {
+        rowIndex = r + 2;
+        break;
+      }
+    }
+    if (rowIndex === -1) return null;
+
+    var rowValues = targetSheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
+    var answers = {};
+    for (var c = 8; c < headers.length; c++) {
+      var header = String(headers[c] || '');
+      var cellVal = rowValues[c];
+      if (cellVal === undefined || cellVal === null || cellVal === '') continue;
+
+      var matchQ = header.match(/^Q\d+:\s*(.*)/);
+      var qTitle = matchQ ? matchQ[1].trim() : header.trim();
+
+      // Normalize common keys
+      var qKey = 'q_' + (c - 7);
+      if (/county/i.test(qTitle)) qKey = 'q_county';
+      else if (/variety|seed/i.test(qTitle)) qKey = 'q_seed_variety';
+      else if (/inputs|fertility/i.test(qTitle)) qKey = 'q_inputs_used';
+      else if (/gps|landmark/i.test(qTitle)) qKey = 'q_gps_plot';
+      else if (/trait|matrix/i.test(qTitle)) qKey = 'q_trait_matrix';
+      else if (/yield|harvest/i.test(qTitle)) qKey = 'q_yield_kg';
+      else if (/dealer|distance|satisf/i.test(qTitle)) qKey = 'q_dealer_rating';
+      else if (/recommend|nps/i.test(qTitle)) { qKey = 'q_nps_seed'; answers['q_nps'] = Number(cellVal) || cellVal; }
+      else if (/observation|feedback|notes/i.test(qTitle)) { qKey = 'q_field_notes'; answers['q_verbatim'] = cellVal; }
+      else if (/photo|proof/i.test(qTitle)) { qKey = 'q_crop_photo'; answers['q_field_photo'] = cellVal; }
+      else if (/signature|consent/i.test(qTitle)) qKey = 'q_farmer_signature';
+
+      answers[qKey] = cellVal;
+    }
+    return answers;
+  } catch (err) {
+    return null;
+  }
+}
+
 function readAllDatabaseData_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -968,9 +1060,12 @@ function readAllDatabaseData_() {
       var valR = String(row[17] || '').trim();
       var valL = String(row[11] || '').trim();
 
+      if (valR.charAt(0) === "'") valR = valR.substring(1).trim();
+      if (valL.charAt(0) === "'") valL = valL.substring(1).trim();
+
       if (valR.charAt(0) === '{') {
         // Modern 19-column layout (Row 12 onwards)
-        try { answers = JSON.parse(row[17]); } catch (e) { answers = {}; }
+        try { answers = JSON.parse(valR); } catch (e) { answers = {}; }
         reviewStatus = (valL && valL.charAt(0) !== '{') ? valL : 'pending_review';
         if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
           qaFlags = row[12].split(',').map(function(s) { return s.trim(); }).filter(Boolean);
@@ -984,7 +1079,7 @@ function readAllDatabaseData_() {
         syncedAt = String(row[18] || row[5] || '');
       } else if (valL.charAt(0) === '{') {
         // Legacy layout (Rows 2 to 11): Answers stored in Col L
-        try { answers = JSON.parse(row[11]); } catch (e) { answers = {}; }
+        try { answers = JSON.parse(valL); } catch (e) { answers = {}; }
         reviewStatus = 'approved';
         qaFlags = ['LEGACY_ROW'];
         syncedAt = String(row[12] || row[5] || '');
@@ -992,6 +1087,14 @@ function readAllDatabaseData_() {
         answers = row[17];
       } else if (typeof row[11] === 'object' && row[11] !== null) {
         answers = row[11];
+      }
+
+      // Self-healing fallback: If AnswersJSON was empty or corrupted, reconstruct from dedicated per-survey tab
+      if (Object.keys(answers).length === 0 && row[1] && row[0]) {
+        var dedicatedAnswers = readAnswersFromDedicatedSheet_(ss, String(row[1]), String(row[0]));
+        if (dedicatedAnswers && Object.keys(dedicatedAnswers).length > 0) {
+          answers = dedicatedAnswers;
+        }
       }
 
       responses.push({

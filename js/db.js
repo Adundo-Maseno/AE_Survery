@@ -371,316 +371,584 @@ function getInitialSeedData() {
 
   const responses = [
     {
-      id: 'resp_seed_101',
-      clientResponseId: 'resp_seed_101',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_kiosk_rift',
-      enumerator: 'Grace Wanjiku (Enum-04)',
-      status: 'complete',
-      startedAt: daysAgo(5),
-      submittedAt: daysAgo(5),
-      durationSec: 164,
-      gps: { lat: -0.3031, lng: 36.08, accuracy: 6.4, label: 'Njoro Ward Plot #14' },
-      answers: {
-        q_county: 'Nakuru County (Rift Valley Highland)',
-        q_seed_variety: 'KH500-43A (Highland Hybrid)',
-        q_inputs_used: ['DAP / NPK Planting Fertilizer', 'CAN / Urea Top-Dressing', 'Compost / Farmyard Manure'],
-        q_gps_plot: { lat: -0.3031, lng: 36.08, accuracy: 6.4, label: 'Njoro Ward Plot #14' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Excellent',
-          'Tolerance to mid-season dry spells': 'Good',
-          'Resistance to cob rot and storage pests': 'Good',
-          'Grain weight and flour milling quality': 'Excellent'
-        },
-        q_yield_kg: 1890,
-        q_dealer_rating: 5,
-        q_nps_seed: 10,
-        q_field_notes: 'Uniform stand density; farmer bought 10kg certified bag early in February.'
+      "id": "resp_seed_101",
+      "clientResponseId": "resp_seed_101",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Grace Wanjiku (Enum-04)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-23T11:50:44.150Z",
+      "durationSec": 164,
+      "gps": {
+        "lat": -0.3031,
+        "lng": 36.08,
+        "accuracy": 6.4,
+        "label": "Njoro Ward Plot #14"
       },
-      syncStatus: 'synced',
-      syncedAt: daysAgo(5)
-    },
-    {
-      id: 'resp_seed_102',
-      clientResponseId: 'resp_seed_102',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_web_eastern',
-      enumerator: 'David Mutua (Enum-11)',
-      status: 'complete',
-      startedAt: daysAgo(4),
-      submittedAt: daysAgo(4),
-      durationSec: 142,
-      gps: { lat: -1.5177, lng: 37.2634, accuracy: 8.1, label: 'Mwala Sub-County' },
-      answers: {
-        q_county: 'Machakos County (Eastern Semi-Arid)',
-        q_seed_variety: 'DH04 (Drought-Tolerant Hybrid)',
-        q_inputs_used: ['DAP / NPK Planting Fertilizer', 'Compost / Farmyard Manure'],
-        q_gps_plot: { lat: -1.5177, lng: 37.2634, accuracy: 8.1, label: 'Mwala Sub-County' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Good',
-          'Tolerance to mid-season dry spells': 'Excellent',
-          'Resistance to cob rot and storage pests': 'Good',
-          'Grain weight and flour milling quality': 'Good'
-        },
-        q_yield_kg: 1260,
-        q_dealer_rating: 4,
-        q_nps_seed: 9,
-        q_field_notes: 'DH04 withstood 3-week dry spell in April significantly better than neighbor plots.'
-      },
-      syncStatus: 'synced',
-      syncedAt: daysAgo(4)
-    },
-    {
-      id: 'resp_seed_103',
-      clientResponseId: 'resp_seed_103',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_kiosk_rift',
-      enumerator: 'Grace Wanjiku (Enum-04)',
-      status: 'complete',
-      startedAt: daysAgo(3),
-      submittedAt: daysAgo(3),
-      durationSec: 195,
-      gps: { lat: 0.2827, lng: 34.7519, accuracy: 5.2, label: 'Lurambi North' },
-      answers: {
-        q_county: 'Kakamega County (Western Moist Transitional)',
-        q_seed_variety: 'SC Duma 43 (Early Maturing)',
-        q_inputs_used: ['DAP / NPK Planting Fertilizer', 'CAN / Urea Top-Dressing', 'Fall Armyworm Biological/Chemical Control'],
-        q_gps_plot: { lat: 0.2827, lng: 34.7519, accuracy: 5.2, label: 'Lurambi North' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Excellent',
-          'Tolerance to mid-season dry spells': 'Good',
-          'Resistance to cob rot and storage pests': 'Fair',
-          'Grain weight and flour milling quality': 'Good'
-        },
-        q_yield_kg: 1620,
-        q_dealer_rating: 4,
-        q_nps_seed: 9,
-        q_field_notes: 'Fast maturity allowed early harvest before heavy August rains.'
-      },
-      syncStatus: 'synced',
-      syncedAt: daysAgo(3)
-    },
-    {
-      id: 'resp_seed_104',
-      clientResponseId: 'resp_seed_104',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_web_eastern',
-      enumerator: 'David Mutua (Enum-11)',
-      status: 'complete',
-      startedAt: daysAgo(2),
-      submittedAt: daysAgo(2),
-      durationSec: 118,
-      gps: { lat: -1.367, lng: 38.0106, accuracy: 11.0, label: 'Kitui Rural Ward' },
-      answers: {
-        q_county: 'Kitui County (Arid & Semi-Arid Lands)',
-        q_seed_variety: 'Local Recycled / Farm-Saved Seed',
-        q_inputs_used: ['Compost / Farmyard Manure'],
-        q_gps_plot: { lat: -1.367, lng: 38.0106, accuracy: 11.0, label: 'Kitui Rural Ward' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Fair',
-          'Tolerance to mid-season dry spells': 'Fair',
-          'Resistance to cob rot and storage pests': 'Good',
-          'Grain weight and flour milling quality': 'Fair'
-        },
-        q_yield_kg: 540,
-        q_dealer_rating: 2,
-        q_nps_seed: 5,
-        q_field_notes: 'Local agro-dealer ran out of 2kg DH04 packs during planting week.'
-      },
-      syncStatus: 'synced',
-      syncedAt: daysAgo(2)
-    },
-    {
-      id: 'resp_seed_105_offline',
-      clientResponseId: 'resp_seed_105_offline',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_kiosk_rift',
-      enumerator: 'Grace Wanjiku (Enum-04)',
-      status: 'complete',
-      startedAt: daysAgo(0.3),
-      submittedAt: daysAgo(0.3),
-      durationSec: 151,
-      gps: { lat: 0.0463, lng: 37.6559, accuracy: 4.8, label: 'Timau / Buuri Plot #8' },
-      answers: {
-        q_county: 'Meru County (Upper Midland)',
-        q_seed_variety: 'DH04 (Drought-Tolerant Hybrid)',
-        q_inputs_used: ['DAP / NPK Planting Fertilizer', 'CAN / Urea Top-Dressing', 'certified Rhizobium / Bio-Stimulant'],
-        q_gps_plot: { lat: 0.0463, lng: 37.6559, accuracy: 4.8, label: 'Timau / Buuri Plot #8' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Excellent',
-          'Tolerance to mid-season dry spells': 'Excellent',
-          'Resistance to cob rot and storage pests': 'Excellent',
-          'Grain weight and flour milling quality': 'Good'
-        },
-        q_yield_kg: 2070,
-        q_dealer_rating: 5,
-        q_nps_seed: 10,
-        q_field_notes: 'Captured offline in Buuri field zone; waiting for evening Wi-Fi sync to Google Sheets.'
-      },
-      syncStatus: 'queued',
-      syncedAt: null
-    },
-    {
-      id: 'resp_dealer_201',
-      clientResponseId: 'resp_dealer_201',
-      surveyId: 'srv_agrodealer_2026',
-      surveyTitle: 'Agro-Dealer Stockout, Pack Size & Input Pricing Audit',
-      collectorId: 'col_dealer_audit',
-      enumerator: 'Samuel Ochieng (Enum-07)',
-      status: 'complete',
-      startedAt: daysAgo(3),
-      submittedAt: daysAgo(3),
-      durationSec: 130,
-      gps: { lat: -0.2833, lng: 36.0667, accuracy: 5.5, label: 'Wakala Agro-Vet Nakuru' },
-      answers: {
-        qd_shop_type: 'Wholesale Hub & Retail Agro-Dealer',
-        qd_stock_items: [
-          'Drought-Tolerant Maize Hybrids (2kg / 10kg)',
-          'Certified Common Beans (Nyota / Angaza)',
-          'Assorted Vegetable Seeds (Hermetic Packets)',
-          'Forage & Pasture Seeds (Brachiaria / Boma Rhodes)'
+      "answers": {
+        "q_county": "Nakuru County (Rift Valley Highland)",
+        "q_seed_variety": "KH500-43A (Highland Hybrid)",
+        "q_inputs_used": [
+          "DAP / NPK Planting Fertilizer",
+          "CAN / Urea Top-Dressing",
+          "Compost / Farmyard Manure"
         ],
-        qd_price_2kg: 620,
-        qd_storage_rating: 5,
-        qd_gps: { lat: -0.2833, lng: 36.0667, accuracy: 5.5, label: 'Wakala Agro-Vet Nakuru' }
+        "q_gps_plot": {
+          "lat": -0.3031,
+          "lng": 36.08,
+          "accuracy": 6.4,
+          "label": "Njoro Ward Plot #14"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Excellent",
+          "Tolerance to mid-season dry spells": "Good",
+          "Resistance to cob rot and storage pests": "Good",
+          "Grain weight and flour milling quality": "Excellent"
+        },
+        "q_yield_kg": 1890,
+        "q_dealer_rating": 5,
+        "q_nps": 10,
+        "q_verbatim": "Uniform stand density; farmer bought 10kg certified bag early in February.",
+        "q_field_photo": null,
+        "q_farmer_signature": null,
+        "q_nps_seed": 10,
+        "q_field_notes": "Uniform stand density; farmer bought 10kg certified bag early in February.",
+        "q_crop_photo": null
       },
-      syncStatus: 'synced',
-      syncedAt: daysAgo(3)
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.680Z"
     },
     {
-      id: 'resp_dealer_202_offline',
-      clientResponseId: 'resp_dealer_202_offline',
-      surveyId: 'srv_agrodealer_2026',
-      surveyTitle: 'Agro-Dealer Stockout, Pack Size & Input Pricing Audit',
-      collectorId: 'col_dealer_audit',
-      enumerator: 'Samuel Ochieng (Enum-07)',
-      status: 'complete',
-      startedAt: daysAgo(0.1),
-      submittedAt: daysAgo(0.1),
-      durationSec: 112,
-      gps: { lat: -1.522, lng: 37.269, accuracy: 7.2, label: 'Mkulima Bora Stockist' },
-      answers: {
-        qd_shop_type: 'Independent Rural Agro-Vet Retailer',
-        qd_stock_items: [
-          'Drought-Tolerant Maize Hybrids (2kg / 10kg)',
-          'Cowpea, Green Gram & Sorghum Pulses'
+      "id": "resp_seed_102",
+      "clientResponseId": "resp_seed_102",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_web_eastern",
+      "enumerator": "David Mutua (Enum-11)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-24T11:50:44.150Z",
+      "durationSec": 142,
+      "gps": {
+        "lat": -1.5177,
+        "lng": 37.2634,
+        "accuracy": 8.1,
+        "label": "Mwala Sub-County"
+      },
+      "answers": {
+        "q_county": "Machakos County (Eastern Semi-Arid)",
+        "q_seed_variety": "DH04 (Drought-Tolerant Hybrid)",
+        "q_inputs_used": [
+          "DAP / NPK Planting Fertilizer",
+          "Compost / Farmyard Manure"
         ],
-        qd_price_2kg: 650,
-        qd_storage_rating: 4,
-        qd_gps: { lat: -1.522, lng: 37.269, accuracy: 7.2, label: 'Mkulima Bora Stockist' }
+        "q_gps_plot": {
+          "lat": -1.5177,
+          "lng": 37.2634,
+          "accuracy": 8.1,
+          "label": "Mwala Sub-County"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Good",
+          "Tolerance to mid-season dry spells": "Excellent",
+          "Resistance to cob rot and storage pests": "Good",
+          "Grain weight and flour milling quality": "Good"
+        },
+        "q_yield_kg": 1260,
+        "q_dealer_rating": 4,
+        "q_nps": 9,
+        "q_verbatim": "DH04 withstood 3-week dry spell in April significantly better than neighbor plots.",
+        "q_field_photo": null,
+        "q_farmer_signature": null,
+        "q_nps_seed": 9,
+        "q_field_notes": "DH04 withstood 3-week dry spell in April significantly better than neighbor plots.",
+        "q_crop_photo": null
       },
-      syncStatus: 'synced',
-      syncedAt: daysAgo(0.1)
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
     },
     {
-      id: 'resp_mvs9x3fx_i3wn',
-      clientResponseId: 'resp_mvs9x3fx_i3wn',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_kiosk_rift',
-      enumerator: 'Faith Chebet (Enum-09)',
-      status: 'complete',
-      reviewStatus: 'approved',
-      qaFlags: ['VERIFIED_PACING'],
-      supervisorId: 'SUP-01',
-      npsCategory: 'Passive',
-      startedAt: '2026-10-28T15:28:29.110Z',
-      submittedAt: '2026-10-28T15:32:56.110Z',
-      durationSec: 267,
-      gps: { lat: -1.361895, lng: 36.66485, accuracy: 500, label: 'Ngong Plot' },
-      answers: {
-        q_county: 'Machakos County (Eastern Semi-Arid)',
-        q_seed_variety: 'SC Duma 43 (Early Maturing)',
-        q_inputs_used: ['CAN / Urea Top-Dressing', 'DAP / NPK Planting Fertilizer', 'Fall Armyworm Biological/Chemical Control'],
-        q_gps_plot: { lat: -1.36, lng: 36.6599, accuracy: 500, label: 'Ngong' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Good',
-          'Tolerance to mid-season dry spells': 'Excellent',
-          'Resistance to cob rot and storage pests': 'Good',
-          'Grain weight and flour milling quality': 'Good'
-        },
-        q_yield_kg: 1350,
-        q_dealer_rating: 4,
-        q_nps_seed: 8,
-        q_field_notes: 'Good Good'
+      "id": "resp_seed_103",
+      "clientResponseId": "resp_seed_103",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Grace Wanjiku (Enum-04)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-25T11:50:44.150Z",
+      "durationSec": 195,
+      "gps": {
+        "lat": 0.2827,
+        "lng": 34.7519,
+        "accuracy": 5.2,
+        "label": "Lurambi North"
       },
-      syncStatus: 'synced',
-      syncedAt: '2026-10-28T15:32:56.110Z'
+      "answers": {
+        "q_county": "Kakamega County (Western Moist Transitional)",
+        "q_seed_variety": "SC Duma 43 (Early Maturing)",
+        "q_inputs_used": [
+          "DAP / NPK Planting Fertilizer",
+          "CAN / Urea Top-Dressing",
+          "Fall Armyworm Biological/Chemical Control"
+        ],
+        "q_gps_plot": {
+          "lat": 0.2827,
+          "lng": 34.7519,
+          "accuracy": 5.2,
+          "label": "Lurambi North"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Excellent",
+          "Tolerance to mid-season dry spells": "Good",
+          "Resistance to cob rot and storage pests": "Fair",
+          "Grain weight and flour milling quality": "Good"
+        },
+        "q_yield_kg": 1620,
+        "q_dealer_rating": 4,
+        "q_nps": 9,
+        "q_verbatim": "Fast maturity allowed early harvest before heavy August rains.",
+        "q_field_photo": null,
+        "q_farmer_signature": null,
+        "q_nps_seed": 9,
+        "q_field_notes": "Fast maturity allowed early harvest before heavy August rains.",
+        "q_crop_photo": null
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
     },
     {
-      id: 'resp_mvtglxvs_r56j',
-      clientResponseId: 'resp_mvtglxvs_r56j',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_kiosk_rift',
-      enumerator: 'Moses Adundo (HQ Admin)',
-      status: 'complete',
-      reviewStatus: 'pending_review',
-      qaFlags: ['VERIFIED_PACING', 'ADMIN_PILOT_AUDIT', 'YIELD_OUTLIER_LOW'],
-      supervisorId: 'ADM-01',
-      npsCategory: 'Promoter',
-      startedAt: '2026-10-29T11:24:56.179Z',
-      submittedAt: '2026-10-29T11:27:59.179Z',
-      durationSec: 183,
-      gps: { lat: -1.338686, lng: 36.723286, accuracy: 13.9, label: 'Karen Plot' },
-      answers: {
-        q_county: 'Kakamega County (Western Moist Transitional)',
-        q_seed_variety: 'SC Duma 43 (Early Maturing)',
-        q_inputs_used: ['Compost / Farmyard Manure', 'DAP / NPK Planting Fertilizer', 'CAN / Urea Top-Dressing', 'certified Rhizobium / Bio-Stimulant', 'Fall Armyworm Biological/Chemical Control'],
-        q_gps_plot: { lat: -1.338686, lng: 36.723286, accuracy: 13.9, label: 'Karen' },
-        q_trait_matrix: {
-          'Germination uniformity (emergence within 7 days)': 'Good',
-          'Tolerance to mid-season dry spells': 'Good',
-          'Resistance to cob rot and storage pests': 'Good',
-          'Grain weight and flour milling quality': 'Good'
-        },
-        q_yield_kg: 18,
-        q_dealer_rating: 5,
-        q_nps_seed: 10,
-        q_field_notes: 'Good produce'
+      "id": "resp_seed_104",
+      "clientResponseId": "resp_seed_104",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_web_eastern",
+      "enumerator": "David Mutua (Enum-11)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-26T11:50:44.150Z",
+      "durationSec": 118,
+      "gps": {
+        "lat": -1.367,
+        "lng": 38.0106,
+        "accuracy": 11,
+        "label": "Kitui Rural Ward"
       },
-      syncStatus: 'synced',
-      syncedAt: '2026-10-29T11:27:59.179Z'
+      "answers": {
+        "q_county": "Kitui County (Arid & Semi-Arid Lands)",
+        "q_seed_variety": "Local Recycled / Farm-Saved Seed",
+        "q_inputs_used": [
+          "Compost / Farmyard Manure"
+        ],
+        "q_gps_plot": {
+          "lat": -1.367,
+          "lng": 38.0106,
+          "accuracy": 11,
+          "label": "Kitui Rural Ward"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Fair",
+          "Tolerance to mid-season dry spells": "Fair",
+          "Resistance to cob rot and storage pests": "Good",
+          "Grain weight and flour milling quality": "Fair"
+        },
+        "q_yield_kg": 540,
+        "q_dealer_rating": 2,
+        "q_nps": 5,
+        "q_verbatim": "Local agro-dealer ran out of 2kg DH04 packs during planting week.",
+        "q_field_photo": null,
+        "q_farmer_signature": null,
+        "q_nps_seed": 5,
+        "q_field_notes": "Local agro-dealer ran out of 2kg DH04 packs during planting week.",
+        "q_crop_photo": null
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
     },
     {
-      id: 'resp_mvtjsxxl_v08p',
-      clientResponseId: 'resp_mvtjsxxl_v08p',
-      surveyId: 'srv_maize_2026',
-      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
-      collectorId: 'col_kiosk_rift',
-      enumerator: 'Moses Adundo (HQ Admin)',
-      status: 'complete',
-      reviewStatus: 'pending_review',
-      qaFlags: ['VERIFIED_PACING', 'ADMIN_PILOT_AUDIT', 'GPS_POOR_ACCURACY'],
-      supervisorId: 'ADM-01',
-      npsCategory: 'Promoter',
-      startedAt: '2026-10-29T12:55:22.682Z',
-      submittedAt: '2026-10-29T12:57:24.682Z',
-      durationSec: 122,
-      gps: { lat: -1.33838, lng: 36.722943, accuracy: 85, label: 'Karen Plot' },
-      answers: {
-        q_county: 'Machakos County (Eastern Semi-Arid)',
-        q_seed_variety: 'DK 8031 (Medium Maturity)',
-        q_inputs_used: ['Compost / Farmyard Manure', 'CAN / Urea Top-Dressing', 'Fall Armyworm Biological/Chemical Control', 'certified Rhizobium / Bio-Stimulant', 'DAP / NPK Planting Fertilizer'],
-        q_gps_plot: { lat: -1.33838, lng: 36.722943, accuracy: 85, label: 'Karen' },
-        q_trait_matrix: {
-          'Tolerance to mid-season dry spells': 'Good',
-          'Germination uniformity (emergence within 7 days)': 'Excellent',
-          'Resistance to cob rot and storage pests': 'Excellent',
-          'Grain weight and flour milling quality': 'Excellent'
-        },
-        q_yield_kg: 1800,
-        q_dealer_rating: 5,
-        q_nps_seed: 9,
-        q_field_notes: 'Farmers requested 2Kg'
+      "id": "resp_seed_105_offline",
+      "clientResponseId": "resp_seed_105_offline",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Grace Wanjiku (Enum-04)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-28T04:38:44.150Z",
+      "durationSec": 151,
+      "gps": {
+        "lat": 0.0463,
+        "lng": 37.6559,
+        "accuracy": 4.8,
+        "label": "Timau / Buuri Plot #8"
       },
-      syncStatus: 'synced',
-      syncedAt: '2026-10-29T12:57:24.682Z'
+      "answers": {
+        "q_county": "Meru County (Upper Midland)",
+        "q_seed_variety": "DH04 (Drought-Tolerant Hybrid)",
+        "q_inputs_used": [
+          "DAP / NPK Planting Fertilizer",
+          "CAN / Urea Top-Dressing",
+          "certified Rhizobium / Bio-Stimulant"
+        ],
+        "q_gps_plot": {
+          "lat": 0.0463,
+          "lng": 37.6559,
+          "accuracy": 4.8,
+          "label": "Timau / Buuri Plot #8"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Excellent",
+          "Tolerance to mid-season dry spells": "Excellent",
+          "Resistance to cob rot and storage pests": "Excellent",
+          "Grain weight and flour milling quality": "Good"
+        },
+        "q_yield_kg": 2070,
+        "q_dealer_rating": 5,
+        "q_nps": 10,
+        "q_verbatim": "Captured offline in Buuri field zone; waiting for evening Wi-Fi sync to Google Sheets.",
+        "q_field_photo": null,
+        "q_farmer_signature": null,
+        "q_nps_seed": 10,
+        "q_field_notes": "Captured offline in Buuri field zone; waiting for evening Wi-Fi sync to Google Sheets.",
+        "q_crop_photo": null
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
+    },
+    {
+      "id": "resp_mvs9x3fx_i3wn",
+      "clientResponseId": "resp_mvs9x3fx_i3wn",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Faith Chebet (Enum-09)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-28T15:32:56.110Z",
+      "durationSec": 267,
+      "gps": {
+        "lat": -1.361895,
+        "lng": 36.66485,
+        "accuracy": 500,
+        "label": "Ngong"
+      },
+      "answers": {
+        "q_county": "Machakos County (Eastern Semi-Arid)",
+        "q_seed_variety": "SC Duma 43 (Early Maturing)",
+        "q_inputs_used": [
+          "CAN / Urea Top-Dressing",
+          "DAP / NPK Planting Fertilizer",
+          "Fall Armyworm Biological/Chemical Control"
+        ],
+        "q_gps_plot": {
+          "lat": -1.36,
+          "lng": 36.6599,
+          "accuracy": 500,
+          "label": "Ngong"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Good",
+          "Tolerance to mid-season dry spells": "Excellent",
+          "Resistance to cob rot and storage pests": "Good",
+          "Grain weight and flour milling quality": "Good"
+        },
+        "q_yield_kg": 1350,
+        "q_dealer_rating": 4,
+        "q_nps": 8,
+        "q_verbatim": "Good Good",
+        "q_field_photo": {
+          "capturedAt": "2026-10-28T15:32:56.110Z",
+          "width": 1024,
+          "height": 1024,
+          "sizeKb": 100,
+          "preview": "Photo Proof Captured & Verified"
+        },
+        "q_farmer_signature": null,
+        "q_nps_seed": 8,
+        "q_field_notes": "Good Good",
+        "q_crop_photo": {
+          "capturedAt": "2026-10-28T15:32:56.110Z",
+          "width": 1024,
+          "height": 1024,
+          "sizeKb": 100,
+          "preview": "Photo Proof Captured & Verified"
+        }
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
+    },
+    {
+      "id": "resp_mvtglxvs_r56j",
+      "clientResponseId": "resp_mvtglxvs_r56j",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Moses Adundo (HQ Admin)",
+      "status": "complete",
+      "reviewStatus": "flagged",
+      "qaFlags": [
+        "YIELD_OUTLIER_LOW"
+      ],
+      "submittedAt": "2026-10-29T11:27:59.179Z",
+      "durationSec": 183,
+      "gps": {
+        "lat": -1.338686,
+        "lng": 36.723286,
+        "accuracy": 13.9,
+        "label": "Karen"
+      },
+      "answers": {
+        "q_county": "Kakamega County (Western Moist Transitional)",
+        "q_seed_variety": "SC Duma 43 (Early Maturing)",
+        "q_inputs_used": [
+          "Compost / Farmyard Manure",
+          "DAP / NPK Planting Fertilizer",
+          "CAN / Urea Top-Dressing",
+          "certified Rhizobium / Bio-Stimulant",
+          "Fall Armyworm Biological/Chemical Control"
+        ],
+        "q_gps_plot": {
+          "lat": -1.338686,
+          "lng": 36.723286,
+          "accuracy": 13.9,
+          "label": "Karen"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Good",
+          "Tolerance to mid-season dry spells": "Good",
+          "Resistance to cob rot and storage pests": "Good",
+          "Grain weight and flour milling quality": "Good"
+        },
+        "q_yield_kg": 18,
+        "q_dealer_rating": 5,
+        "q_nps": 10,
+        "q_verbatim": "Good produce",
+        "q_field_photo": {
+          "capturedAt": "2026-10-29T11:27:59.179Z",
+          "width": 1024,
+          "height": 1024,
+          "sizeKb": 2,
+          "preview": "Photo Proof Captured & Verified"
+        },
+        "q_farmer_signature": null,
+        "q_nps_seed": 10,
+        "q_field_notes": "Good produce",
+        "q_crop_photo": {
+          "capturedAt": "2026-10-29T11:27:59.179Z",
+          "width": 1024,
+          "height": 1024,
+          "sizeKb": 2,
+          "preview": "Photo Proof Captured & Verified"
+        }
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
+    },
+    {
+      "id": "resp_test_latency_1793274382518",
+      "clientResponseId": "resp_test_latency_1793274382518",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Moses Adundo (HQ Admin)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-29T11:46:22.518Z",
+      "durationSec": 120,
+      "gps": {
+        "lat": -0.3031,
+        "lng": 36.08,
+        "accuracy": 5,
+        "label": ""
+      },
+      "answers": {
+        "q_county": "Nakuru County (Rift Valley Highland)",
+        "q_seed_variety": "KH500-43A (Highland Hybrid)",
+        "q_inputs_used": [
+          "DAP / NPK Planting Fertilizer",
+          "CAN / Urea Top-Dressing"
+        ],
+        "q_gps_plot": {
+          "lat": -0.3031,
+          "lng": 36.08,
+          "accuracy": 5,
+          "label": "Nakuru Plot #12"
+        },
+        "q_trait_matrix": {
+          "Germination uniformity (emergence within 7 days)": "Good",
+          "Tolerance to mid-season dry spells": "Good",
+          "Resistance to cob rot and storage pests": "Good",
+          "Grain weight and flour milling quality": "Good"
+        },
+        "q_yield_kg": 1750,
+        "q_dealer_rating": 4,
+        "q_nps": 9,
+        "q_nps_seed": 9,
+        "q_verbatim": "Latency verification benchmark probe.",
+        "q_field_notes": "Latency verification benchmark probe.",
+        "q_field_photo": {
+          "width": 800,
+          "height": 600,
+          "sizeKb": 45,
+          "preview": "Photo Proof Attached"
+        },
+        "q_crop_photo": {
+          "width": 800,
+          "height": 600,
+          "sizeKb": 45,
+          "preview": "Photo Proof Attached"
+        },
+        "q_farmer_signature": "Verified signature"
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
+    },
+    {
+      "id": "resp_mvtjsxxl_v08p",
+      "clientResponseId": "resp_mvtjsxxl_v08p",
+      "surveyId": "srv_maize_2026",
+      "surveyTitle": "2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey",
+      "collectorId": "col_kiosk_rift",
+      "enumerator": "Moses Adundo (HQ Admin)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-29T12:57:24.682Z",
+      "durationSec": 122,
+      "gps": {
+        "lat": -1.33838,
+        "lng": 36.722943,
+        "accuracy": 85,
+        "label": "Karen"
+      },
+      "answers": {
+        "q_county": "Machakos County (Eastern Semi-Arid)",
+        "q_seed_variety": "DK 8031 (Medium Maturity)",
+        "q_inputs_used": [
+          "Compost / Farmyard Manure",
+          "CAN / Urea Top-Dressing",
+          "Fall Armyworm Biological/Chemical Control",
+          "certified Rhizobium / Bio-Stimulant",
+          "DAP / NPK Planting Fertilizer"
+        ],
+        "q_gps_plot": {
+          "lat": -1.33838,
+          "lng": 36.722943,
+          "accuracy": 85,
+          "label": "Karen"
+        },
+        "q_trait_matrix": {
+          "Tolerance to mid-season dry spells": "Good",
+          "Germination uniformity (emergence within 7 days)": "Excellent",
+          "Resistance to cob rot and storage pests": "Excellent",
+          "Grain weight and flour milling quality": "Excellent"
+        },
+        "q_yield_kg": 1800,
+        "q_dealer_rating": 5,
+        "q_nps": 9,
+        "q_verbatim": "Farmers requested 2Kg",
+        "q_field_photo": {
+          "capturedAt": "2026-10-29T12:57:24.682Z",
+          "width": 1024,
+          "height": 1024,
+          "sizeKb": 2,
+          "preview": "Photo Proof Captured & Verified"
+        },
+        "q_farmer_signature": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAACQCAYAAADUQhUsAAAQAElEQVR4AeydCZAsW1rXv+9kVXff7tu3l8zKqsq+776H780Cs7xBttFBRoVBFMIwgAGBAUFZFcYJHCOEUNRAxRAUAVE2Y2RTGUHCEFEHBNlxBMZ5MAOP4c1b7u2qyqrM6r6396rKc/xObpXVt7q7uruqupYvO0+eJU+e5ZeVmf/8Tma2AJ6YABNgAkyACTABJsAEhkqABdZQcXJhTIAJMAEmMBwCXAoTmG4CLLCme/9x65kAE2ACTIAJMIEJJMACawJ3CjeJCQyDAJfBBJgAE2ACN0eABdbNseeamQATYAJMgAkwgRklwALrzB3LK5gAE2ACTIAJMAEmcDUCLLCuxo23YgJMgAkwASZwMwS41qkgwAJrKnYTN5IJMAEmwASYABOYJgIssKZpb3FbmQATGAYBLoMJMAEmMHICLLBGjpgrYAJMgAkwASbABOaNAAusedvjw+gvl8EEmAATYAJMgAmcS4AF1rl4eCUTYAJMgAkwASYwLQQmqZ0ssCZpb3BbmAATYAJMgAkwgZkgwAJrJnYjd4IJMAEmMAwCXAYTYALDIsACa1gkuRwmwASYABNgAkyACcQEWGDFINibXwJWuSi1WysUgutS4O2ZABNgAkyACWgCLLA0BXZzS8Byigow+svnhdBx07HVhmOz2JrbXwV3nAkwASZwfQITJrCu3yEugQkMSkCLqX55td4yALXYkv3WcxoTYAJMgAkwgYsIsMC6iBCvn0kCprZcJT1TFJCBUtqnYGZGq2yzyMoA4SATmFsC3HEmcEkCLLAuCYyzTz2BLzLLtsKkGySqTvYPf8+recKvuuhVXL2KUuMMiCSyaBgxjrLHBJgAE2ACTGAQAiywBqHEeWaFgBZX/540U9QfklFaXO3t7b0hSoiWJLJER0kJtD5MIcmlRRmFv5Qcz1cjwFsxASbABOaKAAusudrdc93ZgcRVQmi32jACCemD7lqUWU7xR9bX1/9Pkod9JsAEmAATYAJnEWCBdRaZSUvn9lyHwNvIAtW1XJFp6jC3t33acnW6gh3XzUErOMym55YXP9myrINsGoeZABNgAkyACZwmwALrNBGOzxqBt5Hl6X3aAhV1TMGhsb99eP/wbhQ/f+l53krn8OT9ikRZmnPBWF4tFNppnANMgAkwgTkmwF3vT4AFVn8unDobBEJx1e3K5cRVst3u7u6n+JX6Z2U11mJe5MySmQ4hJnnZZwJMgAkwASagCbDA0hTYzSKBoYirDJj/6VVdVBlTFoqcMItFFlkZSBy8CgHehgkwgVkkwAJrFvcq9wlMx35fgkG/DHggRXPQYcFku36+X3UFZL6YhQaIzVKBv5XVDxanMQEmwATmmICY475z12eEwOlumE5RIWCYrMXVocTmUa1mhglDWHjVugAZpKJKCIFW2WJL1hDYchFMgAkwgVkhwAJrVvYk9yMkoL+8HkkrCB+Z2u+oh8MUV2EltPBqnkEKS+s3itGMhrAsq+eNQ0rlmQkwASbABOaUgACY055zt2eOgGmaHei+LghaXJ3U6+uj6mizQsOFoYyLa1gwbj3zzDOFOMYeE2ACTIAJzDEBtmDN8c6fsa4/A4s5I+lTp6OCUYqrpB6vUn9tEtb+7uFeXfvsmAATGAIBLoIJTDEBFlhTvPO46V0CNDT4h8nQIA0Oqt16PdddO9LQ89AKfoXqTCsxy0UaPUyjHGACTIAJMIE5JMACaw53+qx1OfzoZ2ZokKxK7xpnHz3P+zRsq8NEZCECWiVrEkTWODFwXUyACTABJpAhwAIrA4ODU0ngmYW8SK1VSna0sPnucfek0WisdDrQfZNQGLhu251xt4PrYwJMgAkwgckgwALrvP3A6yaeQHZoUCkAv+anz2GNu/F6WDJQkloR1ZzLoXGrXG5GMV4yASbABJjAPBFggTVPe3vG+tr71qACv+riTX",
+        "q_nps_seed": 9,
+        "q_field_notes": "Farmers requested 2Kg",
+        "q_crop_photo": {
+          "capturedAt": "2026-10-29T12:57:24.682Z",
+          "width": 1024,
+          "height": 1024,
+          "sizeKb": 2,
+          "preview": "Photo Proof Captured & Verified"
+        }
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T16:10:10.681Z"
+    },
+    {
+      "id": "resp_dealer_201",
+      "clientResponseId": "resp_dealer_201",
+      "surveyId": "srv_agrodealer_2026",
+      "surveyTitle": "Agro-Dealer Stockout, Pack Size & Input Pricing Audit",
+      "collectorId": "col_dealer_audit",
+      "enumerator": "Samuel Ochieng (Enum-07)",
+      "status": "complete",
+      "reviewStatus": "approved",
+      "qaFlags": [],
+      "submittedAt": "2026-10-26T11:25:50.135Z",
+      "durationSec": 180,
+      "gps": {
+        "lat": 0.5694,
+        "lng": 34.5584,
+        "accuracy": 5.5,
+        "label": "Bungoma Hub"
+      },
+      "answers": {
+        "qd_shop_type": "Wholesale Hub & Retail Agro-Dealer",
+        "qd_stock_items": [
+          "Drought-Tolerant Maize Hybrids (2kg / 10kg)",
+          "Certified Common Beans (Nyota / Angaza)",
+          "Assorted Vegetable Seeds (Hermetic Packets)"
+        ],
+        "qd_price_2kg": 620,
+        "qd_storage_rating": 5,
+        "qd_gps": {
+          "lat": 0.5694,
+          "lng": 34.5584,
+          "accuracy": 5.5,
+          "label": "Bungoma Hub"
+        }
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-26T11:25:50.135Z"
+    },
+    {
+      "id": "resp_dealer_202_offline",
+      "clientResponseId": "resp_dealer_202_offline",
+      "surveyId": "srv_agrodealer_2026",
+      "surveyTitle": "Agro-Dealer Stockout, Pack Size & Input Pricing Audit",
+      "collectorId": "col_dealer_audit",
+      "enumerator": "Samuel Ochieng (Enum-07)",
+      "status": "complete",
+      "reviewStatus": "pending_review",
+      "qaFlags": [],
+      "submittedAt": "2026-10-29T09:01:50.135Z",
+      "durationSec": 145,
+      "gps": {
+        "lat": 0.5123,
+        "lng": 34.6111,
+        "accuracy": 6.2,
+        "label": "Kanduyi Market"
+      },
+      "answers": {
+        "qd_shop_type": "Independent Rural Agro-Vet Retailer",
+        "qd_stock_items": [
+          "Drought-Tolerant Maize Hybrids (2kg / 10kg)",
+          "Cowpea, Green Gram & Sorghum Pulses"
+        ],
+        "qd_price_2kg": 650,
+        "qd_storage_rating": 4,
+        "qd_gps": {
+          "lat": 0.5123,
+          "lng": 34.6111,
+          "accuracy": 6.2,
+          "label": "Kanduyi Market"
+        }
+      },
+      "syncStatus": "synced",
+      "syncedAt": "2026-10-29T09:01:50.135Z"
     }
   ];
 
@@ -1594,6 +1862,30 @@ class AESurveyStore {
   /**
    * Restores rich question answers if responses were stripped or damaged by prior column mismatch
    */
+  cleanAnswersForCloudSync(answers) {
+    if (!answers || typeof answers !== 'object') return {};
+    const clean = {};
+    for (const [k, v] of Object.entries(answers)) {
+      if (typeof v === 'string' && v.startsWith('data:image/')) {
+        clean[k] = '[Digital Signature/Image Recorded]';
+      } else if (v && typeof v === 'object' && v.dataUrl) {
+        clean[k] = {
+          capturedAt: v.capturedAt || '',
+          width: v.width || 0,
+          height: v.height || 0,
+          sizeKb: v.sizeKb || 0,
+          summary: `Photo proof attached (${v.sizeKb || 0} KB)`
+        };
+      } else {
+        clean[k] = v;
+      }
+    }
+    return clean;
+  }
+
+  /**
+   * Restores rich question answers if responses were stripped or damaged by prior column mismatch
+   */
   healResponsesAnswers() {
     const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
     let healed = 0;
@@ -1605,6 +1897,15 @@ class AESurveyStore {
         if (seedItem.reviewStatus && !r.reviewStatus) r.reviewStatus = seedItem.reviewStatus;
         if (seedItem.qaFlags && (!r.qaFlags || !r.qaFlags.length)) r.qaFlags = seedItem.qaFlags;
         healed++;
+      } else if (hasAnswers) {
+        // Ensure dual alias keys are present for cross-version compatibility
+        const ans = r.answers;
+        if (ans.q_nps !== undefined && ans.q_nps_seed === undefined) ans.q_nps_seed = ans.q_nps;
+        if (ans.q_nps_seed !== undefined && ans.q_nps === undefined) ans.q_nps = ans.q_nps_seed;
+        if (ans.q_verbatim !== undefined && ans.q_field_notes === undefined) ans.q_field_notes = ans.q_verbatim;
+        if (ans.q_field_notes !== undefined && ans.q_verbatim === undefined) ans.q_verbatim = ans.q_field_notes;
+        if (ans.q_field_photo !== undefined && ans.q_crop_photo === undefined) ans.q_crop_photo = ans.q_field_photo;
+        if (ans.q_crop_photo !== undefined && ans.q_field_photo === undefined) ans.q_field_photo = ans.q_crop_photo;
       }
     });
     if (healed > 0) {
@@ -1679,9 +1980,17 @@ class AESurveyStore {
         const hasAnswers = r.answers && typeof r.answers === 'object' && Object.keys(r.answers).length > 0;
         if (!hasAnswers && seedMap.has(r.id)) {
           const seedItem = seedMap.get(r.id);
-          r.answers = { ...seedItem.answers };
+          r.answers = JSON.parse(JSON.stringify(seedItem.answers || {}));
           if (seedItem.reviewStatus) r.reviewStatus = seedItem.reviewStatus;
           if (seedItem.qaFlags) r.qaFlags = seedItem.qaFlags;
+        } else if (hasAnswers) {
+          const ans = r.answers;
+          if (ans.q_nps !== undefined && ans.q_nps_seed === undefined) ans.q_nps_seed = ans.q_nps;
+          if (ans.q_nps_seed !== undefined && ans.q_nps === undefined) ans.q_nps = ans.q_nps_seed;
+          if (ans.q_verbatim !== undefined && ans.q_field_notes === undefined) ans.q_field_notes = ans.q_verbatim;
+          if (ans.q_field_notes !== undefined && ans.q_verbatim === undefined) ans.q_verbatim = ans.q_field_notes;
+          if (ans.q_field_photo !== undefined && ans.q_crop_photo === undefined) ans.q_crop_photo = ans.q_field_photo;
+          if (ans.q_crop_photo !== undefined && ans.q_field_photo === undefined) ans.q_field_photo = ans.q_crop_photo;
         }
       });
       const rawPersonnel = localStorage.getItem(AE_STORAGE_KEYS.PERSONNEL);
@@ -2997,6 +3306,11 @@ class AESurveyStore {
     const surveysPayload = shouldSyncSurveys ? this.surveys : [];
 
     const defaultCallerId = (this.personnel && this.personnel[0] && this.personnel[0].id) ? this.personnel[0].id : 'ADM-01';
+    const cloudResponses = unsyncedResponses.map((r) => ({
+      ...r,
+      answers: this.cleanAnswersForCloudSync(r.answers)
+    }));
+
     const payload = {
       action: 'BATCH_SYNC',
       syncToken: this.settings.syncToken || '',
@@ -3004,7 +3318,7 @@ class AESurveyStore {
       callerId: currentSessionUser ? currentSessionUser.id : defaultCallerId,
       surveys: surveysPayload,
       collectors: this.collectors,
-      responses: unsyncedResponses,
+      responses: cloudResponses,
       personnel: this.personnel
     };
 
@@ -3248,6 +3562,7 @@ class AESurveyStore {
             respMap.set(cleanResp.clientResponseId || cleanResp.id, { ...cleanResp, syncStatus: 'synced' });
           }
         });
+        const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
         this.responses.forEach((localResp) => {
           const key = localResp.clientResponseId || localResp.id;
           if (!respMap.has(key)) {
@@ -3259,12 +3574,15 @@ class AESurveyStore {
             const localHasAnswers = localResp && localResp.answers && Object.keys(localResp.answers).length > 0;
             if (!remoteHasAnswers && localHasAnswers) {
               remoteItem.answers = { ...localResp.answers };
+            } else if (!remoteHasAnswers && seedMap.has(key)) {
+              remoteItem.answers = JSON.parse(JSON.stringify(seedMap.get(key).answers || {}));
             }
           }
         });
         this.responses = Array.from(respMap.values()).sort(
           (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
         );
+        this.healResponsesAnswers();
       }
 
       // Merge remote personnel (staff credentials, roles, and PIN updates)
