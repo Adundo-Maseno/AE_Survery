@@ -21,7 +21,7 @@
 
 var DB_CONFIG = {
   APP_NAME: 'AE Survey — Agri Experience Limited',
-  VERSION: '3.0.0',
+  VERSION: '3.1.0',
   MAX_BATCH_ITEMS: 500,
   MAX_CELL_LENGTH: 32000,
   SHEETS: {
