@@ -1358,6 +1358,10 @@ window.AEFieldApp = {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   },
 
+  submitSurveyResponse(bypassValidation = false) {
+    return this.submitResponse(bypassValidation);
+  },
+
   submitResponse(bypassValidation = false) {
     if (this.isSubmitting) return;
     const survey = window.aeStore.getSurveyById(this.activeSurveyId);
@@ -1872,7 +1876,7 @@ window.AEFieldApp = {
                 <span class="ae-kbd hidden sm:inline bg-white/20 text-white border-white/30">Enter ↵</span>
               </button>
             ` : `
-              <button type="button" onclick="AEFieldApp.submitSurveyResponse()"
+              <button type="button" onclick="AEFieldApp.submitResponse()"
                 class="h-10 px-6 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                 <i class="fa-solid fa-check text-xs"></i>
                 <span>Complete &amp; Submit</span>
@@ -1922,7 +1926,7 @@ window.AEFieldApp = {
       this.render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      this.submitSurveyResponse();
+      this.submitResponse();
     }
   },
 

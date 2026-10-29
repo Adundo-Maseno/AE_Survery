@@ -1965,6 +1965,21 @@ class AESurveyStore {
     return healed;
   }
 
+  writeStore(storeName, item) {
+    if (!this.idb) return Promise.resolve();
+    return new Promise((resolve) => {
+      try {
+        const tx = this.idb.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        store.put(item);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch (e) {
+        resolve();
+      }
+    });
+  }
+
   readStoreAll(storeName) {
     return new Promise((resolve) => {
       if (!this.idb) return resolve([]);
