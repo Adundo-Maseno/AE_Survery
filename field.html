@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#141A17" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="description" content="AE Field App: Dedicated offline field enumeration app for Agri Experience Limited, backed by Google Sheets and IndexedDB." />
+  <title>AE Field App · Agri Experience Limited</title>
+
+  <link rel="manifest" href="./manifest-collector.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AE Collector" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%23141A17'/%3E%3Cpath d='M54 102l27 27 57-63' stroke='%23247B50' stroke-width='18' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='138' cy='138' r='18' fill='%23247B50'/%3E%3C/svg%3E" />
+
+  <!-- Google Fonts: Plus Jakarta Sans (Unified UI & Tabular Figures) + Fraunces (Respondent Header Accent) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Font Awesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+            display: ['"Fraunces"', 'Georgia', 'serif']
+          },
+          colors: {
+            canopy: '#141A17',
+            emeraldBrand: '#247B50',
+            emeraldVivid: '#1F6A45',
+            harvestGold: '#92400E',
+            fieldStone: '#F4F6F4'
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    :root {
+      --ground: #F4F6F4;
+      --surface: #FFFFFF;
+      --raised: #F8F9F8;
+      --border: #E4E7E4;
+      --rule: #EFEFEF;
+      --control: #CFD5D0;
+      --text: #111613;
+      --muted: #525B56;
+      --faint: #646E68;
+      --primary: #141A17;
+      --accent: #247B50;
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    html {
+      background-color: var(--ground);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection {
+      background-color: #DCFAE5;
+      color: #04250E;
+    }
+
+    .ae-break-words {
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .ae-kbd {
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 600;
+      padding: 2px 5px;
+      border-radius: 4px;
+      border: 1px solid #CFD5D0;
+      background: #FFFFFF;
+      color: #525B56;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .ae-press {
+      transition: transform 120ms var(--ease-out), opacity 120ms var(--ease-out);
+    }
+    .ae-press:active {
+      transform: scale(0.98);
+    }
+
+    /* Hardware-Accelerated Animation Suite (Emil Kowalski / WAAPI / Composite-Only) */
+    @keyframes aeDialogIn {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes aeQuestionIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes aeSpin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .ae-dialog-animate {
+      animation: aeDialogIn 200ms var(--ease-out) forwards;
+      will-change: transform, opacity;
+    }
+
+    .ae-question-animate {
+      animation: aeQuestionIn 220ms var(--ease-out) forwards;
+      will-change: transform, opacity;
+    }
+
+    .ae-syncing {
+      animation: aeSpin 900ms linear infinite;
+      will-change: transform;
+    }
+
+    .ae-choice-press {
+      transition: transform 120ms var(--ease-out), background-color 140ms var(--ease-out), border-color 140ms var(--ease-out);
+    }
+    .ae-choice-press:active {
+      transform: scale(0.985);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ae-dialog-animate,
+      .ae-question-animate,
+      .ae-syncing,
+      .ae-press,
+      .ae-choice-press {
+        animation: none !important;
+        transform: none !important;
+        transition: opacity 100ms ease, background-color 100ms ease !important;
+      }
+    }
+
+    /* Glassmorphic Utilities for Field Operations */
+    .ae-glass-dark-nav {
+      background-color: #141A17;
+      border-bottom: 1px solid #232C27;
+      contain: paint;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-dark-nav {
+        background-color: rgba(20, 26, 23, 0.88);
+        -webkit-backdrop-filter: blur(14px);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      }
+    }
+
+    .ae-glass-scrim {
+      background-color: rgba(20, 26, 23, 0.55);
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-scrim {
+        background-color: rgba(20, 26, 23, 0.45);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+      }
+    }
+
+    .ae-glass-modal {
+      background-color: #FFFFFF;
+      border: 1px solid #E4E7E4;
+      box-shadow: 0 24px 48px -12px rgba(20, 26, 23, 0.22);
+      contain: paint;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-modal {
+        background-color: rgba(255, 255, 255, 0.94);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.90);
+      }
+    }
+
+    /* High-Contrast Sunlight Mode for Rural Field Direct Glare */
+    body.ae-sunlight {
+      --ground: #FFFFFF;
+      --surface: #FFFFFF;
+      --raised: #FFFFFF;
+      --border: #000000;
+      --rule: #000000;
+      --control: #000000;
+      --text: #000000;
+      --muted: #111613;
+      --primary: #000000;
+      --accent: #04250E;
+      background-color: #FFFFFF !important;
+      color: #000000 !important;
+    }
+    body.ae-sunlight .bg-white,
+    body.ae-sunlight .bg-\[\#F8F9F8\],
+    body.ae-sunlight .bg-\[\#F4F6F4\] {
+      background-color: #FFFFFF !important;
+    }
+    body.ae-sunlight .border-\[\#E4E7E4\],
+    body.ae-sunlight .border-\[\#CFD5D0\],
+    body.ae-sunlight .border-\[\#EFEFEF\] {
+      border-color: #111613 !important;
+      border-width: 2px !important;
+    }
+    body.ae-sunlight .text-\[\#525B56\],
+    body.ae-sunlight .text-\[\#646E68\] {
+      color: #111613 !important;
+      font-weight: 600 !important;
+    }
+    body.ae-sunlight input,
+    body.ae-sunlight textarea,
+    body.ae-sunlight select {
+      border-color: #000000 !important;
+      border-width: 2px !important;
+      color: #000000 !important;
+      font-weight: 600 !important;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#F4F6F4] text-[#111613] flex flex-col antialiased selection:bg-[#DCFAE5]">
+
+  <!-- Skip to Main Form -->
+  <a href="#ae_field_viewport"
+    class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-[#141A17] focus:text-white focus:rounded-[6px] focus:text-xs focus:font-semibold">
+    Skip to survey questions
+  </a>
+
+  <!-- Dedicated Field Collector Header Bar (Canopy Forest Glass - Mobile First) -->
+  <header class="ae-glass-dark-nav text-white sticky top-0 z-40 px-3 sm:px-6 h-14 flex items-center justify-between gap-2 shadow-xs transition-colors">
+    <!-- Left Section: Compact Brand Emblem & Active Survey Selector -->
+    <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
+      <div class="flex items-center shrink-0">
+        <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+          alt="Agri Experience Limited"
+          class="h-7 sm:h-8 w-auto max-w-[80px] sm:max-w-[120px] object-contain rounded-[4px] bg-white px-1 py-0.5 shrink-0"
+          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+        <div class="hidden w-7 h-7 sm:w-8 sm:h-8 rounded-[6px] bg-[#247B50] items-center justify-center shrink-0">
+          <i class="fa-solid fa-clipboard-check text-white text-xs sm:text-sm"></i>
+        </div>
+      </div>
+      <div class="min-w-0 flex-1 overflow-hidden">
+        <div class="flex items-center gap-1.5">
+          <span class="text-xs sm:text-sm font-semibold tracking-tight text-white whitespace-nowrap">AE Field App</span>
+          <span class="text-[9px] sm:text-[10px] font-semibold px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded-[3px] bg-[#247B50] text-white shrink-0">PWA</span>
+          <span id="ae_hdr_role_badge" class="hidden shrink-0"></span>
+        </div>
+        <button type="button" onclick="AEFieldApp.openSurveyPicker()"
+          class="text-[11px] sm:text-xs text-[#CFD5D0] hover:text-white truncate flex items-center gap-1 text-left max-w-[140px] xs:max-w-[180px] sm:max-w-[240px] md:max-w-[320px] lg:max-w-[440px] xl:max-w-[520px]">
+          <span id="ae_hdr_survey_title" class="truncate font-medium">Loading survey…</span>
+          <i class="fa-solid fa-chevron-down text-[9px] text-[#A3ACA6] shrink-0"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right Section: Tiered Action Cluster + Drawer Toggle -->
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <!-- Sync Status Pill (Always visible across mobile & desktop) -->
+      <button type="button" onclick="AEFieldApp.triggerCloudSync()"
+        id="ae_hdr_sync_btn"
+        title="Click to synchronize with Google Sheets"
+        class="h-8 px-2 sm:px-3 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+        <i id="ae_hdr_sync_icon" class="fa-solid fa-cloud-arrow-up text-xs text-[#3FC07A]"></i>
+        <span id="ae_hdr_sync_text" class="tabular-nums font-medium hidden sm:inline">Synced</span>
+      </button>
+
+      <!-- Desktop Action Bar (Visible on xl: and larger) -->
+      <div class="hidden xl:flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- Language Selector (EN · SW · FR) -->
+        <div id="ae_hdr_lang_picker" class="shrink-0"></div>
+
+        <!-- Install PWA Button -->
+        <button type="button" onclick="AEFieldApp.promptInstall()"
+          id="ae_hdr_install_btn"
+          title="Install AE Field App PWA on device home screen"
+          class="h-8 px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+          <i class="fa-solid fa-mobile-screen-button text-xs"></i>
+          <span class="hidden 2xl:inline" id="ae_hdr_install_label">Install</span>
+        </button>
+
+        <!-- Focus / Conversational Runner Mode Toggle -->
+        <button type="button" onclick="AEFieldApp.toggleFocusMode()"
+          id="ae_hdr_focus_btn"
+          title="Toggle Single-Question Conversational Mode"
+          class="hidden 2xl:inline-flex h-8 px-2 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 shrink-0 ae-press">
+          <i class="fa-solid fa-layer-group text-xs text-[#3FC07A]"></i>
+          <span class="text-xs font-medium" id="ae_hdr_focus_label">Focus</span>
+        </button>
+
+        <!-- Download Standalone Package (Air-gap offline distribution) -->
+        <button type="button" onclick="AEFieldApp.downloadStandaloneBundle()"
+          id="ae_hdr_dl_btn"
+          title="Download Standalone Offline Field App (.html file for USB/Bluetooth distribution)"
+          class="hidden 2xl:inline-flex h-8 px-2 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 shrink-0 ae-press">
+          <i class="fa-solid fa-download text-xs text-[#CFD5D0]"></i>
+        </button>
+
+        <!-- High-Contrast Sunlight Mode Toggle -->
+        <button type="button" onclick="AEFieldApp.toggleSunlightMode()"
+          id="ae_hdr_sunlight_btn"
+          title="Toggle High-Contrast Direct Sunlight Mode"
+          class="h-8 px-2.5 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+          <i class="fa-solid fa-sun text-xs text-[#FBBF24]"></i>
+          <span class="hidden 2xl:inline text-xs font-medium">Sunlight</span>
+        </button>
+      </div>
+
+      <!-- Enumerator Badge (clickable to switch) - visible on md: and up -->
+      <button type="button" onclick="AEFieldApp.openEnumeratorPicker()"
+        title="Click to switch active enumerator"
+        class="hidden md:inline-flex h-8 px-2.5 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 max-w-[170px] lg:max-w-[260px] truncate shrink-0 ae-press">
+        <i class="fa-solid fa-user-tag text-xs text-[#3FC07A]"></i>
+        <span id="ae_hdr_enum_name" class="truncate font-medium">Moses Adundo (HQ Admin)</span>
+      </button>
+
+      <!-- Admin Studio Switcher (Direct return for authenticated Admins; PIN-protected for field enumerators) -->
+      <button type="button" id="ae_hdr_admin_btn" onclick="AEFieldApp.openAdminPinPrompt()"
+        title="Admin Studio (Requires PIN)"
+        class="h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+        <i class="fa-solid fa-lock text-xs text-[#A3ACA6]"></i>
+        <span class="hidden lg:inline">Admin Studio</span>
+      </button>
+
+      <!-- Menu Drawer Button (Visible on screens < xl:) -->
+      <button type="button" onclick="AEFieldApp.toggleMobileMenu()"
+        id="ae_hdr_mobile_menu_btn"
+        aria-label="Open Field Operations Menu"
+        class="xl:hidden h-8 w-8 rounded-[6px] bg-white/10 hover:bg-white/15 text-white flex items-center justify-center relative shrink-0 ae-press">
+        <i class="fa-solid fa-bars text-xs"></i>
+        <span id="ae_hdr_mobile_dot" class="hidden absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#3FC07A]"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Viewport Canvas -->
+  <main id="ae_field_viewport" class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 pb-28 space-y-5">
+    <div class="p-8 text-center text-xs text-[#525B56]">Initializing offline field collector…</div>
+  </main>
+
+  <!-- Modal Mount -->
+  <div id="ae_field_modal_root"></div>
+
+  <!-- Toast Notification Mount -->
+  <div id="ae_toast_container"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="./js/qrcode.js"></script>
+  <script src="./js/db.js"></script>
+  <script src="./js/i18n.js"></script>
+  <script src="./js/field-app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
+

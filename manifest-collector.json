@@ -1,0 +1,35 @@
+{
+  "name": "AE Field Collector · Agri Experience Limited",
+  "short_name": "AE Collector",
+  "description": "Dedicated offline field data collection application for Agri Experience enumerators, featuring satellite GPS, agronomic converters, and Google Sheets cloud sync.",
+  "id": "./field.html",
+  "start_url": "./field.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F4F6F4",
+  "theme_color": "#141A17",
+  "orientation": "any",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%23141A17'/%3E%3Cpath d='M54 102l27 27 57-63' stroke='%23247B50' stroke-width='18' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='138' cy='138' r='18' fill='%23247B50'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23141A17'/%3E%3Cpath d='M144 272l72 72 152-168' stroke='%23247B50' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='368' cy='368' r='48' fill='%23247B50'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Start New Survey",
+      "short_name": "New Survey",
+      "description": "Open field collector directly to questionnaire",
+      "url": "./field.html#new"
+    }
+  ]
+}

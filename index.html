@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#F4F6F4" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <meta name="description"
+    content="AE Survey: Offline-First Field & Cloud Survey Platform for Agri Experience Limited, backed by Google Sheets and Google Apps Script." />
+  <title>AE Survey · Agri Experience Field Operations</title>
+
+  <link rel="manifest" href="./manifest.json" />
+
+  <!-- Google Fonts: Plus Jakarta Sans (Unified UI & Tabular Figures) + Fraunces (Respondent Header Accent) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+    rel="stylesheet" />
+
+  <!-- Font Awesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Leaflet 1.9.4 Geospatial GIS Engine (cdnjs.cloudflare.com) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"
+    referrerpolicy="no-referrer"></script>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+            display: ['"Fraunces"', 'Georgia', 'serif']
+          },
+          colors: {
+            canopy: '#141A17',
+            emeraldBrand: '#247B50',
+            emeraldVivid: '#1F6A45',
+            harvestGold: '#92400E',
+            fieldStone: '#F4F6F4'
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    :root {
+      --ground: #F4F6F4;
+      --surface: #FFFFFF;
+      --raised: #F8F9F8;
+      --active: #EAECE9;
+      --border: #E4E7E4;
+      --rule: #EFEFEF;
+      --control: #CFD5D0;
+      --text: #111613;
+      --muted: #525B56;
+      --faint: #646E68;
+      --primary: #141A17;
+      --accent: #247B50;
+      --positive: #247B50;
+      --pill-positive-bg: #DCFAE5;
+      --pill-positive-ink: #04250E;
+      --negative: #C4242A;
+      --pill-negative-bg: #FFEDEA;
+      --pill-negative-ink: #831C1E;
+      --pill-warning-bg: #FFFBEB;
+      --pill-warning-ink: #92400E;
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+      /* Glassmorphism Design Tokens (Framed-Sheet Enterprise) */
+      --ae-glass-nav-bg: rgba(244, 246, 244, 0.85);
+      --ae-glass-surface-bg: rgba(255, 255, 255, 0.88);
+      --ae-glass-surface-raised: rgba(248, 249, 248, 0.90);
+      --ae-glass-modal-bg: rgba(255, 255, 255, 0.94);
+      --ae-glass-dark-bg: rgba(20, 26, 23, 0.88);
+      --ae-glass-scrim: rgba(20, 26, 23, 0.45);
+      --ae-glass-border-light: rgba(228, 231, 228, 0.85);
+      --ae-glass-border-specular: rgba(255, 255, 255, 0.90);
+      --ae-glass-border-dark: rgba(255, 255, 255, 0.12);
+      --ae-glass-blur-sm: 8px;
+      --ae-glass-blur-md: 12px;
+      --ae-glass-blur-lg: 16px;
+      --ae-glass-shadow-hud: 0 4px 16px -2px rgba(20, 26, 23, 0.08), 0 0 0 1px rgba(20, 26, 23, 0.03);
+      --ae-glass-shadow-modal: 0 24px 48px -12px rgba(20, 26, 23, 0.22), 0 0 0 1px rgba(20, 26, 23, 0.05);
+      --ae-glass-shadow-dock: 0 -4px 20px -2px rgba(20, 26, 23, 0.07), 0 0 0 1px rgba(20, 26, 23, 0.03);
+      --ae-glass-shadow-toast: 0 12px 32px -6px rgba(20, 26, 23, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.10);
+    }
+
+    html {
+      background-color: var(--ground);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection {
+      background-color: #DCFAE5;
+      color: #04250E;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #ECEFEC;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #B8C0BA;
+      border-radius: 9999px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #247B50;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    .tabular-nums,
+    .num {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ae-press {
+      transition: transform 150ms var(--ease-out), opacity 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out), color 150ms var(--ease-out);
+    }
+
+    .ae-press:active {
+      transform: scale(0.98);
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      .ae-row-hover:hover {
+        background-color: #F8F9F8;
+      }
+
+      .ae-card-hover:hover {
+        border-color: #9CA69F;
+      }
+    }
+
+    .ae-toast-enter {
+      transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+    }
+
+    /* Hardware-Accelerated Animation Suite (Composite-Only Transforms) */
+    @keyframes aeDialogIn {
+      from {
+        opacity: 0;
+        transform: scale(0.96) translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    @keyframes aeSheetIn {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes aeSpin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .ae-dialog-animate {
+      animation: aeDialogIn 200ms var(--ease-out) forwards;
+      will-change: transform, opacity;
+    }
+
+    .ae-sheet-animate {
+      animation: aeSheetIn 220ms var(--ease-out) forwards;
+      will-change: transform, opacity;
+    }
+
+    .ae-syncing {
+      animation: aeSpin 900ms linear infinite;
+      will-change: transform;
+    }
+
+    .ae-break-words {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .ae-line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .ae-kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 4px;
+      border: 1px solid var(--control);
+      background: var(--raised);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    /* Glassmorphism Enterprise Utilities */
+    .ae-glass {
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass {
+        background-color: var(--ae-glass-surface-bg);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-md));
+        backdrop-filter: blur(var(--ae-glass-blur-md));
+        border: 1px solid var(--ae-glass-border-specular);
+        box-shadow: var(--ae-glass-shadow-hud);
+      }
+    }
+
+    .ae-glass-nav {
+      background-color: var(--ground);
+      border-bottom: 1px solid var(--border);
+      contain: paint;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-nav {
+        background-color: var(--ae-glass-nav-bg);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-md));
+        backdrop-filter: blur(var(--ae-glass-blur-md));
+        border-bottom: 1px solid var(--ae-glass-border-light);
+      }
+    }
+
+    .ae-glass-scrim {
+      background-color: rgba(20, 26, 23, 0.55);
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-scrim {
+        background-color: var(--ae-glass-scrim);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-sm));
+        backdrop-filter: blur(var(--ae-glass-blur-sm));
+      }
+    }
+
+    .ae-glass-modal {
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--ae-glass-shadow-modal);
+      contain: paint;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-modal {
+        background-color: var(--ae-glass-modal-bg);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-lg));
+        backdrop-filter: blur(var(--ae-glass-blur-lg));
+        border: 1px solid var(--ae-glass-border-specular);
+        box-shadow: var(--ae-glass-shadow-modal);
+      }
+    }
+
+    .ae-glass-map-control {
+      background-color: #FFFFFF;
+      border: 1px solid var(--control);
+      box-shadow: var(--ae-glass-shadow-hud);
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-map-control {
+        background-color: rgba(255, 255, 255, 0.90);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.95);
+        box-shadow: var(--ae-glass-shadow-hud);
+      }
+    }
+
+    .ae-glass-map-badge {
+      background-color: #E8F5E9;
+      border: 1px solid #C8E6C9;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-map-badge {
+        background-color: rgba(232, 245, 233, 0.88);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(36, 123, 80, 0.30);
+      }
+    }
+
+    .ae-glass-dock {
+      background-color: var(--raised);
+      border-top: 1px solid var(--rule);
+      contain: paint;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-dock {
+        background-color: rgba(248, 249, 248, 0.90);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-md));
+        backdrop-filter: blur(var(--ae-glass-blur-md));
+        border: 1px solid var(--ae-glass-border-specular);
+        box-shadow: var(--ae-glass-shadow-dock);
+      }
+    }
+
+    .ae-glass-toast-dark {
+      background-color: #141A17;
+      border: 1px solid #2A332E;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-toast-dark {
+        background-color: var(--ae-glass-dark-bg);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-md));
+        backdrop-filter: blur(var(--ae-glass-blur-md));
+        border: 1px solid var(--ae-glass-border-dark);
+        box-shadow: var(--ae-glass-shadow-toast);
+      }
+    }
+
+    .ae-glass-toast-warning {
+      background-color: #FFFBEB;
+      border: 1px solid #FDE68A;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-toast-warning {
+        background-color: rgba(255, 251, 235, 0.92);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-md));
+        backdrop-filter: blur(var(--ae-glass-blur-md));
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        box-shadow: var(--ae-glass-shadow-hud);
+      }
+    }
+
+    .ae-glass-toast-error {
+      background-color: #FFEDEA;
+      border: 1px solid #F5C2C0;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-toast-error {
+        background-color: rgba(255, 237, 234, 0.92);
+        -webkit-backdrop-filter: blur(var(--ae-glass-blur-md));
+        backdrop-filter: blur(var(--ae-glass-blur-md));
+        border: 1px solid rgba(196, 36, 42, 0.35);
+        box-shadow: var(--ae-glass-shadow-hud);
+      }
+    }
+
+    .ae-glass-table-th {
+      background-color: #F8F9F8;
+    }
+    @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+      .ae-glass-table-th {
+        background-color: rgba(248, 249, 248, 0.92);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+      }
+    }
+
+    /* Leaflet Vector Map Glass Controls */
+    .leaflet-bar {
+      border: none !important;
+      box-shadow: var(--ae-glass-shadow-hud) !important;
+      border-radius: 6px !important;
+      overflow: hidden;
+    }
+    .leaflet-bar a {
+      background-color: rgba(255, 255, 255, 0.92) !important;
+      -webkit-backdrop-filter: blur(10px) !important;
+      backdrop-filter: blur(10px) !important;
+      color: #111613 !important;
+      border-bottom: 1px solid rgba(228, 231, 228, 0.8) !important;
+    }
+
+    /* Accessibility Overrides: Reduced Transparency */
+    @media (prefers-reduced-transparency: reduce) {
+      .ae-glass,
+      .ae-glass-nav,
+      .ae-glass-scrim,
+      .ae-glass-modal,
+      .ae-glass-dock,
+      .ae-glass-map-control,
+      .ae-glass-map-badge,
+      .ae-glass-toast-dark,
+      .ae-glass-toast-warning,
+      .ae-glass-toast-error,
+      .ae-glass-table-th {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        background-color: var(--surface) !important;
+        border-color: var(--border) !important;
+      }
+      .ae-glass-nav {
+        background-color: var(--ground) !important;
+      }
+      .ae-glass-scrim {
+        background-color: rgba(20, 26, 23, 0.75) !important;
+      }
+      .ae-glass-toast-dark {
+        background-color: #141A17 !important;
+      }
+    }
+
+    /* Outdoor Sunlight Mode Complete Neutralization */
+    body.ae-sunlight .ae-glass,
+    body.ae-sunlight .ae-glass-nav,
+    body.ae-sunlight .ae-glass-scrim,
+    body.ae-sunlight .ae-glass-modal,
+    body.ae-sunlight .ae-glass-dock,
+    body.ae-sunlight .ae-glass-map-control,
+    body.ae-sunlight .ae-glass-map-badge,
+    body.ae-sunlight .ae-glass-toast-dark,
+    body.ae-sunlight .ae-glass-toast-warning,
+    body.ae-sunlight .ae-glass-toast-error,
+    body.ae-sunlight .ae-glass-table-th {
+      background-color: #FFFFFF !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      border: 2px solid #000000 !important;
+      box-shadow: none !important;
+      color: #000000 !important;
+    }
+    body.ae-sunlight .ae-glass-scrim {
+      background-color: rgba(0, 0, 0, 0.80) !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 120ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    @media print {
+
+      #ae_top_header,
+      #ae_toast_container,
+      button {
+        display: none !important;
+      }
+
+      body,
+      #ae_sheet_shell {
+        background: #FFFFFF !important;
+        border: none !important;
+        margin: 0 !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="min-h-dvh flex flex-col bg-[#F4F6F4] text-[#111613]">
+  <a href="#ae_main_viewport"
+    class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-[6px] focus:bg-[#141A17] focus:text-white focus:text-xs focus:font-semibold">
+    Skip to main workspace
+  </a>
+
+  <!-- Tinted App Chrome Top Bar (48px) - Frosted Botanical Glass -->
+  <header id="ae_top_header" class="sticky top-0 z-40 ae-glass-nav text-[#111613] transition-colors"></header>
+
+  <!-- Framed White Sheet Workspace (Inset 8px on desktop, 16px radius, 1px hairline edge, zero shadow) -->
+  <div id="ae_sheet_shell"
+    class="flex-1 bg-white sm:mx-2 sm:mb-2 sm:rounded-[16px] border-t sm:border border-[#E4E7E4] flex flex-col justify-between">
+    <main id="ae_main_viewport" tabindex="-1"
+      class="flex-1 max-w-[1320px] w-full mx-auto px-4 sm:px-6 py-6 focus:outline-none"></main>
+
+    <!-- Quiet Sheet Footer -->
+    <footer class="border-t border-[#EFEFEF] px-4 sm:px-6 py-3.5 mt-10">
+      <div class="max-w-[1320px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs text-[#525B56]">
+        <div class="flex items-center gap-2.5">
+          <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+            alt="Agri Experience Limited" class="h-5 w-auto object-contain shrink-0"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';" />
+          <span class="hidden w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+          <strong class="font-medium text-[#111613]">Agri Experience Limited</strong>
+          <span>· Kenya Seed &amp; Input Retail Field Enumeration · IndexedDB + Service Worker PWA</span>
+        </div>
+        <div class="flex items-center gap-4 text-xs tabular-nums">
+          <button onclick="AEApp.openSyncSettingsModal()" class="text-[#247B50] font-medium hover:underline">
+            Google Sheets + GAS Backend (<code>Code.gs</code>)
+          </button>
+          <span class="text-[#646E68]">v3.0.0</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Modal Root & Toast Notification Stack -->
+  <div id="ae_modal_root" data-ui="dialog"></div>
+  <div id="ae_toast_container" data-ui="toast" role="status" aria-live="polite" aria-atomic="true"
+    class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+  <!-- Application Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="./js/qrcode.js"></script>
+  <script src="./js/db.js?v=3.25"></script>
+  <script src="./js/i18n.js?v=3.16"></script>
+  <script src="./js/builder.js?v=3.16"></script>
+  <script src="./js/collector.js?v=3.16"></script>
+  <script src="./js/chart.umd.min.js"></script>
+  <script src="./js/analytics.js?v=3.24"></script>
+  <script src="./js/app.js?v=3.25"></script>
+</body>
+
+</html>

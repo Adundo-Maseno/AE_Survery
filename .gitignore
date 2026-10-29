@@ -1,0 +1,17 @@
+# Dependencies & local test environments
+node_modules/
+.playwright-mcp/
+.taste-skill/
+scratch/
+
+# Temporary automated test verification screenshots
+*.png
+!assets/*.png
+!docs/*.png
+
+# System & Editor files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
