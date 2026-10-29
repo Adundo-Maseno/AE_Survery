@@ -273,6 +273,9 @@ window.AEApp = {
   async triggerGoogleSheetsSync(forceAll = false) {
     if (this.isSyncing) return;
     this.isSyncing = true;
+    if (window.aeStore) {
+      window.aeStore.lastSyncError = null;
+    }
     this.render();
     try {
       const res = await window.aeStore.syncWithGoogleSheets({ forceAll });
@@ -310,6 +313,13 @@ window.AEApp = {
     window.aeStore.lastSyncError = null;
     window.aeStore.updateSettings({ gasWebAppUrl: '' });
     this.showToast('Switched to Local Google Sheets Simulator. Click Sync Sheets to flush queue.', 'success');
+    this.render();
+  },
+
+  dismissSyncError() {
+    if (window.aeStore) {
+      window.aeStore.lastSyncError = null;
+    }
     this.render();
   },
 
@@ -1182,6 +1192,11 @@ window.AEApp = {
                     ${this.isSyncing ? 'disabled' : ''}
                     class="h-8 px-3 rounded-[6px] bg-white border border-[#F5C2C0] text-[#831C1E] text-xs font-medium hover:bg-[#FFF8F6] ae-press">
                     Use Local Simulator
+                  </button>
+                  <button onclick="AEApp.dismissSyncError()"
+                    title="Dismiss notice"
+                    class="w-8 h-8 rounded-[6px] text-[#831C1E] hover:bg-[#F5C2C0]/50 flex items-center justify-center ae-press">
+                    <i class="fa-solid fa-xmark text-xs"></i>
                   </button>
                 </div>
               </div>`

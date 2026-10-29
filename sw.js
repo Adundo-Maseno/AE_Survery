@@ -4,7 +4,7 @@
  * so field enumerators can load, build, and administer surveys 100% offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.27';
+const CACHE_NAME = 'ae-survey-prod-v3.28';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -86,7 +86,35 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Stale-While-Revalidate for app shell and trusted CDN assets
+  // Network-First strategy for same-origin application code (scripts, pages, manifest)
+  // Ensures all devices immediately run the latest production code when online,
+  // while falling back seamlessly to offline cache in remote field zones!
+  if (isSameOrigin && (url.pathname.endsWith('.js') || url.pathname.endsWith('.html') || url.pathname.endsWith('.json') || url.pathname === '/' || url.pathname.endsWith('/'))) {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(request, { ignoreSearch: true }).then((cached) => {
+            if (cached) return cached;
+            if (request.mode === 'navigate') {
+              if (url.pathname.includes('field.html')) {
+                return caches.match('./field.html', { ignoreSearch: true });
+              }
+              return caches.match('./index.html', { ignoreSearch: true });
+            }
+          });
+        })
+    );
+    return;
+  }
+
+  // Stale-While-Revalidate for trusted static CDN assets (Tailwind, FontAwesome, Leaflet, GSAP)
   const hasQuery = url.search && url.search.length > 1;
   event.respondWith(
     caches.match(request, { ignoreSearch: !hasQuery }).then((cachedResponse) => {
