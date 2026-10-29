@@ -1347,6 +1347,7 @@ class AESurveyStore {
     this.runnerDrafts = {};
     this.lastSyncError = null;
     this._syncInFlight = false;
+    this._surveysDirty = false;
     this.settings = {
       gasWebAppUrl: AE_DEFAULT_GAS_CONFIG.gasWebAppUrl,
       syncToken: AE_DEFAULT_GAS_CONFIG.syncToken,
@@ -2213,6 +2214,7 @@ class AESurveyStore {
     const cleanSurvey = this.sanitizeSurveyRecord(survey);
     if (!cleanSurvey) return null;
     cleanSurvey.updatedAt = new Date().toISOString();
+    this._surveysDirty = true;
     const idx = this.surveys.findIndex((s) => s.id === cleanSurvey.id);
     if (idx >= 0) {
       this.surveys[idx] = cleanSurvey;
@@ -2241,6 +2243,7 @@ class AESurveyStore {
   }
 
   deleteSurvey(surveyId) {
+    this._surveysDirty = true;
     this.surveys = this.surveys.filter((s) => s.id !== surveyId);
     this.responses = this.responses.filter((r) => r.surveyId !== surveyId);
     this.collectors = this.collectors.filter((c) => c.surveyId !== surveyId);
@@ -2385,7 +2388,8 @@ class AESurveyStore {
    * Synchronizes all pending surveys, collectors, and offline responses with
    * Google Sheets via Google Apps Script (`Code.gs`).
    * - If `gasWebAppUrl` is configured, performs a real CORS-safe `POST` with
-   *   `Content-Type: text/plain;charset=utf-8` and a 12s AbortController timeout.
+   *   `Content-Type: text/plain;charset=utf-8`, 45s AbortController timeout,
+   *   and automatic 1-retry container warm-up.
    * - If no URL is configured yet (or user chooses Demo Cloud Sync), simulates
    *   the exact Google Sheets batch transaction locally so every workflow can be
    *   tested immediately!
@@ -2408,12 +2412,19 @@ class AESurveyStore {
       ? window.AESession.getCurrentUser()
       : null;
 
+    // Smart payload optimization: only send full survey schemas when forced,
+    // when schemas were created/edited locally, or on very first cloud connection.
+    const shouldSyncSurveys = Boolean(
+      options.forceAll || options.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt
+    );
+    const surveysPayload = shouldSyncSurveys ? this.surveys : [];
+
     const payload = {
       action: 'BATCH_SYNC',
       syncToken: this.settings.syncToken || '',
       deviceId: this.settings.deviceId,
       callerId: currentSessionUser ? currentSessionUser.id : '',
-      surveys: this.surveys,
+      surveys: surveysPayload,
       collectors: this.collectors,
       responses: unsyncedResponses,
       personnel: this.personnel
@@ -2428,31 +2439,46 @@ class AESurveyStore {
       }
 
       if (gasUrl) {
-        // Real Google Apps Script Web App POST (CORS-safe text/plain + 12s timeout)
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 12000);
-        let response;
-        try {
-          response = await fetch(gasUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify(payload),
-            redirect: 'follow',
-            signal: controller.signal
-          });
-        } catch (netErr) {
-          if (netErr && netErr.name === 'AbortError') {
-            throw new Error('Google Apps Script request timed out after 12s. Field responses remain safely queued in IndexedDB.');
+        // Real Google Apps Script Web App POST (CORS-safe text/plain + 45s timeout + auto-retry)
+        const GAS_TIMEOUT_MS = 45000;
+        let response = null;
+        let attempt = 0;
+        const maxAttempts = 2;
+
+        while (attempt < maxAttempts) {
+          attempt++;
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), GAS_TIMEOUT_MS);
+          try {
+            response = await fetch(gasUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+              },
+              body: JSON.stringify(payload),
+              redirect: 'follow',
+              signal: controller.signal
+            });
+            clearTimeout(timer);
+            if (response && response.ok) {
+              break;
+            }
+          } catch (netErr) {
+            clearTimeout(timer);
+            // If request timed out or network glitched on attempt 1, retry once (warm container)
+            if (attempt < maxAttempts && (netErr.name === 'AbortError' || netErr.name === 'TypeError')) {
+              await new Promise((r) => setTimeout(r, 1200));
+              continue;
+            }
+            if (netErr && netErr.name === 'AbortError') {
+              throw new Error(`Google Apps Script request timed out after ${Math.round(GAS_TIMEOUT_MS / 1000)}s. Responses remain safely queued in IndexedDB outbox.`);
+            }
+            throw new Error(`Network connection to Google Apps Script failed (${netErr.message || 'Unreachable'}). Responses remain safely queued locally.`);
           }
-          throw new Error(`Network connection to Google Apps Script failed (${netErr.message || 'Unreachable'}). Responses remain safely queued locally.`);
-        } finally {
-          clearTimeout(timer);
         }
 
-        if (!response.ok) {
-          throw new Error(`Google Apps Script HTTP ${response.status}: ${response.statusText}`);
+        if (!response || !response.ok) {
+          throw new Error(`Google Apps Script HTTP ${response ? response.status : 0}: ${response ? response.statusText : 'No response'}`);
         }
 
         let data;
@@ -2468,9 +2494,10 @@ class AESurveyStore {
         if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
           this.personnel = data.personnel;
         }
+        this._surveysDirty = false;
         resultSummary = {
           mode: 'Live GAS Web App',
-          surveysSynced: data.surveysSynced ?? this.surveys.length,
+          surveysSynced: data.surveysSynced ?? (shouldSyncSurveys ? this.surveys.length : 0),
           responsesInserted: data.responsesInserted ?? unsyncedResponses.length,
           personnelSynced: data.personnelSynced ?? this.personnel.length,
           duplicatesSkipped: data.duplicatesSkipped ?? 0,
@@ -2558,21 +2585,40 @@ class AESurveyStore {
     const startTime = performance.now();
     try {
       const sep = gasUrl.includes('?') ? '&' : '?';
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 12000);
-      let response;
-      try {
-        response = await fetch(`${gasUrl}${sep}action=pullAll&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`, {
-          method: 'GET',
-          redirect: 'follow',
-          signal: controller.signal
-        });
-      } finally {
-        clearTimeout(timer);
+      const GAS_TIMEOUT_MS = 45000;
+      let response = null;
+      let attempt = 0;
+      const maxAttempts = 2;
+
+      while (attempt < maxAttempts) {
+        attempt++;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), GAS_TIMEOUT_MS);
+        try {
+          response = await fetch(`${gasUrl}${sep}action=pullAll&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`, {
+            method: 'GET',
+            redirect: 'follow',
+            signal: controller.signal
+          });
+          clearTimeout(timer);
+          if (response && response.ok) {
+            break;
+          }
+        } catch (netErr) {
+          clearTimeout(timer);
+          if (attempt < maxAttempts && (netErr.name === 'AbortError' || netErr.name === 'TypeError')) {
+            await new Promise((r) => setTimeout(r, 1200));
+            continue;
+          }
+          if (netErr && netErr.name === 'AbortError') {
+            throw new Error(`Pulling from Google Apps Script timed out after ${Math.round(GAS_TIMEOUT_MS / 1000)}s.`);
+          }
+          throw new Error(`Failed to pull from Google Sheets (${netErr.message || 'Network error'}).`);
+        }
       }
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} while pulling from Google Apps Script`);
+      if (!response || !response.ok) {
+        throw new Error(`HTTP ${response ? response.status : 0} while pulling from Google Apps Script`);
       }
 
       let data;

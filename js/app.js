@@ -1174,10 +1174,12 @@ window.AEApp = {
                 <div class="flex items-center gap-2 shrink-0">
                   <button onclick="AEApp.triggerGoogleSheetsSync()"
                     ${this.isSyncing ? 'disabled' : ''}
-                    class="h-8 px-3 rounded-[6px] bg-[#141A17] text-white text-xs font-medium hover:bg-[#232C27] ae-press">
-                    Retry Sync
+                    class="h-8 px-3 rounded-[6px] bg-[#141A17] text-white text-xs font-medium hover:bg-[#232C27] ae-press inline-flex items-center gap-1.5">
+                    <i class="fa-solid fa-arrows-rotate text-[11px] ${this.isSyncing ? 'fa-spin' : ''}"></i>
+                    <span>${this.isSyncing ? 'Retrying Sync…' : 'Retry Sync'}</span>
                   </button>
                   <button onclick="AEApp.clearSyncErrorAndUseSimulator()"
+                    ${this.isSyncing ? 'disabled' : ''}
                     class="h-8 px-3 rounded-[6px] bg-white border border-[#F5C2C0] text-[#831C1E] text-xs font-medium hover:bg-[#FFF8F6] ae-press">
                     Use Local Simulator
                   </button>
