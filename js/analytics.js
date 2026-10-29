@@ -4701,8 +4701,9 @@ window.AEAnalytics = {
     setTimeout(() => {
       try {
         map.invalidateSize();
+        map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
       } catch (e) {}
-    }, 180);
+    }, 200);
 
     this.mapInstances['lisa'] = map;
   },
@@ -4787,8 +4788,9 @@ window.AEAnalytics = {
     setTimeout(() => {
       try {
         map.invalidateSize();
+        map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
       } catch (e) {}
-    }, 180);
+    }, 200);
 
     this.mapInstances['gps_log'] = map;
   },
@@ -5057,8 +5059,9 @@ window.AEAnalytics = {
           setTimeout(() => {
             try {
               map.invalidateSize();
+              map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
             } catch (e) {}
-          }, 180);
+          }, 200);
 
           if (!this.mapInstances) this.mapInstances = {};
           this.mapInstances[q.id] = map;
