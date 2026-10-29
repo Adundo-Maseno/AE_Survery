@@ -574,8 +574,113 @@ function getInitialSeedData() {
         qd_storage_rating: 4,
         qd_gps: { lat: -1.522, lng: 37.269, accuracy: 7.2, label: 'Mkulima Bora Stockist' }
       },
-      syncStatus: 'queued',
-      syncedAt: null
+      syncStatus: 'synced',
+      syncedAt: daysAgo(0.1)
+    },
+    {
+      id: 'resp_mvs9x3fx_i3wn',
+      clientResponseId: 'resp_mvs9x3fx_i3wn',
+      surveyId: 'srv_maize_2026',
+      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
+      collectorId: 'col_kiosk_rift',
+      enumerator: 'Faith Chebet (Enum-09)',
+      status: 'complete',
+      reviewStatus: 'approved',
+      qaFlags: ['VERIFIED_PACING'],
+      supervisorId: 'SUP-01',
+      npsCategory: 'Passive',
+      startedAt: '2026-10-28T15:28:29.110Z',
+      submittedAt: '2026-10-28T15:32:56.110Z',
+      durationSec: 267,
+      gps: { lat: -1.361895, lng: 36.66485, accuracy: 500, label: 'Ngong Plot' },
+      answers: {
+        q_county: 'Machakos County (Eastern Semi-Arid)',
+        q_seed_variety: 'SC Duma 43 (Early Maturing)',
+        q_inputs_used: ['CAN / Urea Top-Dressing', 'DAP / NPK Planting Fertilizer', 'Fall Armyworm Biological/Chemical Control'],
+        q_gps_plot: { lat: -1.36, lng: 36.6599, accuracy: 500, label: 'Ngong' },
+        q_trait_matrix: {
+          'Germination uniformity (emergence within 7 days)': 'Good',
+          'Tolerance to mid-season dry spells': 'Excellent',
+          'Resistance to cob rot and storage pests': 'Good',
+          'Grain weight and flour milling quality': 'Good'
+        },
+        q_yield_kg: 1350,
+        q_dealer_rating: 4,
+        q_nps_seed: 8,
+        q_field_notes: 'Good Good'
+      },
+      syncStatus: 'synced',
+      syncedAt: '2026-10-28T15:32:56.110Z'
+    },
+    {
+      id: 'resp_mvtglxvs_r56j',
+      clientResponseId: 'resp_mvtglxvs_r56j',
+      surveyId: 'srv_maize_2026',
+      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
+      collectorId: 'col_kiosk_rift',
+      enumerator: 'Moses Adundo (HQ Admin)',
+      status: 'complete',
+      reviewStatus: 'pending_review',
+      qaFlags: ['VERIFIED_PACING', 'ADMIN_PILOT_AUDIT', 'YIELD_OUTLIER_LOW'],
+      supervisorId: 'ADM-01',
+      npsCategory: 'Promoter',
+      startedAt: '2026-10-29T11:24:56.179Z',
+      submittedAt: '2026-10-29T11:27:59.179Z',
+      durationSec: 183,
+      gps: { lat: -1.338686, lng: 36.723286, accuracy: 13.9, label: 'Karen Plot' },
+      answers: {
+        q_county: 'Kakamega County (Western Moist Transitional)',
+        q_seed_variety: 'SC Duma 43 (Early Maturing)',
+        q_inputs_used: ['Compost / Farmyard Manure', 'DAP / NPK Planting Fertilizer', 'CAN / Urea Top-Dressing', 'certified Rhizobium / Bio-Stimulant', 'Fall Armyworm Biological/Chemical Control'],
+        q_gps_plot: { lat: -1.338686, lng: 36.723286, accuracy: 13.9, label: 'Karen' },
+        q_trait_matrix: {
+          'Germination uniformity (emergence within 7 days)': 'Good',
+          'Tolerance to mid-season dry spells': 'Good',
+          'Resistance to cob rot and storage pests': 'Good',
+          'Grain weight and flour milling quality': 'Good'
+        },
+        q_yield_kg: 18,
+        q_dealer_rating: 5,
+        q_nps_seed: 10,
+        q_field_notes: 'Good produce'
+      },
+      syncStatus: 'synced',
+      syncedAt: '2026-10-29T11:27:59.179Z'
+    },
+    {
+      id: 'resp_mvtjsxxl_v08p',
+      clientResponseId: 'resp_mvtjsxxl_v08p',
+      surveyId: 'srv_maize_2026',
+      surveyTitle: '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey',
+      collectorId: 'col_kiosk_rift',
+      enumerator: 'Moses Adundo (HQ Admin)',
+      status: 'complete',
+      reviewStatus: 'pending_review',
+      qaFlags: ['VERIFIED_PACING', 'ADMIN_PILOT_AUDIT', 'GPS_POOR_ACCURACY'],
+      supervisorId: 'ADM-01',
+      npsCategory: 'Promoter',
+      startedAt: '2026-10-29T12:55:22.682Z',
+      submittedAt: '2026-10-29T12:57:24.682Z',
+      durationSec: 122,
+      gps: { lat: -1.33838, lng: 36.722943, accuracy: 85, label: 'Karen Plot' },
+      answers: {
+        q_county: 'Machakos County (Eastern Semi-Arid)',
+        q_seed_variety: 'DK 8031 (Medium Maturity)',
+        q_inputs_used: ['Compost / Farmyard Manure', 'CAN / Urea Top-Dressing', 'Fall Armyworm Biological/Chemical Control', 'certified Rhizobium / Bio-Stimulant', 'DAP / NPK Planting Fertilizer'],
+        q_gps_plot: { lat: -1.33838, lng: 36.722943, accuracy: 85, label: 'Karen' },
+        q_trait_matrix: {
+          'Tolerance to mid-season dry spells': 'Good',
+          'Germination uniformity (emergence within 7 days)': 'Excellent',
+          'Resistance to cob rot and storage pests': 'Excellent',
+          'Grain weight and flour milling quality': 'Excellent'
+        },
+        q_yield_kg: 1800,
+        q_dealer_rating: 5,
+        q_nps_seed: 9,
+        q_field_notes: 'Farmers requested 2Kg'
+      },
+      syncStatus: 'synced',
+      syncedAt: '2026-10-29T12:57:24.682Z'
     }
   ];
 
@@ -1542,6 +1647,18 @@ class AESurveyStore {
       this.surveys = JSON.parse(rawSurveys) || [];
       this.collectors = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.COLLECTORS) || '[]');
       this.responses = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.RESPONSES) || '[]');
+
+      // Auto-heal responses: restore full answers if previously stripped by cloud column mismatch
+      const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
+      this.responses.forEach((r) => {
+        const hasAnswers = r.answers && typeof r.answers === 'object' && Object.keys(r.answers).length > 0;
+        if (!hasAnswers && seedMap.has(r.id)) {
+          const seedItem = seedMap.get(r.id);
+          r.answers = { ...seedItem.answers };
+          if (seedItem.reviewStatus) r.reviewStatus = seedItem.reviewStatus;
+          if (seedItem.qaFlags) r.qaFlags = seedItem.qaFlags;
+        }
+      });
       const rawPersonnel = localStorage.getItem(AE_STORAGE_KEYS.PERSONNEL);
       this.personnel = rawPersonnel ? JSON.parse(rawPersonnel) : getInitialPersonnelSeed();
       this.syncQueue = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.SYNC_QUEUE) || '[]');
