@@ -47,6 +47,9 @@ window.AEFieldApp = {
 
     if (window.AEI18n) {
       this.currentLang = window.AEI18n.getLanguage();
+      if (document.documentElement) {
+        document.documentElement.lang = this.currentLang;
+      }
     }
 
     this.sunlightMode = localStorage.getItem('ae_sunlight_mode') === 'true';
@@ -342,6 +345,9 @@ window.AEFieldApp = {
     } else {
       this.currentLang = langCode;
     }
+    if (document.documentElement) {
+      document.documentElement.lang = this.currentLang;
+    }
     this.render();
   },
 
@@ -372,7 +378,7 @@ window.AEFieldApp = {
     const survey = rawSurvey && window.AEI18n ? window.AEI18n.localizeSurvey(rawSurvey, this.currentLang) : rawSurvey;
     const titleEl = document.getElementById('ae_hdr_survey_title');
     if (titleEl) {
-      titleEl.textContent = survey ? survey.title : 'No Survey Active';
+      titleEl.textContent = survey ? survey.title : this.t('noSurveyActive');
     }
 
     const allowed = (survey && Array.isArray(survey.supportedLanguages)) ? survey.supportedLanguages : null;
@@ -432,9 +438,10 @@ window.AEFieldApp = {
     const syncBtn = document.getElementById('ae_hdr_sync_btn');
 
     if (syncText && syncIcon && syncBtn) {
+      syncBtn.title = this.t('syncTooltip');
       if (isSyncing) {
         syncIcon.className = 'fa-solid fa-arrows-rotate text-xs text-[#247B50] fa-spin';
-        syncText.textContent = 'Auto-syncing…';
+        syncText.textContent = this.t('autoSyncing');
         syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs inline-flex items-center gap-1.5 ae-press opacity-85';
       } else if (!isOnline) {
         syncIcon.className = 'fa-solid fa-cloud text-xs text-[#D97706]';
@@ -442,11 +449,11 @@ window.AEFieldApp = {
         syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#FFFBEB] text-[#92400E] text-xs inline-flex items-center gap-1.5 ae-press';
       } else if (queuedCount > 0) {
         syncIcon.className = 'fa-solid fa-cloud-arrow-up text-xs text-[#247B50]';
-        syncText.textContent = `${queuedCount} pending`;
+        syncText.textContent = `${queuedCount} ${this.t('pending')}`;
         syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs inline-flex items-center gap-1.5 ae-press';
       } else {
         syncIcon.className = 'fa-solid fa-cloud-check text-xs text-[#3FC07A]';
-        syncText.textContent = 'Synced';
+        syncText.textContent = this.t('synced');
         syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white/10 hover:bg-white/15 text-white text-xs inline-flex items-center gap-1.5 ae-press';
       }
     }
@@ -456,11 +463,11 @@ window.AEFieldApp = {
     if (installBtn && installLabel) {
       if (this.isAppInstalled) {
         installBtn.className = 'h-8 px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] inline-flex items-center gap-1.5 pointer-events-none';
-        installBtn.innerHTML = '<i class="fa-solid fa-circle-check text-xs text-[#3FC07A]"></i><span class="hidden sm:inline">Installed</span>';
+        installBtn.innerHTML = `<i class="fa-solid fa-circle-check text-xs text-[#3FC07A]"></i><span class="hidden sm:inline">${this.t('installed')}</span>`;
       } else {
         const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         installBtn.className = 'h-8 px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
-        installLabel.textContent = isIos ? 'Add to Home' : 'Install App';
+        installLabel.textContent = isIos ? this.t('addToHome') : this.t('installApp');
       }
     }
 
@@ -469,10 +476,10 @@ window.AEFieldApp = {
     if (focusBtn && focusLabel) {
       if (this.runnerMode === 'focus') {
         focusBtn.className = 'h-8 px-2 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
-        focusLabel.textContent = 'Focus On';
+        focusLabel.textContent = this.t('focusOn');
       } else {
         focusBtn.className = 'h-8 px-2 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white inline-flex items-center gap-1.5 ae-press';
-        focusLabel.textContent = 'Focus';
+        focusLabel.textContent = this.t('focus');
       }
     }
 
@@ -480,10 +487,10 @@ window.AEFieldApp = {
     if (roleBadge) {
       if (currentUser && currentUser.role === 'admin') {
         roleBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1 shrink-0';
-        roleBadge.innerHTML = '<i class="fa-solid fa-shield-halved text-[9px] text-[#247B50]"></i><span>Admin Audit</span>';
+        roleBadge.innerHTML = `<i class="fa-solid fa-shield-halved text-[9px] text-[#247B50]"></i><span>${this.t('adminAudit')}</span>`;
       } else if (currentUser && currentUser.role === 'supervisor') {
         roleBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] bg-[#EFF6FF] text-[#1E40AF] inline-flex items-center gap-1 shrink-0';
-        roleBadge.innerHTML = '<i class="fa-solid fa-user-check text-[9px] text-[#1E40AF]"></i><span>Supervisor</span>';
+        roleBadge.innerHTML = `<i class="fa-solid fa-user-check text-[9px] text-[#1E40AF]"></i><span>${this.t('supervisor')}</span>`;
       } else {
         roleBadge.className = 'hidden';
         roleBadge.innerHTML = '';
@@ -494,27 +501,27 @@ window.AEFieldApp = {
     if (adminBtn) {
       if (currentUser && currentUser.role === 'admin') {
         adminBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
-        adminBtn.title = `Return to Operations Studio (${currentUser.fullName})`;
-        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', 'Return to Operations Studio');
+        adminBtn.title = `${this.t('returnToOperations')} (${currentUser.fullName})`;
+        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToOperations'));
         adminBtn.innerHTML = `
           <i class="fa-solid fa-gauge-high text-xs text-white"></i>
-          <span class="hidden md:inline">Operations Studio</span>
+          <span class="hidden md:inline">${this.t('operationsStudio')}</span>
         `;
       } else if (currentUser && currentUser.role === 'supervisor') {
         adminBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#1E40AF] hover:bg-[#172554] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
-        adminBtn.title = `Return to Supervisor Portal (${currentUser.fullName})`;
-        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', 'Return to Supervisor Portal');
+        adminBtn.title = `${this.t('returnToSupervisor')} (${currentUser.fullName})`;
+        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToSupervisor'));
         adminBtn.innerHTML = `
           <i class="fa-solid fa-arrow-left text-xs text-white"></i>
-          <span class="hidden md:inline">Supervisor Portal</span>
+          <span class="hidden md:inline">${this.t('supervisorPortal')}</span>
         `;
       } else {
         adminBtn.className = 'h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white inline-flex items-center gap-1.5 ae-press';
-        adminBtn.title = 'Admin Studio (Requires PIN)';
-        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', 'Admin Studio (Requires PIN)');
+        adminBtn.title = this.t('adminRequiresPin');
+        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('adminRequiresPin'));
         adminBtn.innerHTML = `
           <i class="fa-solid fa-lock text-xs text-[#A3ACA6]"></i>
-          <span class="hidden md:inline">Admin Studio</span>
+          <span class="hidden md:inline">${this.t('adminStudio')}</span>
         `;
       }
     }
@@ -539,13 +546,13 @@ window.AEFieldApp = {
       viewport.innerHTML = `
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-8 text-center space-y-3">
           <i class="fa-solid fa-clipboard-question text-3xl text-[#525B56]"></i>
-          <h2 class="text-base font-semibold text-[#111613]">No Active Field Survey Assigned</h2>
+          <h2 class="text-base font-semibold text-[#111613]">${this.t('noActiveSurveyAssigned')}</h2>
           <p class="text-xs text-[#525B56] max-w-sm mx-auto">
-            Connect to Wi-Fi to sync with Google Sheets or ask your team lead to assign an active survey.
+            ${this.t('connectWifiPrompt')}
           </p>
           <button onclick="AEFieldApp.openSurveyPicker()"
             class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
-            Select Deployed Survey
+            ${this.t('selectDeployedSurvey')}
           </button>
         </div>
       `;
@@ -603,12 +610,12 @@ window.AEFieldApp = {
                     ${!this.isAppInstalled ? `
                       <button type="button" onclick="AEFieldApp.promptInstall()"
                         class="h-8 px-3 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white hover:bg-[#1F6A45] inline-flex items-center gap-1.5 ae-press">
-                        <i class="fa-solid fa-mobile-screen-button text-xs"></i> Install App
+                        <i class="fa-solid fa-mobile-screen-button text-xs"></i> ${this.t('installApp')}
                       </button>
                     ` : ''}
                     <button type="button" onclick="AEFieldApp.copyReceiptText()"
                       class="h-8 px-3 rounded-[6px] bg-white border border-[#247B50]/40 text-xs font-medium text-[#04250E] hover:bg-[#F8F9F8] inline-flex items-center gap-1.5 ae-press">
-                      <i class="fa-regular fa-copy"></i> Copy Receipt
+                      <i class="fa-regular fa-copy"></i> ${this.t('copyReceipt')}
                     </button>
                     <button type="button" onclick="AEFieldApp.startNextInterview()"
                       class="h-8 px-3.5 rounded-[6px] bg-[#141A17] text-xs font-medium text-white hover:bg-[#232C27] inline-flex items-center gap-1.5 ae-press">
@@ -683,7 +690,7 @@ window.AEFieldApp = {
                   </button>`
                 : `<button type="button" onclick="AEFieldApp.resetCurrentDraft()"
                     class="h-10 px-3 rounded-[6px] text-xs font-medium text-[#831C1E] hover:bg-[#FFEDEA] inline-flex items-center gap-1.5 ae-press">
-                    <i class="fa-solid fa-rotate-left text-xs"></i> <span>Clear Form</span>
+                    <i class="fa-solid fa-rotate-left text-xs"></i> <span>${this.t('clearForm')}</span>
                   </button>`
             }
           </div>
@@ -872,7 +879,7 @@ window.AEFieldApp = {
           <div class="space-y-2 pt-1 border-t border-[#EFEFEF]">
             <div class="flex flex-wrap items-center justify-between text-xs text-[#646E68] tabular-nums">
               <span>${this.t('range')} ${minVal.toLocaleString()} – ${maxVal.toLocaleString()} ${this.escapeHtml(unitStr)}</span>
-              ${isKg ? `<span class="text-[11px] font-semibold text-[#247B50]">Smallholder Unit Calculator</span>` : ''}
+              ${isKg ? `<span class="text-[11px] font-semibold text-[#247B50]">${this.t('smallholderUnitCalc')}</span>` : ''}
             </div>
             ${
               isKg
@@ -893,7 +900,7 @@ window.AEFieldApp = {
                       </button>
                     `).join('')}
                     <span class="text-[11px] text-[#525B56] font-medium mx-1">·</span>
-                    <span class="text-[11px] text-[#525B56] font-medium mr-1">Bags:</span>
+                    <span class="text-[11px] text-[#525B56] font-medium mr-1">${this.t('bags')}:</span>
                     ${[5, 10, 15, 20].map(b => `
                       <button type="button" onclick="AEFieldApp.setAnswer('${q.id}', ${b * 90})"
                         class="px-2 py-0.5 rounded-[4px] border border-[#247B50]/30 bg-[#F4F6F4] hover:bg-[#DCFAE5] hover:border-[#247B50] text-[11px] font-semibold text-[#04250E] tabular-nums ae-press">
@@ -922,7 +929,7 @@ window.AEFieldApp = {
                 class="h-10 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] disabled:opacity-50 text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                 ${
                   isCapturing
-                    ? '<i class="fa-solid fa-circle-notch fa-spin text-xs"></i> <span>Acquiring GNSS Satellites…</span>'
+                    ? '<i class="fa-solid fa-circle-notch fa-spin text-xs"></i> <span>' + this.t('acquiringGnss') + '</span>'
                     : '<i class="fa-solid fa-location-crosshairs text-xs"></i> <span>' + this.t('captureGps') + '</span>'
                 }
               </button>
@@ -930,7 +937,7 @@ window.AEFieldApp = {
                 isLocked
                   ? `<button type="button" onclick="AEFieldApp.clearGPS('${q.id}')"
                       class="h-10 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] text-[#831C1E] text-xs font-medium ae-press" title="Clear recorded GPS">
-                      <i class="fa-solid fa-trash-can text-xs"></i> Clear
+                      <i class="fa-solid fa-trash-can text-xs"></i> ${this.t('clearGps')}
                     </button>`
                   : ''
               }
@@ -939,7 +946,7 @@ window.AEFieldApp = {
             ${
               isCapturing
                 ? `<span class="text-xs font-semibold text-[#247B50] inline-flex items-center gap-1.5">
-                    <i class="fa-solid fa-satellite-dish"></i> Searching constellation… (stay under open sky)
+                    <i class="fa-solid fa-satellite-dish"></i> ${this.t('searchingConstellation')}
                   </span>`
                 : isLocked
                 ? `<div class="flex flex-wrap items-center gap-1.5 text-xs font-semibold tabular-nums text-[#04250E] bg-[#DCFAE5] px-2.5 py-1.5 rounded-[4px] border border-[#247B50]/30">
@@ -953,21 +960,21 @@ window.AEFieldApp = {
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div>
-              <label class="block text-xs font-medium text-[#525B56] mb-1">Latitude (−90 to 90)</label>
+              <label class="block text-xs font-medium text-[#525B56] mb-1">${this.t('latitudeLabel')}</label>
               <input type="number" step="any" min="-90" max="90" value="${gps.lat ?? ''}"
                 onchange="AEFieldApp.updateGPSField('${q.id}', 'lat', this.value === '' ? '' : Number(this.value))"
                 placeholder="-0.303100"
                 class="w-full h-10 text-xs tabular-nums bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613]" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-[#525B56] mb-1">Longitude (−180 to 180)</label>
+              <label class="block text-xs font-medium text-[#525B56] mb-1">${this.t('longitudeLabel')}</label>
               <input type="number" step="any" min="-180" max="180" value="${gps.lng ?? ''}"
                 onchange="AEFieldApp.updateGPSField('${q.id}', 'lng', this.value === '' ? '' : Number(this.value))"
                 placeholder="36.080000"
                 class="w-full h-10 text-xs tabular-nums bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613]" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-[#525B56] mb-1">Village / Trial Plot Landmark</label>
+              <label class="block text-xs font-medium text-[#525B56] mb-1">${this.t('landmarkLabel')}</label>
               <input type="text" maxlength="120" value="${this.escapeAttr(gps.label || '')}"
                 onchange="AEFieldApp.updateGPSField('${q.id}', 'label', this.value)"
                 placeholder="E.g. Njoro Ward Trial Plot #14"
@@ -1002,7 +1009,7 @@ window.AEFieldApp = {
             })
             .join('')}
           <span class="text-xs font-semibold text-[#525B56] tabular-nums ml-2">
-            ${current > 0 ? `${current} / ${maxStars} stars` : 'Tap to rate'}
+            ${current > 0 ? `${current} / ${maxStars} ${this.t('stars')}` : this.t('tapToRate')}
           </span>
         </div>
       `;
@@ -1036,8 +1043,8 @@ window.AEFieldApp = {
               .join('')}
           </div>
           <div class="flex items-center justify-between text-xs text-[#525B56]">
-            <span>0 = Not at all likely</span>
-            <span>10 = Extremely likely</span>
+            <span>${this.t('notLikely')}</span>
+            <span>${this.t('extremelyLikely')}</span>
           </div>
         </div>
       `;
@@ -1052,7 +1059,7 @@ window.AEFieldApp = {
           <table class="w-full text-left border-collapse min-w-[500px]">
             <thead>
               <tr class="bg-[#F8F9F8] border-b border-[#E4E7E4] text-xs font-semibold text-[#525B56]">
-                <th class="py-2.5 pl-4 pr-3">Evaluation Dimension</th>
+                <th class="py-2.5 pl-4 pr-3">${this.t('evaluationDimension')}</th>
                 ${cols.map((c) => `<th class="py-2.5 px-3 text-center">${this.escapeHtml(c)}</th>`).join('')}
               </tr>
             </thead>
@@ -1372,7 +1379,7 @@ window.AEFieldApp = {
     if (!survey) return;
     const page = survey.pages[this.currentPageIndex];
     if (!bypassValidation && !this.validatePage(page)) {
-      this.showToast('Please complete required questions before submitting.', 'error');
+      this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
       this.render();
       this.scrollToFirstError();
       return;
@@ -1455,7 +1462,7 @@ window.AEFieldApp = {
         receiptText
       };
 
-      this.showToast('Interview recorded. Form reset for next respondent.', 'success');
+      this.showToast(this.t('interviewRecordedSuccess'), 'success');
       this.render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -1487,9 +1494,9 @@ window.AEFieldApp = {
   },
 
   resetCurrentDraft() {
-    if (!window.confirm('Clear all entered answers on this form and restart?')) return;
+    if (!window.confirm(this.t('clearFormConfirm'))) return;
     this.initRunnerForActiveSurvey(true);
-    this.showToast('Form reset for a fresh interview.', 'success');
+    this.showToast(this.t('formResetSuccess'), 'success');
     this.render();
   },
 
@@ -1497,10 +1504,10 @@ window.AEFieldApp = {
     if (!this.justSubmittedReceipt || !this.justSubmittedReceipt.receiptText) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(this.justSubmittedReceipt.receiptText)
-        .then(() => this.showToast('Receipt copied to clipboard.', 'success'))
-        .catch(() => this.showToast('Receipt copied to clipboard.', 'success'));
+        .then(() => this.showToast(this.t('receiptCopied'), 'success'))
+        .catch(() => this.showToast(this.t('receiptCopied'), 'success'));
     } else {
-      this.showToast('Receipt copied to clipboard.', 'success');
+      this.showToast(this.t('receiptCopied'), 'success');
     }
   },
 
@@ -1752,12 +1759,12 @@ window.AEFieldApp = {
             <span class="w-6 h-6 rounded-[5px] bg-[#247B50]/15 text-[#247B50] flex items-center justify-center font-bold text-xs">
               <i class="fa-solid fa-bullseye"></i>
             </span>
-            <span class="font-semibold text-[#111613]">Daily Shift Pacing</span>
+            <span class="font-semibold text-[#111613]">${this.t('dailyShiftPacing')}</span>
             <span class="text-[#525B56] hidden sm:inline">(${this.escapeHtml(this.enumeratorName)})</span>
             ${
               taskProgress && taskProgress.isAssigned
                 ? `<span class="px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-[10px] font-semibold hidden md:inline-flex items-center gap-1">
-                    <i class="fa-solid fa-list-check text-[9px]"></i> Assigned Task Quota
+                    <i class="fa-solid fa-list-check text-[9px]"></i> ${this.t('assignedTaskQuota')}
                   </span>`
                 : ''
             }
@@ -1771,26 +1778,26 @@ window.AEFieldApp = {
               </span>`
                 : ''
             }
-            <span class="${isTargetMet ? 'text-[#247B50]' : 'text-[#111613]'}">${completed} / ${shiftTarget} Plots (${pct}%)</span>
+            <span class="${isTargetMet ? 'text-[#247B50]' : 'text-[#111613]'}">${completed} / ${shiftTarget} ${this.t('plots')} (${pct}%)</span>
           </div>
         </div>
 
         <div class="w-full h-2 rounded-full bg-[#EFEFEF] overflow-hidden flex">
-          <div style="width: ${Math.min(100, (synced / shiftTarget) * 100)}%" class="bg-[#247B50] transition-[width] duration-300" title="Synced to Google Sheets"></div>
-          <div style="width: ${Math.min(100, (queued / shiftTarget) * 100)}%" class="bg-[#D97706] transition-[width] duration-300" title="Queued locally in IndexedDB"></div>
+          <div style="width: ${Math.min(100, (synced / shiftTarget) * 100)}%" class="bg-[#247B50] transition-[width] duration-300" title="${this.t('syncedToSheets')}"></div>
+          <div style="width: ${Math.min(100, (queued / shiftTarget) * 100)}%" class="bg-[#D97706] transition-[width] duration-300" title="${this.t('queuedLocally')}"></div>
         </div>
 
         <div class="flex items-center justify-between text-[11px] text-[#646E68] tabular-nums">
           <div class="flex items-center gap-3">
-            <span><span class="inline-block w-2 h-2 rounded-full bg-[#247B50] mr-1"></span>${synced} Synced</span>
-            <span><span class="inline-block w-2 h-2 rounded-full bg-[#D97706] mr-1"></span>${queued} Outbox Queued</span>
+            <span><span class="inline-block w-2 h-2 rounded-full bg-[#247B50] mr-1"></span>${synced} ${this.t('synced')}</span>
+            <span><span class="inline-block w-2 h-2 rounded-full bg-[#D97706] mr-1"></span>${queued} ${this.t('outboxQueued')}</span>
             ${
               taskProgress && taskProgress.deadline
-                ? `<span class="hidden sm:inline text-[#525B56]"><i class="fa-regular fa-calendar text-[10px] mr-1 text-[#247B50]"></i>Due ${this.escapeHtml(taskProgress.deadline)}</span>`
+                ? `<span class="hidden sm:inline text-[#525B56]"><i class="fa-regular fa-calendar text-[10px] mr-1 text-[#247B50]"></i>${this.t('due')} ${this.escapeHtml(taskProgress.deadline)}</span>`
                 : ''
             }
           </div>
-          <span>${isTargetMet ? '<strong class="text-[#247B50]"><i class="fa-solid fa-check mr-1"></i>Shift Target Met</strong>' : `${Math.max(0, shiftTarget - completed)} plots to target`}</span>
+          <span>${isTargetMet ? `<strong class="text-[#247B50]"><i class="fa-solid fa-check mr-1"></i>${this.t('shiftTargetMet')}</strong>` : `${Math.max(0, shiftTarget - completed)} ${this.t('plotsToTarget')}`}</span>
         </div>
       </div>
     `;
@@ -1817,15 +1824,15 @@ window.AEFieldApp = {
           <div class="inline-flex rounded-[6px] border border-[#CFD5D0] p-0.5 bg-white">
             <button type="button" onclick="AEFieldApp.toggleFocusMode()"
               class="px-2.5 py-1 rounded-[4px] font-semibold text-xs bg-[#141A17] text-white">
-              <i class="fa-solid fa-bolt mr-1"></i> Conversational Focus
+              <i class="fa-solid fa-bolt mr-1"></i> ${this.t('conversationalFocus')}
             </button>
             <button type="button" onclick="AEFieldApp.toggleFocusMode()"
               class="px-2.5 py-1 rounded-[4px] font-medium text-xs text-[#525B56] hover:text-[#111613]">
-              <i class="fa-solid fa-list mr-1"></i> Classic Form
+              <i class="fa-solid fa-list mr-1"></i> ${this.t('classicForm')}
             </button>
           </div>
           <div class="flex items-center gap-2 tabular-nums">
-            <span class="font-semibold text-[#111613]">Q${this.focusQuestionIndex + 1} of ${allQuestions.length}</span>
+            <span class="font-semibold text-[#111613]">Q${this.focusQuestionIndex + 1} ${this.t('of')} ${allQuestions.length}</span>
             <span class="text-[#247B50] font-bold">(${progressPct}%)</span>
           </div>
         </div>
@@ -1839,8 +1846,8 @@ window.AEFieldApp = {
         <div class="bg-white border border-[#E4E7E4] rounded-[10px] p-6 sm:p-8 space-y-6 ae-question-animate">
           <div class="space-y-2">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-semibold text-[#247B50]">Question ${this.focusQuestionIndex + 1}</span>
-              ${q.required ? '<span class="text-[#C4242A] text-xs font-semibold">* Required</span>' : '<span class="text-[#646E68] text-xs">Optional</span>'}
+              <span class="text-xs font-semibold text-[#247B50]">${this.t('question')} ${this.focusQuestionIndex + 1}</span>
+              ${q.required ? `<span class="text-[#C4242A] text-xs font-semibold">* ${this.t('required')}</span>` : `<span class="text-[#646E68] text-xs">${this.t('optional')}</span>`}
             </div>
             <h2 class="text-lg sm:text-xl md:text-2xl font-semibold text-[#111613] leading-snug tracking-tight">
               ${this.escapeHtml(q.title)}
@@ -1867,7 +1874,7 @@ window.AEFieldApp = {
             ${this.focusQuestionIndex === 0 ? 'disabled class="opacity-40 cursor-not-allowed"' : ''}
             class="h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-2 ae-press">
             <i class="fa-solid fa-arrow-up text-xs"></i>
-            <span>Previous</span>
+            <span>${this.t('previous')}</span>
             <span class="ae-kbd hidden sm:inline">↑</span>
           </button>
 
@@ -1875,7 +1882,7 @@ window.AEFieldApp = {
             ${this.focusQuestionIndex < allQuestions.length - 1 ? `
               <button type="button" onclick="AEFieldApp.nextFocusQuestion()"
                 class="h-10 px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
-                <span>Continue</span>
+                <span>${this.t('continue')}</span>
                 <i class="fa-solid fa-arrow-down text-xs"></i>
                 <span class="ae-kbd hidden sm:inline bg-white/20 text-white border-white/30">Enter ↵</span>
               </button>
@@ -1883,7 +1890,7 @@ window.AEFieldApp = {
               <button type="button" onclick="AEFieldApp.submitResponse()"
                 class="h-10 px-6 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                 <i class="fa-solid fa-check text-xs"></i>
-                <span>Complete &amp; Submit</span>
+                <span>${this.t('completeSubmit')}</span>
               </button>
             `}
           </div>
@@ -1954,11 +1961,11 @@ window.AEFieldApp = {
     return `
       <div class="space-y-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4">
         <div class="flex items-center justify-between text-xs text-[#525B56]">
-          <span>Sign with finger, stylus, or mouse inside the box:</span>
+          <span>${this.t('signPrompt')}</span>
           ${hasSig ? `
             <button type="button" onclick="AEFieldApp.clearSignature('${q.id}')"
               class="text-[#C4242A] hover:underline font-medium inline-flex items-center gap-1 ae-press">
-              <i class="fa-solid fa-rotate-left text-[11px]"></i> Clear Signature
+              <i class="fa-solid fa-rotate-left text-[11px]"></i> ${this.t('clearSignature')}
             </button>` : ''}
         </div>
 
@@ -1968,21 +1975,21 @@ window.AEFieldApp = {
           ` : `
             <canvas id="canvas_sig_${q.id}" class="w-full h-full cursor-crosshair block" width="600" height="144"></canvas>
             <div id="sig_hint_${q.id}" class="absolute inset-0 pointer-events-none flex items-center justify-center text-xs text-[#A3ACA6]">
-              <i class="fa-solid fa-signature mr-1.5"></i> Farmer or Agro-Dealer Signature
+              <i class="fa-solid fa-signature mr-1.5"></i> ${this.t('signatureHint')}
             </div>
           `}
         </div>
 
         ${hasSig ? `
           <div class="text-[11px] font-semibold text-[#247B50] flex items-center gap-1.5">
-            <i class="fa-solid fa-circle-check"></i> Digital consent signature verified and saved.
+            <i class="fa-solid fa-circle-check"></i> ${this.t('signatureVerified')}
           </div>
         ` : `
           <div class="flex items-center justify-between text-[11px] text-[#646E68]">
-            <span>Draw signature with finger or pen</span>
+            <span>${this.t('drawSignaturePrompt')}</span>
             <button type="button" onclick="AEFieldApp.saveSignatureFromCanvas('${q.id}')"
               class="h-7 px-3 rounded-[4px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
-              Save Signature
+              ${this.t('saveSignature')}
             </button>
           </div>
         `}
@@ -2069,7 +2076,7 @@ window.AEFieldApp = {
               <img src="${this.escapeAttr(photoData.dataUrl)}" alt="Photo Proof" class="max-h-64 object-contain rounded-[6px]" />
               <button type="button" onclick="AEFieldApp.clearPhotoProof('${q.id}')"
                 class="absolute top-2 right-2 h-7 px-2.5 rounded-[4px] bg-black/75 hover:bg-black text-white text-xs font-semibold ae-press inline-flex items-center gap-1">
-                <i class="fa-solid fa-trash-can text-[11px]"></i> Retake Photo
+                <i class="fa-solid fa-trash-can text-[11px]"></i> ${this.t('retakePhoto')}
               </button>
             </div>
             <div class="flex items-center justify-between text-[11px] text-[#525B56] tabular-nums">
@@ -2082,7 +2089,7 @@ window.AEFieldApp = {
         ` : `
           <div class="text-center py-5 border border-[#CFD5D0] rounded-[6px] bg-[#FAFBF9] space-y-2.5">
             <div class="space-y-1">
-              <div class="text-xs font-semibold text-[#111613]">Capture Crop Trial / Agro-Dealer Photo Proof</div>
+              <div class="text-xs font-semibold text-[#111613]">${this.t('photoProofTitle')}</div>
               <p class="text-[11px] text-[#525B56] max-w-xs mx-auto">
                 Opens smartphone camera directly. Compressed automatically to &le;150KB for offline storage.
               </p>
@@ -2091,7 +2098,7 @@ window.AEFieldApp = {
               <label for="input_photo_${q.id}"
                 class="min-h-[44px] px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer ae-press">
                 <i class="fa-solid fa-camera text-sm text-[#3FC07A]"></i>
-                <span>Open Camera / Upload Photo</span>
+                <span>${this.t('openCamera')}</span>
               </label>
               <input type="file" id="input_photo_${q.id}" accept="image/*" capture="environment" class="sr-only"
                 onchange="AEFieldApp.handlePhotoProofUpload('${q.id}', this)" />
@@ -2293,36 +2300,36 @@ window.AEFieldApp = {
                     isVerified ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'
                   }">
                     <i class="fa-solid ${isVerified ? 'fa-circle-check text-[#247B50]' : 'fa-circle-question'}"></i>
-                    ${isVerified ? 'KEPHIS Verified' : 'Unverified Format'}
+                    ${isVerified ? this.t('kephisVerified') : this.t('unverifiedFormat')}
                   </span>
                 </div>
                 <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#EFEFEF]">
                   <button type="button" onclick="AEFieldApp.clearBarcode('${q.id}')"
                     class="h-8 px-3 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
-                    <i class="fa-solid fa-rotate-left mr-1"></i> Scan Another
+                    <i class="fa-solid fa-rotate-left mr-1"></i> ${this.t('scanAnother')}
                   </button>
                 </div>
               </div>`
             : `<div class="space-y-3">
                 <div class="p-4 text-center bg-[#FAFBF9] border border-[#CFD5D0] rounded-[6px] space-y-2">
                   <div class="space-y-1">
-                    <div class="text-xs font-semibold text-[#111613]">Optical Camera Barcode / QR Scanner</div>
+                    <div class="text-xs font-semibold text-[#111613]">${this.t('opticalBarcodeTitle')}</div>
                     <p class="text-[11px] text-[#525B56] max-w-xs mx-auto">
-                      Scan KEPHIS security tag, seed lot barcode, or scratch-off serial number.
+                      ${this.t('opticalBarcodeDesc')}
                     </p>
                   </div>
                   <div>
                     <button type="button" onclick="AEFieldApp.triggerBarcodeScanner('${q.id}')"
                       class="min-h-[44px] px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                       <i class="fa-solid fa-barcode text-sm text-[#3FC07A]"></i>
-                      <span>Launch Camera Barcode Scanner</span>
+                      <span>${this.t('launchBarcodeScanner')}</span>
                     </button>
                   </div>
                 </div>
 
                 <div class="relative flex py-1 items-center">
                   <div class="flex-grow border-t border-[#E4E7E4]"></div>
-                  <span class="flex-shrink mx-3 text-[11px] font-medium text-[#646E68]">OR TYPE SERIAL MANUALLY</span>
+                  <span class="flex-shrink mx-3 text-[11px] font-medium text-[#646E68]">${this.t('orTypeSerialManually')}</span>
                   <div class="flex-grow border-t border-[#E4E7E4]"></div>
                 </div>
 
@@ -2334,7 +2341,7 @@ window.AEFieldApp = {
                   <button type="button"
                     onclick="AEFieldApp.saveManualBarcode('${q.id}')"
                     class="min-h-[44px] px-5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
-                    Verify
+                    ${this.t('verify')}
                   </button>
                 </div>
               </div>`
@@ -2381,14 +2388,14 @@ window.AEFieldApp = {
                 <div class="space-y-1">
                   <div class="text-xs font-bold text-[#831C1E] inline-flex items-center gap-1.5">
                     <span class="w-2 h-2 rounded-full bg-[#C4242A] animate-ping"></span>
-                    <span>Recording Field Audio Testimony…</span>
+                    <span>${this.t('recordingAudioTestimony')}</span>
                   </div>
                   <div class="text-sm tabular-nums font-semibold text-[#111613]" id="audio_timer_${q.id}">00:08 / 02:00</div>
                 </div>
                 <button type="button" onclick="AEFieldApp.stopAudioRecording('${q.id}')"
                   class="min-h-[44px] px-5 rounded-[6px] bg-[#C4242A] hover:bg-[#9B1D22] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                   <i class="fa-solid fa-stop"></i>
-                  <span>Stop & Save Recording</span>
+                  <span>${this.t('stopSaveRecording')}</span>
                 </button>
               </div>`
             : hasAudio
@@ -2397,13 +2404,13 @@ window.AEFieldApp = {
                   <div class="flex items-center gap-2">
                     <i class="fa-solid fa-volume-high text-[#247B50] text-lg"></i>
                     <div>
-                      <div class="text-xs font-semibold text-[#111613]">Farmer Voice Testimony Saved</div>
+                      <div class="text-xs font-semibold text-[#111613]">${this.t('voiceTestimonySaved')}</div>
                       <div class="text-[11px] text-[#525B56]">${val.durationSec || 15}s audio · Stored in offline IndexedDB</div>
                     </div>
                   </div>
                   <button type="button" onclick="AEFieldApp.clearAudioRecording('${q.id}')"
                     class="text-xs font-medium text-[#C4242A] hover:underline">
-                    Delete / Re-record
+                    ${this.t('deleteReRecord')}
                   </button>
                 </div>
                 <div class="pt-1">
@@ -2414,16 +2421,16 @@ window.AEFieldApp = {
               </div>`
             : `<div class="p-4 text-center bg-[#FAFBF9] border border-[#CFD5D0] rounded-[6px] space-y-2">
                 <div class="space-y-1">
-                  <div class="text-xs font-semibold text-[#111613]">Farmer Qualitative Audio Testimony</div>
+                  <div class="text-xs font-semibold text-[#111613]">${this.t('audioTestimonyTitle')}</div>
                   <p class="text-[11px] text-[#525B56] max-w-xs mx-auto">
-                    Record respondent verbal feedback or seed inspection notes (up to 120s).
+                    ${this.t('audioTestimonyDesc')}
                   </p>
                 </div>
                 <div>
                   <button type="button" onclick="AEFieldApp.startAudioRecording('${q.id}')"
                     class="min-h-[44px] px-5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                     <i class="fa-solid fa-microphone text-sm"></i>
-                    <span>Start Voice Recording</span>
+                    <span>${this.t('startVoiceRecording')}</span>
                   </button>
                 </div>
               </div>`
@@ -2497,7 +2504,7 @@ window.AEFieldApp = {
         ${
           items.length === 0
             ? `<div class="p-4 text-center bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#525B56]">
-                No inventory / plot roster items added yet. Tap below to add a variety record.
+                ${this.t('noRosterItems')}
               </div>`
             : `<div class="space-y-2.5">
                 ${items
@@ -2510,7 +2517,7 @@ window.AEFieldApp = {
                       </span>
                       <button type="button" onclick="AEFieldApp.removeRepeatRow('${q.id}', ${rowIdx})"
                         class="text-xs text-[#646E68] hover:text-[#C4242A] inline-flex items-center gap-1">
-                        <i class="fa-regular fa-trash-can"></i> Remove
+                        <i class="fa-regular fa-trash-can"></i> ${this.t('remove')}
                       </button>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
@@ -2539,7 +2546,7 @@ window.AEFieldApp = {
         <button type="button" onclick="AEFieldApp.addRepeatRow('${q.id}')"
           class="w-full h-10 rounded-[6px] border border-[#247B50] bg-white hover:bg-[#DCFAE5]/40 text-[#247B50] text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press transition-colors">
           <i class="fa-solid fa-plus"></i>
-          <span>${this.escapeHtml(q.addButtonLabel || '+ Add Another Roster Item')}</span>
+          <span>${this.escapeHtml(q.addButtonLabel || this.t('addAnotherRosterItem'))}</span>
         </button>
       </div>
     `;
@@ -2663,8 +2670,8 @@ window.AEFieldApp = {
                   <i class="fa-solid fa-clipboard-check text-[#3FC07A]"></i>
                 </div>
                 <div>
-                  <h3 class="text-sm font-semibold text-[#111613]">Field Operations Menu</h3>
-                  <p class="text-[11px] text-[#525B56]">Offline tools & operator controls</p>
+                  <h3 class="text-sm font-semibold text-[#111613]">${this.t('fieldOperationsMenu')}</h3>
+                  <p class="text-[11px] text-[#525B56]">${this.t('offlineToolsDesc')}</p>
                 </div>
               </div>
               <button onclick="AEFieldApp.closeModals()" aria-label="Close"
@@ -2676,7 +2683,7 @@ window.AEFieldApp = {
             <!-- Active Operator Card -->
             <div class="p-3 rounded-[8px] bg-[#F8F9F8] border border-[#E4E7E4] space-y-2">
               <div class="flex items-center justify-between">
-                <span class="text-[11px] font-semibold text-[#525B56]">Active Operator</span>
+                <span class="text-[11px] font-semibold text-[#525B56]">${this.t('activeOperator')}</span>
                 ${
                   isAdmin
                     ? `<span class="px-2 py-0.5 rounded-[4px] text-[10px] font-bold bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1">
@@ -2696,7 +2703,7 @@ window.AEFieldApp = {
                 <button type="button" onclick="AEFieldApp.openEnumeratorPicker()"
                   class="flex-1 h-8 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center justify-center gap-1.5 ae-press">
                   <i class="fa-solid fa-user-tag text-xs text-[#247B50]"></i>
-                  <span>Switch Operator</span>
+                  <span>${this.t('switchOperator')}</span>
                 </button>
                 ${
                   isAdmin || isSupervisor
@@ -2704,7 +2711,7 @@ window.AEFieldApp = {
                         title="Lock tablet for field enumerators"
                         class="h-8 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] hover:text-[#831C1E] text-xs font-medium text-[#525B56] inline-flex items-center justify-center gap-1.5 ae-press">
                         <i class="fa-solid fa-lock text-xs"></i>
-                        <span>Lock Tablet</span>
+                        <span>${this.t('lockTablet')}</span>
                       </button>`
                     : ''
                 }
@@ -2714,18 +2721,18 @@ window.AEFieldApp = {
             <!-- Active Survey Picker Card -->
             <div class="p-3 rounded-[8px] bg-[#F8F9F8] border border-[#E4E7E4] flex items-center justify-between gap-3">
               <div class="min-w-0">
-                <div class="text-[11px] font-semibold text-[#525B56]">Active Survey</div>
-                <div class="text-xs font-semibold text-[#111613] truncate">${this.escapeHtml(survey ? survey.title : 'No Survey Selected')}</div>
+                <div class="text-[11px] font-semibold text-[#525B56]">${this.t('activeSurvey')}</div>
+                <div class="text-xs font-semibold text-[#111613] truncate">${this.escapeHtml(survey ? (window.AEI18n ? window.AEI18n.localizeSurvey(survey, this.currentLang).title : survey.title) : this.t('noSurveySelected'))}</div>
               </div>
               <button type="button" onclick="AEFieldApp.openSurveyPicker()"
                 class="h-8 px-3 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold shrink-0 ae-press">
-                Change
+                ${this.t('change')}
               </button>
             </div>
 
             <!-- Language Switcher Section -->
             <div class="space-y-1.5">
-              <span class="text-xs font-semibold text-[#111613] block">Display Language</span>
+              <span class="text-xs font-semibold text-[#111613] block">${this.t('displayLanguage')}</span>
               ${
                 window.AEI18n
                   ? window.AEI18n.renderLanguageSwitch(
@@ -2740,7 +2747,7 @@ window.AEFieldApp = {
 
             <!-- Field Display & Utility Toggles Grid -->
             <div class="space-y-1.5">
-              <span class="text-xs font-semibold text-[#111613] block">Field Tools & Modes</span>
+              <span class="text-xs font-semibold text-[#111613] block">${this.t('fieldToolsModes')}</span>
               <div class="grid grid-cols-2 gap-2">
                 <button type="button" onclick="AEFieldApp.toggleSunlightMode()"
                   class="p-2.5 rounded-[6px] border text-left flex items-start gap-2.5 ae-press ${
@@ -2750,9 +2757,9 @@ window.AEFieldApp = {
                   }">
                   <i class="fa-solid fa-sun text-sm ${this.sunlightMode ? 'text-[#FBBF24]' : 'text-[#92400E]'} mt-0.5"></i>
                   <div class="min-w-0">
-                    <div class="text-xs font-semibold">Sunlight Mode</div>
+                    <div class="text-xs font-semibold">${this.t('sunlightMode')}</div>
                     <div class="text-[10px] ${this.sunlightMode ? 'text-[#CFD5D0]' : 'text-[#525B56]'}">
-                      ${this.sunlightMode ? 'High Contrast ON' : 'Standard'}
+                      ${this.sunlightMode ? this.t('sunlightModeOn') : this.t('standardMode')}
                     </div>
                   </div>
                 </button>
@@ -2765,9 +2772,9 @@ window.AEFieldApp = {
                   }">
                   <i class="fa-solid fa-layer-group text-sm ${this.runnerMode === 'focus' ? 'text-[#247B50]' : 'text-[#525B56]'} mt-0.5"></i>
                   <div class="min-w-0">
-                    <div class="text-xs font-semibold">Focus Mode</div>
+                    <div class="text-xs font-semibold">${this.t('focusMode')}</div>
                     <div class="text-[10px] ${this.runnerMode === 'focus' ? 'text-[#04250E]/80' : 'text-[#525B56]'}">
-                      ${this.runnerMode === 'focus' ? 'Single Q' : 'Section View'}
+                      ${this.runnerMode === 'focus' ? this.t('singleQuestion') : this.t('sectionView')}
                     </div>
                   </div>
                 </button>
@@ -2776,8 +2783,8 @@ window.AEFieldApp = {
                   class="p-2.5 rounded-[6px] border border-[#E4E7E4] bg-white hover:bg-[#F8F9F8] text-[#111613] text-left flex items-start gap-2.5 ae-press">
                   <i class="fa-solid fa-mobile-screen-button text-sm text-[#247B50] mt-0.5"></i>
                   <div class="min-w-0">
-                    <div class="text-xs font-semibold">${this.isAppInstalled ? 'Installed' : 'Install PWA'}</div>
-                    <div class="text-[10px] text-[#525B56]">${this.isAppInstalled ? 'Device Home Screen' : 'Add to Device'}</div>
+                    <div class="text-xs font-semibold">${this.isAppInstalled ? this.t('installed') : this.t('installPwa')}</div>
+                    <div class="text-[10px] text-[#525B56]">${this.isAppInstalled ? this.t('deviceHomeScreen') : this.t('addToDevice')}</div>
                   </div>
                 </button>
 
@@ -2785,8 +2792,8 @@ window.AEFieldApp = {
                   class="p-2.5 rounded-[6px] border border-[#E4E7E4] bg-white hover:bg-[#F8F9F8] text-[#111613] text-left flex items-start gap-2.5 ae-press">
                   <i class="fa-solid fa-download text-sm text-[#525B56] mt-0.5"></i>
                   <div class="min-w-0">
-                    <div class="text-xs font-semibold">Offline Bundle</div>
-                    <div class="text-[10px] text-[#525B56]">Save .html file</div>
+                    <div class="text-xs font-semibold">${this.t('offlineBundle')}</div>
+                    <div class="text-[10px] text-[#525B56]">${this.t('saveHtmlFile')}</div>
                   </div>
                 </button>
               </div>
@@ -2799,18 +2806,18 @@ window.AEFieldApp = {
                   ? `<button type="button" onclick="window.location.href='./index.html';"
                       class="w-full h-10 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                       <i class="fa-solid fa-gauge-high text-xs"></i>
-                      <span>Return to Operations Studio</span>
+                      <span>${this.t('returnToOperations')}</span>
                     </button>`
                   : isSupervisor
                   ? `<button type="button" onclick="window.location.href='./index.html';"
                       class="w-full h-10 rounded-[6px] bg-[#1E40AF] hover:bg-[#172554] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                       <i class="fa-solid fa-arrow-left text-xs"></i>
-                      <span>Return to Supervisor Portal</span>
+                      <span>${this.t('returnToSupervisor')}</span>
                     </button>`
                   : `<button type="button" onclick="AEFieldApp.openAdminPinPrompt()"
                       class="w-full h-10 rounded-[6px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#EAECE9] text-[#111613] text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                       <i class="fa-solid fa-lock text-xs text-[#525B56]"></i>
-                      <span>Admin Studio (Requires PIN)</span>
+                      <span>${this.t('adminRequiresPin')}</span>
                     </button>`
               }
             </div>
@@ -2828,8 +2835,8 @@ window.AEFieldApp = {
           <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-sm w-full p-5 space-y-4 ae-dialog-animate">
             <div class="flex items-start justify-between">
               <div>
-                <h3 class="text-base font-semibold text-[#111613]">Verify Enumerator PIN</h3>
-                <p class="text-xs text-[#525B56] mt-0.5">Enter 4-digit PIN for <strong>${this.escapeHtml(this.pendingEnumPinPerson.label)}</strong></p>
+                <h3 class="text-base font-semibold text-[#111613]">${this.t('verifyEnumPin')}</h3>
+                <p class="text-xs text-[#525B56] mt-0.5">${this.t('enter4DigitPin')} <strong>${this.escapeHtml(this.pendingEnumPinPerson.label)}</strong></p>
               </div>
               <button onclick="AEFieldApp.closeModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
                 <i class="fa-solid fa-xmark text-xs"></i>
@@ -2848,7 +2855,7 @@ window.AEFieldApp = {
             <form onsubmit="event.preventDefault(); AEFieldApp.confirmEnumeratorPin();" class="space-y-4">
               <div>
                 <label for="ae_enum_pin_challenge" class="block text-xs font-semibold text-[#111613] mb-1.5">
-                  4-Digit Security PIN
+                  ${this.t('securityPin4Digit')}
                 </label>
                 <input id="ae_enum_pin_challenge" type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric"
                   placeholder="••••" autocomplete="current-password"
@@ -2858,11 +2865,11 @@ window.AEFieldApp = {
               <div class="flex items-center gap-2 pt-1">
                 <button type="button" onclick="AEFieldApp.openEnumeratorPicker()"
                   class="w-1/2 h-10 rounded-[6px] border border-[#CFD5D0] bg-white text-[#111613] text-xs font-medium ae-press">
-                  Back
+                  ${this.t('back')}
                 </button>
                 <button type="submit"
                   class="w-1/2 h-10 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
-                  Verify &amp; Activate
+                  ${this.t('verifyActivate')}
                 </button>
               </div>
             </form>
@@ -2884,8 +2891,8 @@ window.AEFieldApp = {
                   <i class="fa-solid fa-mobile-screen-button text-sm"></i>
                 </div>
                 <div>
-                  <h3 class="text-sm font-semibold text-[#111613]">Install Field Collector</h3>
-                  <p class="text-xs text-[#525B56]">Apple iOS &amp; Safari Instructions</p>
+                  <h3 class="text-sm font-semibold text-[#111613]">${this.t('installCollector')}</h3>
+                  <p class="text-xs text-[#525B56]">${this.t('appleInstructions')}</p>
                 </div>
               </div>
               <button onclick="AEFieldApp.closeModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
@@ -2912,7 +2919,7 @@ window.AEFieldApp = {
 
             <div class="flex justify-end pt-1">
               <button type="button" onclick="AEFieldApp.closeModals()" class="h-8 px-4 rounded-[5px] bg-[#141A17] text-white text-xs font-semibold ae-press">
-                Got It
+                ${this.t('gotIt')}
               </button>
             </div>
           </div>
@@ -2985,7 +2992,7 @@ window.AEFieldApp = {
                       <div class="w-10 h-10 rounded-full bg-[#FFFBEB] text-[#92400E] mx-auto flex items-center justify-center">
                         <i class="fa-solid fa-lock text-sm"></i>
                       </div>
-                      <div class="text-xs font-semibold text-[#111613]">No Assigned Active Surveys</div>
+                      <div class="text-xs font-semibold text-[#111613]">${this.t('noAssignedSurveys')}</div>
                       <p class="text-[11px] text-[#525B56] leading-relaxed">
                         ${activePerson ? activePerson.fullName : 'Your enumerator profile'} currently has no active field surveys assigned. Contact your supervisor${
                           activePerson && activePerson.supervisorId ? ` (${activePerson.supervisorId})` : ''
@@ -3010,12 +3017,12 @@ window.AEFieldApp = {
                             } transition-colors flex items-center justify-between gap-3 ae-press">
                             <div class="min-w-0">
                               <div class="text-xs font-semibold truncate">${this.escapeHtml(loc.title)}</div>
-                              <div class="text-[11px] text-[#525B56] truncate mt-0.5">${this.escapeHtml(loc.category || 'General')} · ${qCount} questions</div>
+                              <div class="text-[11px] text-[#525B56] truncate mt-0.5">${this.escapeHtml(loc.category || 'General')} · ${qCount} ${this.t('questionsLabel')}</div>
                               ${
                                 isAssigned
                                   ? `<div class="flex items-center gap-2 mt-1">
                                       <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1">
-                                        <i class="fa-solid fa-list-check text-[9px]"></i> Assigned: ${task.completed}/${task.target} plots
+                                        <i class="fa-solid fa-list-check text-[9px]"></i> ${this.t('assignedPlots')}: ${task.completed}/${task.target} ${this.t('plots')}
                                       </span>
                                       ${task.deadline ? `<span class="text-[10px] text-[#525B56]">Due ${this.escapeHtml(task.deadline)}</span>` : ''}
                                     </div>`
@@ -3064,8 +3071,8 @@ window.AEFieldApp = {
           <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-sm w-full p-5 space-y-4 ae-dialog-animate">
             <div class="flex items-start justify-between">
               <div>
-                <h3 class="text-base font-semibold text-[#111613]">Active Enumerator</h3>
-                <p class="text-xs text-[#525B56] mt-0.5">Tagged on all recorded plot interview submissions</p>
+                <h3 class="text-base font-semibold text-[#111613]">${this.t('activeOperator')}</h3>
+                <p class="text-xs text-[#525B56] mt-0.5">${this.t('taggedOnAllSubmissions')}</p>
               </div>
               <button onclick="AEFieldApp.closeModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
                 <i class="fa-solid fa-xmark text-xs"></i>
@@ -3123,9 +3130,9 @@ window.AEFieldApp = {
             </div>
 
             <form onsubmit="event.preventDefault(); AEFieldApp.setEnumerator(document.getElementById('ae_enum_custom_input').value);" class="pt-2 border-t border-[#EFEFEF] flex items-center gap-2">
-              <input id="ae_enum_custom_input" type="text" maxlength="80" placeholder="Or enter custom name…"
+              <input id="ae_enum_custom_input" type="text" maxlength="80" placeholder="${this.t('orEnterCustomName')}"
                 class="flex-1 h-9 rounded-[5px] border border-[#CFD5D0] px-2.5 text-xs text-[#111613] focus:border-[#247B50] focus:outline-none" />
-              <button type="submit" class="h-9 px-3 rounded-[5px] bg-[#247B50] text-white text-xs font-medium ae-press">Set</button>
+              <button type="submit" class="h-9 px-3 rounded-[5px] bg-[#247B50] text-white text-xs font-medium ae-press">${this.t('set')}</button>
             </form>
 
             ${
@@ -3134,7 +3141,7 @@ window.AEFieldApp = {
                     <button type="button" onclick="AEFieldApp.handoverTabletToEnumerator()"
                       class="w-full h-8 px-3 rounded-[5px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#FFEDEA] hover:text-[#C4242A] text-xs font-medium text-[#525B56] flex items-center justify-center gap-1.5 transition-colors ae-press">
                       <i class="fa-solid fa-lock text-[10px]"></i>
-                      <span>Lock Tablet for Field Enumerator (Exit Admin Session)</span>
+                      <span>${this.t('lockTabletDesc')}</span>
                     </button>
                   </div>`
                 : ''
