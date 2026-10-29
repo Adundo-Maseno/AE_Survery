@@ -483,6 +483,9 @@ window.AEFieldApp = {
       }
     }
 
+    const sunLabel = document.getElementById('ae_hdr_sunlight_label');
+    if (sunLabel) sunLabel.textContent = this.t('sunlight');
+
     const roleBadge = document.getElementById('ae_hdr_role_badge');
     if (roleBadge) {
       if (currentUser && currentUser.role === 'admin') {
