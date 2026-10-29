@@ -39,7 +39,11 @@ window.AEFieldApp = {
   enumPinError: '',
 
   async boot() {
-    await window.aeStore.init();
+    try {
+      await window.aeStore.init();
+    } catch (err) {
+      console.warn('[FieldApp] Store init non-fatal warning:', err);
+    }
 
     if (window.AEI18n) {
       this.currentLang = window.AEI18n.getLanguage();
@@ -98,7 +102,7 @@ window.AEFieldApp = {
           localStorage.setItem('ae_active_enumerator', this.enumeratorName);
         } else {
           // If savedEnum corresponds to a registered enumerator, verify they exist
-          const matchedStaff = window.aeStore.personnel.find(
+          const matchedStaff = (window.aeStore.personnel || []).find(
             (p) => savedEnum.includes(p.id) || (p.fullName && savedEnum.includes(p.fullName))
           );
           if (matchedStaff) {

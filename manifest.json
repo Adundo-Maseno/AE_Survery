@@ -2,7 +2,8 @@
   "name": "AE Survey — Agri Experience Operations & Field Platform",
   "short_name": "AE Survey",
   "description": "Offline-capable enterprise survey and field enumeration platform for Agri Experience Limited, backed by Google Sheets and Google Apps Script.",
-  "start_url": "./index.html",
+  "id": "/",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#F4F6F4",
@@ -11,16 +12,28 @@
   "categories": ["business", "productivity", "utilities"],
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='42' fill='%23141A17'/%3E%3Cpath d='M54 102l27 27 57-63' stroke='%23247B50' stroke-width='18' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='138' cy='138' r='18' fill='%23247B50'/%3E%3C/svg%3E",
+      "src": "./icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23141A17'/%3E%3Cpath d='M144 272l72 72 152-168' stroke='%23247B50' stroke-width='48' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='368' cy='368' r='48' fill='%23247B50'/%3E%3C/svg%3E",
+      "src": "./icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -28,7 +41,7 @@
       "name": "Mobile Field Collector",
       "short_name": "Field App",
       "description": "Launch dedicated offline enumerator application",
-      "url": "./field.html"
+      "url": "./field"
     }
   ]
 }

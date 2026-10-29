@@ -38,7 +38,11 @@ window.AEApp = {
   loginError: '',
 
   async boot() {
-    await window.aeStore.init();
+    try {
+      await window.aeStore.init();
+    } catch (err) {
+      console.warn('[AEApp] Store init non-fatal warning:', err);
+    }
     if (window.aeStore.surveys.length > 0 && !window.aeStore.getSurveyById(this.activeSurveyId)) {
       this.activeSurveyId = window.aeStore.surveys[0].id;
     }
