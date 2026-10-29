@@ -113,6 +113,17 @@ function isCallerAdmin_(callerId) {
 }
 
 /**
+ * Checks whether the caller has administrative rights either via a valid AE_SYNC_TOKEN
+ * or via verified personnel ID.
+ */
+function isAuthorizedAdmin_(callerId, syncToken) {
+  if (verifySyncToken_(syncToken)) {
+    return true;
+  }
+  return isCallerAdmin_(callerId);
+}
+
+/**
  * Handles HTTP GET requests.
  * Supports:
  * - ?action=ping       -> Health check & spreadsheet metadata
@@ -264,8 +275,10 @@ function doPost(e) {
       });
     }
 
+    var clientSyncToken = payload.syncToken || (e && e.parameter && e.parameter.syncToken) || '';
+
     if (action === 'UPSERT_SURVEY' && payload.survey) {
-      if (!isCallerAdmin_(payload.callerId)) {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
         return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
       }
       upsertSurveyRow_(payload.survey);
@@ -292,7 +305,7 @@ function doPost(e) {
 
     if (action === 'UPSERT_PERSONNEL' && payload.personnel) {
       var isSelf = payload.callerId && String(payload.callerId).trim() === String(payload.personnel.id || '').trim();
-      if (!isCallerAdmin_(payload.callerId) && !isSelf) {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken) && !isSelf) {
         return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' }, 403);
       }
       upsertPersonnelRow_(payload.personnel);
@@ -309,7 +322,7 @@ function doPost(e) {
 
     if (action === 'SUBMIT_RESPONSE' && payload.response) {
       var surveyMap = getSurveyMap_();
-      if (payload.survey && isCallerAdmin_(payload.callerId)) {
+      if (payload.survey && isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
         upsertSurveyRow_(payload.survey);
         surveyMap[payload.survey.id] = payload.survey;
       }
@@ -326,7 +339,7 @@ function doPost(e) {
     }
 
     if (action === 'DELETE_SURVEY' && payload.surveyId) {
-      if (!isCallerAdmin_(payload.callerId)) {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
         return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
       }
       deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(payload.surveyId));
@@ -340,7 +353,7 @@ function doPost(e) {
     }
 
     // Default: BATCH_SYNC (handles offline queue flush + full sync)
-    var isCallerAdmin = isCallerAdmin_(payload.callerId);
+    var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
     var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
     var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
     var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];

@@ -1579,13 +1579,38 @@ class AESurveyStore {
       const cols = await this.readStoreAll('collectors');
       if (cols.length) this.collectors = cols;
       const resps = await this.readStoreAll('responses');
-      if (resps.length) this.responses = resps;
+      if (resps.length) {
+        this.responses = resps;
+        this.healResponsesAnswers();
+      }
       const staff = await this.readStoreAll('personnel');
       if (staff.length) this.personnel = staff;
       const queue = await this.readStoreAll('syncQueue');
       this.syncQueue = queue;
       this.saveToLocalStorage();
     }
+  }
+
+  /**
+   * Restores rich question answers if responses were stripped or damaged by prior column mismatch
+   */
+  healResponsesAnswers() {
+    const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
+    let healed = 0;
+    (this.responses || []).forEach((r) => {
+      const hasAnswers = r.answers && typeof r.answers === 'object' && Object.keys(r.answers).length > 0;
+      if (!hasAnswers && seedMap.has(r.id)) {
+        const seedItem = seedMap.get(r.id);
+        r.answers = JSON.parse(JSON.stringify(seedItem.answers || {}));
+        if (seedItem.reviewStatus && !r.reviewStatus) r.reviewStatus = seedItem.reviewStatus;
+        if (seedItem.qaFlags && (!r.qaFlags || !r.qaFlags.length)) r.qaFlags = seedItem.qaFlags;
+        healed++;
+      }
+    });
+    if (healed > 0) {
+      this.saveToLocalStorage();
+    }
+    return healed;
   }
 
   readStoreAll(storeName) {
@@ -2814,18 +2839,18 @@ class AESurveyStore {
       ? window.AESession.getCurrentUser()
       : null;
 
-    // Smart payload optimization: only send full survey schemas when forced,
-    // when schemas were created/edited locally, or on very first cloud connection.
+    // Send survey schemas if forced, dirty, first connect, or manual sync
     const shouldSyncSurveys = Boolean(
-      options.forceAll || options.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt
+      options.forceAll || options.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt || options.manual
     );
     const surveysPayload = shouldSyncSurveys ? this.surveys : [];
 
+    const defaultCallerId = (this.personnel && this.personnel[0] && this.personnel[0].id) ? this.personnel[0].id : 'ADM-01';
     const payload = {
       action: 'BATCH_SYNC',
       syncToken: this.settings.syncToken || '',
       deviceId: this.settings.deviceId,
-      callerId: currentSessionUser ? currentSessionUser.id : '',
+      callerId: currentSessionUser ? currentSessionUser.id : defaultCallerId,
       surveys: surveysPayload,
       collectors: this.collectors,
       responses: unsyncedResponses,
