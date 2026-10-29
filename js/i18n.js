@@ -18,7 +18,8 @@
   const LANGUAGES = [
     { code: 'en', label: 'English', native: 'English', flag: '🇬🇧' },
     { code: 'sw', label: 'Swahili', native: 'Kiswahili', flag: '🇰🇪' },
-    { code: 'fr', label: 'French', native: 'Français', flag: '🇫🇷' }
+    { code: 'fr', label: 'French', native: 'Français', flag: '🇫🇷' },
+    { code: 'pt', label: 'Portuguese', native: 'Português', flag: '🇵🇹' }
   ];
 
   const UI_STRINGS = {
@@ -165,6 +166,54 @@
       syncSheets: 'Synchroniser Google Sheets',
       switchLanguage: 'Langue',
       selectLanguage: 'Sélectionner la Langue'
+    },
+    pt: {
+      fieldCollector: 'Coletor de Campo AE',
+      fieldAppBadge: 'App de Campo',
+      adminStudio: 'Estúdio de Administração',
+      adminStudioDesc: 'Digite o PIN de supervisor para aceder ao Construtor e Análises',
+      verifyPin: 'Verificar PIN do Supervisor',
+      enterPin: 'PIN de Segurança',
+      openAdmin: 'Abrir Administração',
+      cancel: 'Cancelar',
+      close: 'Fechar',
+      section: 'Secção',
+      of: 'de',
+      draftSaved: 'Rascunho guardado',
+      nextSection: 'Próxima Secção',
+      prevSection: 'Secção Anterior',
+      submitSurvey: 'Submeter e Verificar Recibo',
+      nextInterview: 'Próxima Entrevista',
+      interviewLogged: 'Registo de Entrevista Concluído',
+      interviewLoggedSub: 'Dados guardados na base de dados local IndexedDB. Prontos para sincronização com o Google Sheets.',
+      receiptId: 'Nº do Recibo',
+      submittedAt: 'Submetido em',
+      enumerator: 'Inquiridor',
+      duration: 'Duração',
+      gpsCoordinates: 'Coordenadas GPS',
+      offlineQueueStatus: 'Estado de Sincronização na Nuvem',
+      storedLocallyPending: 'Armazenado localmente no dispositivo (Sincronização pendente)',
+      syncedDirectly: 'Sincronizado diretamente com o Google Sheets',
+      selectOption: 'Selecione uma opção…',
+      typeAnswer: 'Escreva a sua resposta…',
+      enterFieldNotes: 'Insira observações detalhadas de campo…',
+      selectOrSearch: 'Selecione ou pesquise…',
+      otherSpecify: 'Outro (por favor especifique)…',
+      captureGps: 'Capturar GPS por Satélite',
+      gpsCapturing: 'A ligar ao sensor satélite do tablet…',
+      gpsLocked: 'Coordenadas Bloqueadas',
+      gpsOfflineNote: 'Funciona 100% offline através do receptor de satélite do dispositivo',
+      bagConverterLabel: 'Conversor de sacos de 90 kg:',
+      bags: 'sacos',
+      range: 'Intervalo:',
+      reviewErrors: 'Por favor, reveja e responda às perguntas obrigatórias assinaladas.',
+      selectActiveSurvey: 'Escolher Inquérito a Administrar',
+      switchEnumerator: 'Mudar Inquiridor de Campo',
+      offlineQueue: 'Fila offline',
+      online: 'Online',
+      syncSheets: 'Sincronizar com Sheets',
+      switchLanguage: 'Idioma',
+      selectLanguage: 'Selecionar Idioma'
     }
   };
 
@@ -336,6 +385,98 @@
             placeholder: 'Saisissez les observations de terrain et commentaires du producteur…'
           }
         }
+      },
+      pt: {
+        title: 'Inquérito de 2026 sobre Adoção de Sementes de Milho Tolerantes à Seca por Pequenos Agricultores',
+        description: 'Enumeração de campo avaliando desempenho de variedades de sementes, taxas de germinação, co-aplicação de fertilizantes e Net Promoter Score (NPS) dos agricultores nas províncias rurais.',
+        pages: {
+          page_1: {
+            title: 'Secção 1: Perfil da Parcela, Variedade de Semente e Coordenadas GPS',
+            description: 'Registar detalhes essenciais da parcela, fonte primária de semente e localização GPS do agricultor antes da recolha de dados de rendimento.'
+          },
+          page_2: {
+            title: 'Secção 2: Desempenho Agronómico, Estimativa de Colheita e Avaliação do Agricultor (NPS)',
+            description: 'Avaliar características da variedade cultivada, rendimento colhido por acre e recomendação do agricultor para vizinhos.'
+          }
+        },
+        questions: {
+          q_county: {
+            title: 'Em qual província / zona agro-ecológica se localiza esta parcela agrícola?',
+            helpText: 'Selecione a divisão administrativa onde a entrevista está a decorrer.',
+            options: [
+              'Província de Nakuru (Planalto do Vale do Rift)',
+              'Província de Machakos (Semi-Árido Oriental)',
+              'Província de Kakamega (Ocidente Húmido de Transição)',
+              'Província de Meru (Terras Altas Centrais do Monte Quénia)',
+              'Província de Uasin Gishu (Celeiro Comercial)',
+              'Província de Kitui (Terras Baixas Semi-Áridas do Leste)'
+            ]
+          },
+          q_seed_variety: {
+            title: 'Qual a principal variedade de semente de milho que semeou durante a época principal das chuvas?',
+            helpText: 'Peça para inspecionar o rótulo do saco se o agricultor ainda o guardar.',
+            options: [
+              'KH500-43A (Híbrido de Terras Altas)',
+              'DK 8031 (Maturidade Média)',
+              'SC Duma 43 (Maturidade Precoce)',
+              'H6213 (Alta Altitude Tardia)',
+              'DH04 (Tolerante à Seca para Terras Baixas)',
+              'Semente Reciclada da Época Passada (Não Certificada)'
+            ]
+          },
+          q_inputs_used: {
+            title: 'Quais insumos de fertilidade do solo ou proteção de culturas foram aplicados nesta parcela?',
+            helpText: 'Selecione todos os insumos aplicados no plantio ou em cobertura.',
+            options: [
+              'Adubo de Plantação DAP / NPK',
+              'Adubo de Cobertura CAN / Ureia',
+              'Composto / Estrume de Curral',
+              'Controlo Biológico/Químico da Lagarta-do-Funil',
+              'Rhizobium Certificado / Bio-Estimulante',
+              'Nenhum Insumo Aplicado'
+            ]
+          },
+          q_gps_plot: {
+            title: 'Capturar Coordenadas GPS da Parcela e Ponto de Referência da Aldeia',
+            helpText: 'Permaneça no centro da parcela para obter precisão por satélite inferior a 10 metros.'
+          },
+          q_trait_matrix: {
+            title: 'Avalie a variedade de semente cultivada quanto aos seguintes traços agronómicos:',
+            helpText: 'Avalie cada característica de acordo com a observação direta do agricultor.',
+            rows: [
+              'Uniformidade de germinação (emergência em 7 dias)',
+              'Tolerância a períodos secos a meio da época',
+              'Resistência à podridão da espiga e pragas de armazém',
+              'Peso do grão e qualidade da farinha moída'
+            ],
+            columns: ['Excelente', 'Bom', 'Razoável', 'Fraco']
+          },
+          q_yield_kg: {
+            title: 'Estimativa de Rendimento de Milho Colhido por Acre',
+            helpText: 'Converta os sacos de 90kg para quilogramas (ex: 15 sacos = 1.350 kg/acre).'
+          },
+          q_dealer_rating: {
+            title: 'Qual o seu grau de satisfação com a distância e o atendimento no seu agro-comerciante local?',
+            helpText: '1 estrela = Muito Insatisfeito, 5 estrelas = Muito Satisfeito'
+          },
+          q_nps_seed: {
+            title: 'Numa escala de 0 a 10, com que probabilidade recomendaria esta semente certificada aos seus vizinhos na próxima época?',
+            helpText: '0 = De modo nenhum recomendaria | 10 = Recomendaria com toda a certeza'
+          },
+          q_field_notes: {
+            title: 'Observações do Inquiridor e Feedback do Agricultor sobre Disponibilidade de Sementes',
+            helpText: 'Registe detalhes qualitativos: disponibilidade de pacotes de 2kg, receio de sementes falsas ou restrições de crédito.',
+            placeholder: 'Insira observações detalhadas de campo e comentários do agricultor…'
+          },
+          q_crop_photo: {
+            title: 'Fotografia Comprovativa da Parcela / Cultura',
+            helpText: 'Tire uma foto nítida da espiga de milho ou do stand da cultura no campo.'
+          },
+          q_farmer_signature: {
+            title: 'Consentimento do Agricultor e Assinatura de Verificação do Inquérito',
+            helpText: 'Peça ao agricultor para assinar no ecrã confirmando a veracidade das respostas.'
+          }
+        }
       }
     },
 
@@ -430,6 +571,51 @@
             helpText: 'Capturez à l’extérieur de l’entrée pour un verrouillage satellite optimal.'
           }
         }
+      },
+      pt: {
+        title: 'Auditoria de Stocks, Formatos de Embalagem e Preços de Agro-Comerciantes 2026',
+        description: 'Auditoria trimestral dos retalhistas agrícolas rurais monitorizando disponibilidade de sementes certificadas, conformidade do armazenamento e pagamentos digitais.',
+        pages: {
+          page_dealer_1: {
+            title: 'Verificação de Stocks e Preços do Retalhista',
+            description: 'A preencher ao balcão com o proprietário ou operador da loja de insumos.'
+          }
+        },
+        questions: {
+          qd_shop_type: {
+            title: 'Qual a classificação deste estabelecimento de insumos agrícolas?',
+            helpText: 'Verifique o alvará comercial e licença oficial exposta.',
+            options: [
+              'Grossista e Retalhista de Insumos Agrícolas',
+              'Retalhista Rural Independente (Agro-Pecuária)',
+              'Loja de Insumos de Cooperativa Agrícola',
+              'Agente de Aldeia / Distribuidor de Última Milha'
+            ]
+          },
+          qd_stock_items: {
+            title: 'Quais categorias de sementes certificadas estão fisicamente em stock hoje?',
+            helpText: 'Inspecione visualmente as prateleiras e armazém.',
+            options: [
+              'Milho Híbrido Tolerante à Seca (2kg / 10kg)',
+              'Feijão Comum Certificado (Nyota / Angaza)',
+              'Feijão-Frade, Feijão-Mungo e Sorgo',
+              'Sementes Hortícolas Variadas (Pacotes Herméticos)',
+              'Sementes de Pastagens e Forrageiras (Brachiaria / Boma Rhodes)'
+            ]
+          },
+          qd_price_2kg: {
+            title: 'Preço Atual de Venda ao Público para Pacote de 2kg de Milho Certificado',
+            helpText: 'Registe o preço em moeda local (KES / MZN).'
+          },
+          qd_storage_rating: {
+            title: 'Classificação de Auditoria do Inquiridor: Ventilação do Armazém e Uso de Paletes',
+            helpText: '5 estrelas = Paletes de madeira elevadas, teto estanque, afastado de agroquímicos tóxicos.'
+          },
+          qd_gps: {
+            title: 'Coordenadas GPS da Entrada do Estabelecimento',
+            helpText: 'Capture no exterior da porta de entrada para sinal de satélite ideal.'
+          }
+        }
       }
     },
 
@@ -501,84 +687,95 @@
   };
 
   const COMMON_DICTIONARY = {
-    // English -> Swahili / French terms
-    'Yes': { sw: 'Ndiyo', fr: 'Oui' },
-    'No': { sw: 'Hapana', fr: 'Non' },
-    'Other': { sw: 'Nyingine', fr: 'Autre' },
-    'Poor': { sw: 'Duni', fr: 'Médiocre' },
-    'Fair': { sw: 'Wastani', fr: 'Passable' },
-    'Good': { sw: 'Nzuri', fr: 'Bon' },
-    'Excellent': { sw: 'Bora Kabisa', fr: 'Excellent' },
-    'Male': { sw: 'Mwanaume', fr: 'Homme' },
-    'Female': { sw: 'Mwanamke', fr: 'Femme' },
-    'Smallholder': { sw: 'Mkulima Mdogo', fr: 'Petit Exploitant' },
-    'Commercial': { sw: 'Kibiashara', fr: 'Commercial' },
-    'Select one option.': { sw: 'Chagua jibu moja.', fr: 'Sélectionnez une option.' },
-    'Select all that apply.': { sw: 'Chagua zote zinazohusika.', fr: 'Sélectionnez toutes les réponses applicables.' },
-    'Choose from the list.': { sw: 'Chagua kutoka kwenye orodha.', fr: 'Choisissez dans la liste.' },
-    'Enter numeric value.': { sw: 'Weka nambari.', fr: 'Entrez une valeur numérique.' },
-    'Select calendar date.': { sw: 'Chagua tarehe ya kalenda.', fr: 'Sélectionnez une date.' },
-    'Enter respondent name or ID…': { sw: 'Weka jina la mhojiwa au nambari…', fr: 'Entrez le nom ou l’identifiant…' },
-    'Write detailed field notes…': { sw: 'Andika maelezo ya kina ya nyanjani…', fr: 'Rédigez des notes de terrain détaillées…' },
+    // English -> Swahili / French / Portuguese terms
+    'Yes': { sw: 'Ndiyo', fr: 'Oui', pt: 'Sim' },
+    'No': { sw: 'Hapana', fr: 'Non', pt: 'Não' },
+    'Other': { sw: 'Nyingine', fr: 'Autre', pt: 'Outro' },
+    'Poor': { sw: 'Duni', fr: 'Médiocre', pt: 'Fraco' },
+    'Fair': { sw: 'Wastani', fr: 'Passable', pt: 'Razoável' },
+    'Good': { sw: 'Nzuri', fr: 'Bon', pt: 'Bom' },
+    'Excellent': { sw: 'Bora Kabisa', fr: 'Excellent', pt: 'Excelente' },
+    'Male': { sw: 'Mwanaume', fr: 'Homme', pt: 'Masculino' },
+    'Female': { sw: 'Mwanamke', fr: 'Femme', pt: 'Feminino' },
+    'Smallholder': { sw: 'Mkulima Mdogo', fr: 'Petit Exploitant', pt: 'Pequeno Agricultor' },
+    'Commercial': { sw: 'Kibiashara', fr: 'Commercial', pt: 'Comercial' },
+    'Select one option.': { sw: 'Chagua jibu moja.', fr: 'Sélectionnez une option.', pt: 'Selecione uma opção.' },
+    'Select all that apply.': { sw: 'Chagua zote zinazohusika.', fr: 'Sélectionnez toutes les réponses applicables.', pt: 'Selecione todas as opções aplicáveis.' },
+    'Choose from the list.': { sw: 'Chagua kutoka kwenye orodha.', fr: 'Choisissez dans la liste.', pt: 'Escolha da lista.' },
+    'Enter numeric value.': { sw: 'Weka nambari.', fr: 'Entrez une valeur numérique.', pt: 'Insira um valor numérico.' },
+    'Select calendar date.': { sw: 'Chagua tarehe ya kalenda.', fr: 'Sélectionnez une date.', pt: 'Selecione a data.' },
+    'Enter respondent name or ID…': { sw: 'Weka jina la mhojiwa au nambari…', fr: 'Entrez le nom ou l’identifiant…', pt: 'Insira o nome ou ID do entrevistado…' },
+    'Write detailed field notes…': { sw: 'Andika maelezo ya kina ya nyanjani…', fr: 'Rédigez des notes de terrain détaillées…', pt: 'Escreva observações detalhadas de campo…' },
     'Which primary crop or seed variety did you plant this season?': {
       sw: 'Ni aina gani kuu ya zao au mbegu uliyopanda msimu huu?',
-      fr: 'Quelle culture ou variété principale avez-vous semée cette saison ?'
+      fr: 'Quelle culture ou variété principale avez-vous semée cette saison ?',
+      pt: 'Qual a principal cultura ou variedade de semente que semeou nesta época?'
     },
     'Which agronomic practices or inputs were applied on this plot?': {
       sw: 'Ni mazoea gani ya kilimo au pembejeo zilizotumika shambani humu?',
-      fr: 'Quelles pratiques agronomiques ou intrants ont été appliqués sur cette parcelle ?'
+      fr: 'Quelles pratiques agronomiques ou intrants ont été appliqués sur cette parcelle ?',
+      pt: 'Quais práticas agronómicas ou insumos foram aplicados nesta parcela?'
     },
     'Select County / Administrative Ward': {
       sw: 'Chagua Kaunti / Kata ya Kiutawala',
-      fr: 'Sélectionnez le Comté / Secteur Administratif'
+      fr: 'Sélectionnez le Comté / Secteur Administratif',
+      pt: 'Selecione a Província / Distrito Administrativo'
     },
     'Total Harvested Yield per Acre': {
       sw: 'Jumla ya Mavuno Yaliyovunwa kwa Ekari',
-      fr: 'Rendement Total Récolté par Acre'
+      fr: 'Rendement Total Récolté par Acre',
+      pt: 'Rendimento Total Colhido por Acre'
     },
     'Capture Farm Plot GPS Coordinates': {
       sw: 'Nasa Majira ya GPS ya Shamba',
-      fr: 'Capturer les Coordonnées GPS de la Parcelle'
+      fr: 'Capturer les Coordonnées GPS de la Parcelle',
+      pt: 'Capturar Coordenadas GPS da Parcela'
     },
     'Date of Planting / Field Inspection': {
       sw: 'Tarehe ya Kupanda / Ukaguzi wa Shamba',
-      fr: 'Date de Semis / Inspection au Champ'
+      fr: 'Date de Semis / Inspection au Champ',
+      pt: 'Data de Semeadura / Inspeção de Campo'
     },
     'Farmer / Respondent Full Name or Household ID': {
       sw: 'Jina Kamili la Mkulima / Nambari ya Kaya',
-      fr: 'Nom Complet du Producteur / ID du Foyer'
+      fr: 'Nom Complet du Producteur / ID du Foyer',
+      pt: 'Nome Completo do Agricultor / ID do Agregado Familiar'
     },
     'Additional Enumerator Observations & Qualitative Feedback': {
       sw: 'Maoni ya Ziada ya Mtafiti na Taarifa za Ubora',
-      fr: 'Observations Supplémentaires de l’Enquêteur & Retours Qualitatifs'
+      fr: 'Observations Supplémentaires de l’Enquêteur & Retours Qualitatifs',
+      pt: 'Observações Adicionais do Inquiridor e Feedback Qualitativo'
     },
     'How satisfied are you with the germination rate of this seed lot?': {
       sw: 'Umeridhika kwa kiwango gani na uotaji wa mbegu hizi?',
-      fr: 'Quel est votre niveau de satisfaction concernant le taux de germination de ce lot de semences ?'
+      fr: 'Quel est votre niveau de satisfaction concernant le taux de germination de ce lot de semences ?',
+      pt: 'Qual o seu grau de satisfação com a taxa de germinação deste lote de sementes?'
     },
     'On a scale of 0 to 10, how likely are you to recommend this seed variety to another farmer?': {
       sw: 'Kwenye mizani ya 0 hadi 10, una uwezekano gani wa kuipendekeza mbegu hii kwa mkulima mwingine?',
-      fr: 'Sur une échelle de 0 à 10, quelle est la probabilité que vous recommandiez cette variété à un autre producteur ?'
+      fr: 'Sur une échelle de 0 à 10, quelle est la probabilité que vous recommandiez cette variété à un autre producteur ?',
+      pt: 'Numa escala de 0 a 10, com que probabilidade recomendaria esta variedade a outro agricultor?'
     },
     'Rate the seed variety on each agronomic characteristic:': {
       sw: 'Tathmini aina ya mbegu kulingana na sifa zifuatazo za kilimo:',
-      fr: 'Évaluez la variété selon chaque caractéristique agronomique :'
+      fr: 'Évaluez la variété selon chaque caractéristique agronomique :',
+      pt: 'Avalie a variedade de sementes em cada característica agronómica:'
     },
-    'Early germination vigor': { sw: 'Nguvu ya uotaji wa mapema', fr: 'Vigueur de germination précoce' },
-    'Drought & dry-spell resilience': { sw: 'Ustahimilivu wa ukame na vipindi vikavu', fr: 'Résilience à la sécheresse et aux poches de sécheresse' },
-    'Marketability of harvested grain': { sw: 'Uuzaji na ubora wa nafaka sokoni', fr: 'Commercialisation et qualité marchande du grain' },
-    'Certified Hybrid Seed': { sw: 'Mbegu ya Chotara Iliyoidhinishwa', fr: 'Semences Hybrides Certifiées' },
-    'Improved Open-Pollinated Variety (OPV)': { sw: 'Mbegu Iliyoboreshwa (OPV)', fr: 'Variété Améliorée à Pollinisation Libre (OPV)' },
-    'Local Farm-Saved Seed': { sw: 'Mbegu ya Kienyeji Iliyohifadhiwa Shambani', fr: 'Semences Fermières Locales' },
-    'Basal Planting Fertilizer (DAP/NPK)': { sw: 'Mbolea ya Kupandia (DAP/NPK)', fr: 'Engrais de Fond (DAP/NPK)' },
-    'Top-Dressing Fertilizer (CAN/Urea)': { sw: 'Mbolea ya Kukuzia (CAN/Urea)', fr: 'Engrais de Couverture (CAN/Urée)' },
-    'Organic Manure / Compost': { sw: 'Samadi ya Wanyama / Mboji', fr: 'Fumier Organique / Compost' },
-    'Crop Rotation with Legumes': { sw: 'Mzunguko wa Mazao na Mikunde', fr: 'Rotation des Cultures avec des Légumineuses' },
-    'Nakuru County': { sw: 'Kaunti ya Nakuru', fr: 'Comté de Nakuru' },
-    'Machakos County': { sw: 'Kaunti ya Machakos', fr: 'Comté de Machakos' },
-    'Kakamega County': { sw: 'Kaunti ya Kakamega', fr: 'Comté de Kakamega' },
-    'Meru County': { sw: 'Kaunti ya Meru', fr: 'Comté de Meru' },
-    'Uasin Gishu County': { sw: 'Kaunti ya Uasin Gishu', fr: 'Comté d’Uasin Gishu' }
+    'Early germination vigor': { sw: 'Nguvu ya uotaji wa mapema', fr: 'Vigueur de germination précoce', pt: 'Vigor de germinação precoce' },
+    'Drought & dry-spell resilience': { sw: 'Ustahimilivu wa ukame na vipindi vikavu', fr: 'Résilience à la sécheresse et aux poches de sécheresse', pt: 'Resiliência à seca e estiagem' },
+    'Marketability of harvested grain': { sw: 'Uuzaji na ubora wa nafaka sokoni', fr: 'Commercialisation et qualité marchande du grain', pt: 'Comercialização e qualidade do grão' },
+    'Certified Hybrid Seed': { sw: 'Mbegu ya Chotara Iliyoidhinishwa', fr: 'Semences Hybrides Certifiées', pt: 'Semente Híbrida Certificada' },
+    'Improved Open-Pollinated Variety (OPV)': { sw: 'Mbegu Iliyoboreshwa (OPV)', fr: 'Variété Améliorée à Pollinisation Libre (OPV)', pt: 'Variedade Melhorada de Polinização Aberta (OPV)' },
+    'Local Farm-Saved Seed': { sw: 'Mbegu ya Kienyeji Iliyohifadhiwa Shambani', fr: 'Semences Fermières Locales', pt: 'Semente Tradicional Guardada da Época Passada' },
+    'Basal Planting Fertilizer (DAP/NPK)': { sw: 'Mbolea ya Kupandia (DAP/NPK)', fr: 'Engrais de Fond (DAP/NPK)', pt: 'Adubo de Fundo / Plantação (DAP/NPK)' },
+    'Top-Dressing Fertilizer (CAN/Urea)': { sw: 'Mbolea ya Kukuzia (CAN/Urea)', fr: 'Engrais de Couverture (CAN/Urée)', pt: 'Adubo de Cobertura (CAN/Ureia)' },
+    'Organic Manure / Compost': { sw: 'Samadi ya Wanyama / Mboji', fr: 'Fumier Organique / Compost', pt: 'Estrume Orgânico / Composto' },
+    'Crop Rotation with Legumes': { sw: 'Mzunguko wa Mazao na Mikunde', fr: 'Rotation des Cultures avec des Légumineuses', pt: 'Rotação de Culturas com Leguminosas' },
+    'Nakuru County': { sw: 'Kaunti ya Nakuru', fr: 'Comté de Nakuru', pt: 'Província de Nakuru' },
+    'Machakos County': { sw: 'Kaunti ya Machakos', fr: 'Comté de Machakos', pt: 'Província de Machakos' },
+    'Kakamega County': { sw: 'Kaunti ya Kakamega', fr: 'Comté de Kakamega', pt: 'Província de Kakamega' },
+    'Meru County': { sw: 'Kaunti ya Meru', fr: 'Comté de Meru', pt: 'Província de Meru' },
+    'Uasin Gishu County': { sw: 'Kaunti ya Uasin Gishu', fr: 'Comté d’Uasin Gishu', pt: 'Província de Uasin Gishu' }
   };
 
   const AEI18n = {
@@ -587,7 +784,7 @@
     getLanguage() {
       try {
         const stored = localStorage.getItem('ae_language');
-        if (stored && (stored === 'en' || stored === 'sw' || stored === 'fr')) {
+        if (stored && (stored === 'en' || stored === 'sw' || stored === 'fr' || stored === 'pt')) {
           return stored;
         }
       } catch (e) {}
@@ -596,7 +793,7 @@
 
     setLanguage(langCode) {
       const code = (langCode || 'en').toLowerCase();
-      const valid = code === 'sw' || code === 'fr' ? code : 'en';
+      const valid = code === 'sw' || code === 'fr' || code === 'pt' ? code : 'en';
       try {
         localStorage.setItem('ae_language', valid);
       } catch (e) {}
@@ -751,20 +948,91 @@
     },
 
     /**
-     * Renders a clean segmented language picker (EN · SW · FR) for headers or toolbars.
-     * @param {string} currentLang - Active language code ('en' | 'sw' | 'fr')
+     * Maps localized choice / dropdown / checkbox / matrix answers back to canonical English.
+     * Open text responses are left untouched for automated translation in Google Apps Script.
+     */
+    getCanonicalEnglishAnswer(survey, questionId, val, sourceLang) {
+      if (val === undefined || val === null || val === '') return val;
+      if (!sourceLang || sourceLang === 'en') return val;
+      if (!survey) return val;
+
+      const rawQuestions = (window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function')
+        ? window.aeStore.getQuestionsForSurvey(survey)
+        : [];
+      const q = rawQuestions.find((item) => item.id === questionId);
+      if (!q) return val;
+
+      // 1. Radio / Dropdown / Single Choice
+      if (typeof val === 'string' && Array.isArray(q.options)) {
+        if (q.options.includes(val)) return val;
+        const localizedSurvey = this.localizeSurvey(survey, sourceLang);
+        const locQ = (window.aeStore ? window.aeStore.getQuestionsForSurvey(localizedSurvey) : []).find((item) => item.id === questionId);
+        if (locQ && Array.isArray(locQ.options)) {
+          const idx = locQ.options.findIndex((opt) => String(opt).trim().toLowerCase() === String(val).trim().toLowerCase());
+          if (idx !== -1 && q.options[idx]) {
+            return q.options[idx];
+          }
+        }
+        // Reverse lookup in COMMON_DICTIONARY
+        for (const [enKey, translations] of Object.entries(COMMON_DICTIONARY)) {
+          if (translations[sourceLang] && translations[sourceLang].trim().toLowerCase() === val.trim().toLowerCase()) {
+            return enKey;
+          }
+        }
+      }
+
+      // 2. Checkboxes / Multi-select
+      if (Array.isArray(val) && Array.isArray(q.options)) {
+        return val.map((item) => this.getCanonicalEnglishAnswer(survey, questionId, item, sourceLang));
+      }
+
+      // 3. Matrix Questions: { [rowLabel]: colLabel }
+      if (typeof val === 'object' && val !== null && !Array.isArray(val) && q.type === 'matrix') {
+        const canonicalMatrix = {};
+        const localizedSurvey = this.localizeSurvey(survey, sourceLang);
+        const locQ = (window.aeStore ? window.aeStore.getQuestionsForSurvey(localizedSurvey) : []).find((item) => item.id === questionId);
+
+        Object.entries(val).forEach(([rKey, cVal]) => {
+          let englishRow = rKey;
+          if (locQ && Array.isArray(locQ.rows) && Array.isArray(q.rows)) {
+            const rIdx = locQ.rows.findIndex((r) => String(r).trim().toLowerCase() === String(rKey).trim().toLowerCase());
+            if (rIdx !== -1 && q.rows[rIdx]) englishRow = q.rows[rIdx];
+          }
+          let englishCol = cVal;
+          if (locQ && Array.isArray(locQ.columns) && Array.isArray(q.columns)) {
+            const cIdx = locQ.columns.findIndex((c) => String(c).trim().toLowerCase() === String(cVal).trim().toLowerCase());
+            if (cIdx !== -1 && q.columns[cIdx]) englishCol = q.columns[cIdx];
+          }
+          canonicalMatrix[englishRow] = englishCol;
+        });
+        return canonicalMatrix;
+      }
+
+      return val;
+    },
+
+    /**
+     * Renders a clean segmented language picker (EN · SW · PT · FR) for headers or toolbars.
+     * @param {string} currentLang - Active language code ('en' | 'sw' | 'pt' | 'fr')
      * @param {string} onSelectCallbackExpr - JavaScript expression to invoke, e.g. "AEFieldApp.setLanguage"
      * @param {string} theme - 'dark' (for canopy headers) | 'light' (for white surfaces)
+     * @param {Array<string>|null} allowedLanguages - Optional array of allowed language codes (e.g. ['en', 'pt'])
      */
-    renderLanguageSwitch(currentLang, onSelectCallbackExpr = 'AEFieldApp.setLanguage', theme = 'dark') {
+    renderLanguageSwitch(currentLang, onSelectCallbackExpr = 'AEFieldApp.setLanguage', theme = 'dark', allowedLanguages = null) {
       const isDark = theme === 'dark';
       const containerClass = isDark
         ? 'h-8 p-0.5 rounded-[6px] bg-white/10 flex items-center text-xs font-semibold'
         : 'h-8 p-0.5 rounded-[6px] bg-[#F8F9F8] border border-[#CFD5D0] flex items-center text-xs font-semibold';
 
+      const allowedSet = (Array.isArray(allowedLanguages) && allowedLanguages.length > 0)
+        ? new Set(allowedLanguages.map((l) => String(l).toLowerCase()).concat(['en']))
+        : null;
+
+      const displayLangs = allowedSet ? LANGUAGES.filter((l) => allowedSet.has(l.code)) : LANGUAGES;
+
       return `
         <div class="${containerClass}" role="group" aria-label="Language Selector">
-          ${LANGUAGES.map((l) => {
+          ${displayLangs.map((l) => {
             const active = currentLang === l.code;
             const btnClass = active
               ? (isDark ? 'bg-[#247B50] text-white' : 'bg-[#141A17] text-white') + ' h-7 px-2 rounded-[4px] ae-press'

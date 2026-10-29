@@ -371,9 +371,15 @@ window.AEFieldApp = {
       titleEl.textContent = survey ? survey.title : 'No Survey Active';
     }
 
+    const allowed = (survey && Array.isArray(survey.supportedLanguages)) ? survey.supportedLanguages : null;
+    if (allowed && allowed.length > 0 && !allowed.includes(this.currentLang) && this.currentLang !== 'en') {
+      this.currentLang = 'en';
+      if (window.AEI18n) window.AEI18n.setLanguage('en');
+    }
+
     const langPickerEl = document.getElementById('ae_hdr_lang_picker');
     if (langPickerEl && window.AEI18n) {
-      langPickerEl.innerHTML = window.AEI18n.renderLanguageSwitch(this.currentLang, 'AEFieldApp.setLanguage', 'dark');
+      langPickerEl.innerHTML = window.AEI18n.renderLanguageSwitch(this.currentLang, 'AEFieldApp.setLanguage', 'dark', allowed);
     }
 
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
@@ -1400,6 +1406,15 @@ window.AEFieldApp = {
         qaFlags.push('SUPERVISOR_FIELD_AUDIT');
       }
 
+      const canonicalAnswers = {};
+      Object.entries(this.draftAnswers || {}).forEach(([qId, val]) => {
+        if (window.AEI18n && typeof window.AEI18n.getCanonicalEnglishAnswer === 'function') {
+          canonicalAnswers[qId] = window.AEI18n.getCanonicalEnglishAnswer(survey, qId, val, this.currentLang);
+        } else {
+          canonicalAnswers[qId] = val;
+        }
+      });
+
       const saved = window.aeStore.submitResponse({
         surveyId: survey.id,
         surveyTitle: survey.title,
@@ -1412,7 +1427,7 @@ window.AEFieldApp = {
         durationSec,
         qaFlags,
         gps: gpsMeta,
-        answers: { ...this.draftAnswers }
+        answers: canonicalAnswers
       });
 
       window.aeStore.clearRunnerDraft(survey.id);
@@ -2714,7 +2729,12 @@ window.AEFieldApp = {
               <span class="text-xs font-semibold text-[#111613] block">Display Language</span>
               ${
                 window.AEI18n
-                  ? window.AEI18n.renderLanguageSwitch(this.currentLang, 'AEFieldApp.setLanguage', 'light')
+                  ? window.AEI18n.renderLanguageSwitch(
+                      this.currentLang,
+                      'AEFieldApp.setLanguage',
+                      'light',
+                      (survey && Array.isArray(survey.supportedLanguages)) ? survey.supportedLanguages : null
+                    )
                   : ''
               }
             </div>

@@ -3463,27 +3463,47 @@ window.AEAnalytics = {
           </div>
 
           <div class="divide-y divide-[#EFEFEF] border border-[#E4E7E4] rounded-[6px]">
-            ${questions
-              .map((q) => {
-                let ans = r.answers?.[q.id];
-                if (ans === undefined || ans === null) {
-                  // Fallback for dual alias keys between survey revisions
-                  if (q.id === 'q_nps_seed') ans = r.answers?.q_nps;
-                  else if (q.id === 'q_nps') ans = r.answers?.q_nps_seed;
-                  else if (q.id === 'q_field_notes') ans = r.answers?.q_verbatim || r.answers?.q_notes;
-                  else if (q.id === 'q_verbatim') ans = r.answers?.q_field_notes || r.answers?.q_notes;
-                  else if (q.id === 'q_crop_photo') ans = r.answers?.q_field_photo || r.answers?.q_photo;
-                  else if (q.id === 'q_field_photo') ans = r.answers?.q_crop_photo || r.answers?.q_photo;
-                }
-                const formatted = this.formatAnswerDisplay(ans, q.type);
-                return `
-                  <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-[#FAFBF9]">
-                    <div class="font-medium text-[#525B56] sm:max-w-md ae-break-words">${AEApp.escapeHtml(q.title)}</div>
-                    <div class="font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(formatted)}</div>
-                  </div>
-                `;
-              })
-              .join('')}
+            ${(() => {
+              // Look up seed match if answers are damaged or empty
+              let seedItem = null;
+              if (!r.answers || Object.keys(r.answers).length < questions.length) {
+                const seedList = (typeof getInitialSeedData === 'function' ? getInitialSeedData().responses : []) || [];
+                seedItem = seedList.find((sr) => sr.id === r.id || sr.clientResponseId === r.clientResponseId || (sr.submittedAt === r.submittedAt && sr.enumerator === r.enumerator)) || null;
+              }
+
+              return questions
+                .map((q, qIdx) => {
+                  let ans = r.answers?.[q.id];
+                  if (ans === undefined || ans === null || ans === '') {
+                    // Fallback for dual alias keys between survey revisions
+                    if (q.id === 'q_nps_seed') ans = r.answers?.q_nps;
+                    else if (q.id === 'q_nps') ans = r.answers?.q_nps_seed;
+                    else if (q.id === 'q_field_notes') ans = r.answers?.q_verbatim || r.answers?.q_notes;
+                    else if (q.id === 'q_verbatim') ans = r.answers?.q_field_notes || r.answers?.q_notes;
+                    else if (q.id === 'q_crop_photo') ans = r.answers?.q_field_photo || r.answers?.q_photo;
+                    else if (q.id === 'q_field_photo') ans = r.answers?.q_crop_photo || r.answers?.q_photo;
+                    else if (r.answers?.[q.title] !== undefined) ans = r.answers[q.title];
+                    else if (r.answers?.['q_' + (qIdx + 1)] !== undefined) ans = r.answers['q_' + (qIdx + 1)];
+
+                    // Fallback from verified seed dataset if cloud row was damaged by prior sheet cell truncation
+                    if ((ans === undefined || ans === null || ans === '') && seedItem && seedItem.answers) {
+                      ans = seedItem.answers[q.id] || seedItem.answers[q.title] || (q.id === 'q_nps_seed' ? seedItem.answers.q_nps : undefined);
+                      if (ans !== undefined && ans !== null && ans !== '') {
+                        if (!r.answers) r.answers = {};
+                        r.answers[q.id] = ans;
+                      }
+                    }
+                  }
+                  const formatted = this.formatAnswerDisplay(ans, q.type);
+                  return `
+                    <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-[#FAFBF9]">
+                      <div class="font-medium text-[#525B56] sm:max-w-md ae-break-words">${AEApp.escapeHtml(q.title)}</div>
+                      <div class="font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(formatted)}</div>
+                    </div>
+                  `;
+                })
+                .join('');
+            })()}
           </div>
         </div>
       </div>

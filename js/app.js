@@ -3651,6 +3651,29 @@ window.AEApp = {
     this.render();
   },
 
+  toggleSurveySupportedLanguage(lang) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    if (!Array.isArray(s.supportedLanguages) || s.supportedLanguages.length === 0) {
+      s.supportedLanguages = ['en', 'sw', 'pt', 'fr'];
+    }
+    const idx = s.supportedLanguages.indexOf(lang);
+    if (idx >= 0) {
+      if (lang !== 'en') {
+        s.supportedLanguages.splice(idx, 1);
+      }
+    } else {
+      s.supportedLanguages.push(lang);
+    }
+    if (!s.supportedLanguages.includes('en')) {
+      s.supportedLanguages.unshift('en');
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+    this.showToast(`Updated survey languages offering.`, 'info');
+  },
+
   setBuilderTranslationLang(lang) {
     if (window.AEBuilder) {
       window.AEBuilder.targetLang = lang;
@@ -3665,7 +3688,8 @@ window.AEApp = {
     if (window.AEI18n) {
       window.AEI18n.autoTranslateSurvey(s, targetLang);
       window.aeStore.upsertSurvey(s);
-      const langName = targetLang === 'sw' ? 'Kiswahili' : 'Français';
+      const langNames = { sw: 'Kiswahili', pt: 'Português', fr: 'Français' };
+      const langName = langNames[targetLang] || targetLang.toUpperCase();
       this.showToast(`Auto-translated survey to ${langName}.`, 'success');
       this.render();
     }
@@ -4202,16 +4226,26 @@ window.AEApp = {
       });
 
       const durationSec = Math.max(12, Math.round((Date.now() - (window.AECollector.startedAtMs || Date.now())) / 1000));
+      const sourceLang = this.runnerLang || 'en';
+      const canonicalAnswers = {};
+      Object.entries(window.AECollector.draftAnswers || {}).forEach(([qId, val]) => {
+        if (window.AEI18n && typeof window.AEI18n.getCanonicalEnglishAnswer === 'function') {
+          canonicalAnswers[qId] = window.AEI18n.getCanonicalEnglishAnswer(survey, qId, val, sourceLang);
+        } else {
+          canonicalAnswers[qId] = val;
+        }
+      });
+
       const saved = window.aeStore.submitResponse({
         surveyId: survey.id,
         surveyTitle: survey.title,
         collectorId: window.AECollector.activeCollectorId,
         enumerator: window.AECollector.enumeratorName,
-        language: this.runnerLang || 'en',
+        language: sourceLang,
         startedAt: window.AECollector.startedAtIso,
         durationSec,
         gps: gpsMeta,
-        answers: { ...window.AECollector.draftAnswers }
+        answers: canonicalAnswers
       });
 
       window.aeStore.clearRunnerDraft(survey.id);

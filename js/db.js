@@ -1887,17 +1887,37 @@ class AESurveyStore {
    * Restores rich question answers if responses were stripped or damaged by prior column mismatch
    */
   healResponsesAnswers() {
-    const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
+    const seedResponses = (typeof getInitialSeedData === 'function' ? getInitialSeedData().responses : []) || [];
+    const seedMap = new Map();
+    const fallbackList = [];
+
+    seedResponses.forEach((sr) => {
+      if (sr.id) seedMap.set(sr.id, sr);
+      if (sr.clientResponseId) seedMap.set(sr.clientResponseId, sr);
+      if (sr.submittedAt && sr.enumerator) {
+        seedMap.set(`${sr.submittedAt}_${sr.enumerator}`, sr);
+      }
+      fallbackList.push(sr);
+    });
+
     let healed = 0;
-    (this.responses || []).forEach((r) => {
-      const hasAnswers = r.answers && typeof r.answers === 'object' && Object.keys(r.answers).length > 0;
-      if (!hasAnswers && seedMap.has(r.id)) {
-        const seedItem = seedMap.get(r.id);
-        r.answers = JSON.parse(JSON.stringify(seedItem.answers || {}));
-        if (seedItem.reviewStatus && !r.reviewStatus) r.reviewStatus = seedItem.reviewStatus;
-        if (seedItem.qaFlags && (!r.qaFlags || !r.qaFlags.length)) r.qaFlags = seedItem.qaFlags;
+    (this.responses || []).forEach((r, idx) => {
+      // Find matching seed response
+      let match = seedMap.get(r.id) || seedMap.get(r.clientResponseId) || seedMap.get(`${r.submittedAt}_${r.enumerator}`);
+      if (!match && fallbackList[idx] && fallbackList[idx].surveyId === r.surveyId) {
+        match = fallbackList[idx];
+      }
+
+      const currentAnswers = (r.answers && typeof r.answers === 'object') ? r.answers : {};
+      const answerKeys = Object.keys(currentAnswers);
+      const isDamaged = answerKeys.length === 0 || (match && match.answers && Object.keys(match.answers).length > answerKeys.length);
+
+      if (isDamaged && match && match.answers) {
+        r.answers = { ...JSON.parse(JSON.stringify(match.answers)), ...currentAnswers };
+        if (match.reviewStatus && !r.reviewStatus) r.reviewStatus = match.reviewStatus;
+        if (match.qaFlags && (!r.qaFlags || !r.qaFlags.length)) r.qaFlags = match.qaFlags;
         healed++;
-      } else if (hasAnswers) {
+      } else if (answerKeys.length > 0) {
         // Ensure dual alias keys are present for cross-version compatibility
         const ans = r.answers;
         if (ans.q_nps !== undefined && ans.q_nps_seed === undefined) ans.q_nps_seed = ans.q_nps;
@@ -1908,8 +1928,14 @@ class AESurveyStore {
         if (ans.q_crop_photo !== undefined && ans.q_field_photo === undefined) ans.q_field_photo = ans.q_crop_photo;
       }
     });
+
     if (healed > 0) {
       this.saveToLocalStorage();
+      if (this.idb) {
+        (this.responses || []).forEach((r) => {
+          this.writeStore('responses', r).catch(() => {});
+        });
+      }
     }
     return healed;
   }

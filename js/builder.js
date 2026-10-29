@@ -571,32 +571,79 @@ window.AEBuilder = {
 
   renderTranslationsSidebar(survey) {
     const targetLang = this.targetLang || 'sw';
-    const langLabel = targetLang === 'sw' ? 'Kiswahili' : 'Français';
+    const langLabel = targetLang === 'sw' ? 'Kiswahili' : targetLang === 'pt' ? 'Português' : 'Français';
     const trans = (survey.translations && survey.translations[targetLang]) || {};
     const currentPage = (survey.pages || [])[this.activePageIndex] || { id: 'page_1', title: 'Page 1', questions: [] };
     const pTrans = (trans.pages && trans.pages[currentPage.id]) || {};
     const qTransMap = trans.questions || {};
 
+    const supportedLangs = Array.isArray(survey.supportedLanguages) && survey.supportedLanguages.length > 0
+      ? survey.supportedLanguages
+      : ['en', 'sw', 'pt', 'fr'];
+
+    const isLangSupported = (code) => supportedLangs.includes(code);
+
     return `
       <div class="p-4 space-y-4 lg:max-h-[calc(100dvh-160px)] lg:overflow-y-auto">
+        <!-- 1. Supported Languages Offering Configuration -->
+        <div class="space-y-2 bg-[#F8F9F8] border border-[#CFD5D0] rounded-[6px] p-3">
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-semibold text-[#111613]">Supported Languages for this Survey</label>
+            <span class="text-[10px] uppercase font-bold tracking-wider text-[#247B50] bg-[#DCFAE5] px-1.5 py-0.5 rounded">Field Scope</span>
+          </div>
+          <p class="text-[11px] text-[#525B56] leading-snug">
+            Configure which languages field tablets can toggle between. English is always the base language and is recorded in Google Sheets.
+          </p>
+          <div class="space-y-1.5 pt-1.5 border-t border-[#E4E7E4]">
+            <label class="flex items-center gap-2 text-xs font-medium text-[#111613]">
+              <input type="checkbox" checked disabled class="rounded text-[#247B50]" />
+              <span>🇬🇧 English <span class="text-[10px] text-[#646E68]">(Base / Mandatory)</span></span>
+            </label>
+            <label class="flex items-center gap-2 text-xs font-medium text-[#111613] cursor-pointer">
+              <input type="checkbox" ${isLangSupported('sw') ? 'checked' : ''}
+                onchange="AEApp.toggleSurveySupportedLanguage('sw')" class="rounded text-[#247B50]" />
+              <span>🇰🇪 Kiswahili (Swahili)</span>
+            </label>
+            <label class="flex items-center gap-2 text-xs font-medium text-[#111613] cursor-pointer">
+              <input type="checkbox" ${isLangSupported('pt') ? 'checked' : ''}
+                onchange="AEApp.toggleSurveySupportedLanguage('pt')" class="rounded text-[#247B50]" />
+              <span>🇵🇹 Português (Portuguese)</span>
+            </label>
+            <label class="flex items-center gap-2 text-xs font-medium text-[#111613] cursor-pointer">
+              <input type="checkbox" ${isLangSupported('fr') ? 'checked' : ''}
+                onchange="AEApp.toggleSurveySupportedLanguage('fr')" class="rounded text-[#247B50]" />
+              <span>🇫🇷 Français (French)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 2. Target Translation Language Switcher -->
         <div class="space-y-1.5">
-          <label class="block text-xs font-semibold text-[#111613]">Active Target Language</label>
-          <div class="grid grid-cols-2 gap-1.5">
+          <label class="block text-xs font-semibold text-[#111613]">Active Target Language Preview</label>
+          <div class="grid grid-cols-3 gap-1.5">
             <button type="button" onclick="AEApp.setBuilderTranslationLang('sw')"
-              class="h-9 px-2.5 rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1.5 ae-press ${
+              class="h-9 px-2 rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 ae-press ${
                 targetLang === 'sw'
                   ? 'border-[#247B50] bg-[#DCFAE5] text-[#04250E] font-semibold'
                   : 'border-[#CFD5D0] bg-white text-[#525B56]'
               }">
-              <span>🇰🇪</span> Kiswahili
+              <span>🇰🇪</span> SW
+            </button>
+            <button type="button" onclick="AEApp.setBuilderTranslationLang('pt')"
+              class="h-9 px-2 rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 ae-press ${
+                targetLang === 'pt'
+                  ? 'border-[#247B50] bg-[#DCFAE5] text-[#04250E] font-semibold'
+                  : 'border-[#CFD5D0] bg-white text-[#525B56]'
+              }">
+              <span>🇵🇹</span> PT
             </button>
             <button type="button" onclick="AEApp.setBuilderTranslationLang('fr')"
-              class="h-9 px-2.5 rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1.5 ae-press ${
+              class="h-9 px-2 rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 ae-press ${
                 targetLang === 'fr'
                   ? 'border-[#247B50] bg-[#DCFAE5] text-[#04250E] font-semibold'
                   : 'border-[#CFD5D0] bg-white text-[#525B56]'
               }">
-              <span>🇫🇷</span> Français
+              <span>🇫🇷</span> FR
             </button>
           </div>
         </div>
@@ -605,7 +652,7 @@ window.AEBuilder = {
           <button type="button" onclick="AEApp.autoTranslateSurvey()"
             class="w-full h-9 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
             <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
-            <span>Auto-Translate Questions</span>
+            <span>Auto-Translate to ${langLabel}</span>
           </button>
           <p class="text-[11px] text-[#525B56] mt-1.5 leading-snug">
             Applies agricultural dictionary presets to all questions and options in this survey.

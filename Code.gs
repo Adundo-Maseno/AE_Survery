@@ -21,7 +21,7 @@
 
 var DB_CONFIG = {
   APP_NAME: 'AE Survey — Agri Experience Limited',
-  VERSION: '3.2.0',
+  VERSION: '3.3.0',
   MAX_BATCH_ITEMS: 500,
   MAX_CELL_LENGTH: 32000,
   SHEETS: {
@@ -455,7 +455,8 @@ function ensureDatabaseInitialized_() {
     'RecordHash',
     'CalculatedJSON',
     'AnswersJSON',
-    'ServerReceivedAt'
+    'ServerReceivedAt',
+    'AdministeredLanguage'
   ]);
 
   ensureSheetWithHeaders_(ss, DB_CONFIG.SHEETS.COLLECTORS, [
@@ -722,6 +723,40 @@ function readPersonnelRows_(ss) {
 }
 
 /**
+ * Automatically translates open text answers into English if the survey was administered
+ * in Swahili ('sw'), Portuguese ('pt'), or French ('fr') using Google Apps Script LanguageApp.
+ * Results in clear English audit format: [Translated from <Lang>]: <English> (Original: <Text>)
+ */
+function translateOpenTextIfNeeded_(text, langCode) {
+  if (!text || typeof text !== 'string') return text;
+  var trimmed = text.trim();
+  if (trimmed.length === 0) return text;
+  var code = String(langCode || 'en').toLowerCase().trim();
+  if (code === 'en' || code === '') return text;
+
+  // Don't translate base64 data URLs, links, or pure numbers/coordinates
+  if (trimmed.indexOf('data:image') === 0 || trimmed.indexOf('http') === 0 || /^[-0-9.,\s]+$/.test(trimmed)) {
+    return text;
+  }
+
+  try {
+    var langNames = {
+      'sw': 'Swahili',
+      'pt': 'Portuguese',
+      'fr': 'French'
+    };
+    var langName = langNames[code] || code.toUpperCase();
+    var translated = LanguageApp.translate(trimmed, code, 'en');
+    if (translated && translated.trim().toLowerCase() !== trimmed.toLowerCase()) {
+      return '[Translated from ' + langName + ']: ' + translated.trim() + ' (Original: ' + trimmed + ')';
+    }
+    return trimmed;
+  } catch (e) {
+    return trimmed;
+  }
+}
+
+/**
  * Appends responses idempotently (skips any response whose `clientResponseId` or `id`
  * already exists in the `Responses` sheet) and mirrors each new row into its
  * per-survey human-readable Google Sheet tab!
@@ -759,8 +794,31 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     var supervisorId = r.audit ? (r.audit.verifiedBy || r.audit.flaggedBy || '') : '';
     var npsCat = r.calculated ? (r.calculated.npsCategory || '') : '';
     var calcJson = r.calculated ? JSON.stringify(r.calculated) : '';
+    var administeredLang = String(r.language || 'en').toLowerCase();
 
-    var cleanAnswersJson = prepareAnswersJsonForSheet_(r.answers || {});
+    // Process open text translations for non-English responses
+    var processedAnswers = {};
+    if (r.answers && typeof r.answers === 'object') {
+      var questionsList = survey ? getFlattenedQuestions_(survey) : [];
+      var openTextQIds = {};
+      for (var qIdx = 0; qIdx < questionsList.length; qIdx++) {
+        var quest = questionsList[qIdx];
+        if (quest.type === 'long_text' || quest.type === 'short_text' || quest.type === 'text' || /notes|verbatim|comment|feedback/i.test(quest.id)) {
+          openTextQIds[quest.id] = true;
+        }
+      }
+
+      for (var kKey in r.answers) {
+        var aVal = r.answers[kKey];
+        if (administeredLang !== 'en' && typeof aVal === 'string' && (openTextQIds[kKey] || /notes|verbatim|feedback|comment/i.test(kKey))) {
+          processedAnswers[kKey] = translateOpenTextIfNeeded_(aVal, administeredLang);
+        } else {
+          processedAnswers[kKey] = aVal;
+        }
+      }
+    }
+
+    var cleanAnswersJson = prepareAnswersJsonForSheet_(processedAnswers);
 
     var masterRow = [
       sanitizeSheetCell_(clientRespId),
@@ -781,7 +839,8 @@ function appendResponsesIdempotent_(responses, surveyMap) {
       sanitizeSheetCell_(String(r.recordHash || '')),
       sanitizeSheetCell_(calcJson),
       sanitizeSheetCell_(cleanAnswersJson),
-      nowIso
+      nowIso,
+      sanitizeSheetCell_(administeredLang.toUpperCase())
     ];
 
     respSheet.appendRow(masterRow);
@@ -791,7 +850,8 @@ function appendResponsesIdempotent_(responses, surveyMap) {
 
     // Also append to the human-readable Per-Survey sheet tab!
     if (survey) {
-      appendToSurveyDedicatedSheet_(survey, r, clientRespId, nowIso);
+      var translatedResponse = { ...r, answers: processedAnswers };
+      appendToSurveyDedicatedSheet_(survey, translatedResponse, clientRespId, nowIso);
     }
   }
 
@@ -833,7 +893,8 @@ function syncSurveyDedicatedSheetHeader_(survey) {
     'Duration (s)',
     'GPS Latitude',
     'GPS Longitude',
-    'GPS Accuracy (m)'
+    'GPS Accuracy (m)',
+    'Administered Language'
   ];
 
   for (var i = 0; i < questions.length; i++) {
@@ -860,6 +921,7 @@ function appendToSurveyDedicatedSheet_(survey, response, clientRespId, nowIso) {
   var questions = getFlattenedQuestions_(survey);
   var gps = response.gps || {};
   var answers = response.answers || {};
+  var administeredLang = String(response.language || 'en').toUpperCase();
 
   var row = [
     sanitizeSheetCell_(clientRespId),
@@ -869,12 +931,19 @@ function appendToSurveyDedicatedSheet_(survey, response, clientRespId, nowIso) {
     Number(response.durationSec || 0),
     gps.lat !== undefined ? sanitizeSheetCell_(gps.lat) : '',
     gps.lng !== undefined ? sanitizeSheetCell_(gps.lng) : '',
-    gps.accuracy !== undefined ? sanitizeSheetCell_(gps.accuracy) : ''
+    gps.accuracy !== undefined ? sanitizeSheetCell_(gps.accuracy) : '',
+    sanitizeSheetCell_(administeredLang)
   ];
 
   for (var i = 0; i < questions.length; i++) {
     var q = questions[i];
     var val = answers[q.id];
+    // Dual key fallback
+    if (val === undefined || val === null || val === '') {
+      if (q.id === 'q_nps_seed') val = answers.q_nps;
+      else if (q.id === 'q_field_notes') val = answers.q_verbatim || answers.q_notes;
+      else if (q.id === 'q_crop_photo') val = answers.q_field_photo || answers.q_photo;
+    }
     row.push(sanitizeSheetCell_(formatAnswerForCell_(val)));
   }
 
@@ -1040,13 +1109,13 @@ function readAllDatabaseData_() {
   var responses = [];
   var rSheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
   if (rSheet && rSheet.getLastRow() > 1) {
-    var maxCols = Math.max(19, rSheet.getLastColumn());
+    var maxCols = Math.max(20, rSheet.getLastColumn());
     var rRows = rSheet.getRange(2, 1, rSheet.getLastRow() - 1, maxCols).getValues();
     for (var k = 0; k < rRows.length; k++) {
       var row = rRows[k];
 
       // Adaptive schema detection:
-      // - Newer rows (Row 12 onwards): AnswersJSON in Col R (index 17).
+      // - Newer rows (Row 12 onwards): AnswersJSON in Col R (index 17), Language in Col T (index 19).
       // - Legacy rows (Rows 2 to 11): AnswersJSON in Col L (index 11).
       var answers = {};
       var reviewStatus = 'pending_review';
@@ -1056,6 +1125,7 @@ function readAllDatabaseData_() {
       var recordHash = '';
       var calculated = {};
       var syncedAt = String(row[5] || '');
+      var language = String(row[19] || 'en').toLowerCase().trim();
 
       var valR = String(row[17] || '').trim();
       var valL = String(row[11] || '').trim();
@@ -1064,7 +1134,7 @@ function readAllDatabaseData_() {
       if (valL.charAt(0) === "'") valL = valL.substring(1).trim();
 
       if (valR.charAt(0) === '{') {
-        // Modern 19-column layout (Row 12 onwards)
+        // Modern 19/20-column layout (Row 12 onwards)
         try { answers = JSON.parse(valR); } catch (e) { answers = {}; }
         reviewStatus = (valL && valL.charAt(0) !== '{') ? valL : 'pending_review';
         if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
@@ -1104,6 +1174,7 @@ function readAllDatabaseData_() {
         surveyTitle: String(row[2]),
         collectorId: String(row[3]),
         enumerator: String(row[4]),
+        language: language || 'en',
         submittedAt: String(row[5]),
         durationSec: Number(row[6] || 0),
         gps: (row[7] !== '' && row[8] !== '') ? {
