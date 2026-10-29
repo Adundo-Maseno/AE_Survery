@@ -71,6 +71,16 @@ window.AEApp = {
       this.render();
     });
 
+    // Listen for background synchronization state events
+    window.addEventListener('ae-sync-state-change', () => {
+      const user = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+        ? window.AESession.getCurrentUser()
+        : null;
+      if (user) {
+        this.renderHeaderBar(user);
+      }
+    });
+
     // Global Keyboard Shortcuts & Escape Key Resilience
     window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
 
@@ -660,6 +670,7 @@ window.AEApp = {
     const totalPending = Math.max(queueCount, unsyncedRespCount);
     const activeSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
     const isAdmin = currentUser.role === 'admin';
+    const isCurrentlySyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
 
     headerEl.innerHTML = `
       <div class="max-w-[1340px] mx-auto px-3 sm:px-5 py-2 sm:py-0 sm:h-12 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4">
@@ -740,10 +751,12 @@ window.AEApp = {
         <div class="order-2 sm:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
           <!-- Mobile Sync Button -->
           <button onclick="AEApp.triggerGoogleSheetsSync()"
-            ${this.isSyncing ? 'disabled' : ''}
+            ${isCurrentlySyncing ? 'disabled' : ''}
             title="Synchronize with Google Sheets"
-            class="sm:hidden h-8 px-2.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-[#141A17] hover:bg-[#232C27] text-white ae-press">
-            <i class="fa-solid fa-arrows-rotate text-[11px] ${this.isSyncing ? 'fa-spin' : ''}"></i>
+            class="sm:hidden h-8 px-2.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-[#141A17] hover:bg-[#232C27] text-white ae-press ${
+              isCurrentlySyncing ? 'opacity-80 cursor-wait' : ''
+            }">
+            <i class="fa-solid fa-arrows-rotate text-[11px] ${isCurrentlySyncing ? 'fa-spin' : ''}"></i>
             ${
               totalPending > 0
                 ? `<span class="px-1.5 py-0.2 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[10px] font-bold tabular-nums">${totalPending}</span>`
@@ -785,10 +798,12 @@ window.AEApp = {
             </button>
 
             <button onclick="AEApp.triggerGoogleSheetsSync()"
-              ${this.isSyncing ? 'disabled' : ''}
-              class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap bg-[#141A17] hover:bg-[#232C27] text-white shrink-0 ae-press">
-              <i class="fa-solid fa-arrows-rotate text-[11px] ${this.isSyncing ? 'fa-spin' : ''}"></i>
-              <span class="hidden xl:inline">${this.isSyncing ? 'Syncing…' : 'Sync Sheets'}</span>
+              ${isCurrentlySyncing ? 'disabled' : ''}
+              class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap bg-[#141A17] hover:bg-[#232C27] text-white shrink-0 ae-press ${
+                isCurrentlySyncing ? 'opacity-80 cursor-wait' : ''
+              }">
+              <i class="fa-solid fa-arrows-rotate text-[11px] ${isCurrentlySyncing ? 'fa-spin' : ''}"></i>
+              <span class="hidden xl:inline">${isCurrentlySyncing ? 'Syncing…' : 'Sync Sheets'}</span>
               ${
                 totalPending > 0
                   ? `<span class="px-1.5 py-0.2 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[11px] font-semibold tabular-nums">${totalPending}</span>`
@@ -3077,6 +3092,20 @@ window.AEApp = {
             </p>
           </div>
 
+          <!-- Continuous Background Auto-Sync Setting -->
+          <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-3.5 space-y-2">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <span class="text-xs font-semibold text-[#111613] block">Continuous Background Auto-Sync</span>
+                <span class="text-xs text-[#525B56]">Silently streams completed responses &amp; roster changes to Google Sheets every 25s without manual sync button clicks.</span>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                <input type="checkbox" id="ae_bg_sync_toggle" ${settings.backgroundSyncEnabled !== false ? 'checked' : ''} ${!isAdmin ? 'disabled' : ''} class="sr-only peer">
+                <div class="w-9 h-5 bg-[#CFD5D0] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#247B50]"></div>
+              </label>
+            </div>
+          </div>
+
           <!-- Provisioned Google Sheets Tabs Preview -->
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-3.5 space-y-2">
             <div class="flex items-center justify-between">
@@ -3178,12 +3207,18 @@ window.AEApp = {
     const devId = document.getElementById('ae_device_id_input')?.value || 'AE-TAB-01';
     const enumName = document.getElementById('ae_enum_input')?.value || 'Field Enumerator';
     const syncToken = (document.getElementById('ae_sync_token_input')?.value || '').trim();
+    const bgSyncToggle = document.getElementById('ae_bg_sync_toggle');
+    const backgroundSyncEnabled = bgSyncToggle ? bgSyncToggle.checked : true;
     window.aeStore.updateSettings({
       gasWebAppUrl: gasUrl,
       syncToken,
       deviceId: devId.trim(),
-      defaultEnumerator: enumName.trim()
+      defaultEnumerator: enumName.trim(),
+      backgroundSyncEnabled
     });
+    if (backgroundSyncEnabled) {
+      window.aeStore.startBackgroundSyncDaemon();
+    }
     this.showToast('Google Sheets & GAS configuration saved.', 'success');
   },
 

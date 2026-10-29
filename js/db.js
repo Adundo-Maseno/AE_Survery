@@ -1398,6 +1398,8 @@ class AESurveyStore {
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
       this.refreshPersonnelFromCloud().catch(() => {});
     }
+    // Launch continuous background auto-sync daemon
+    this.startBackgroundSyncDaemon();
     return this;
   }
 
@@ -1909,6 +1911,94 @@ class AESurveyStore {
         }
       }
     }
+  }
+
+  /**
+   * Continuous Background Auto-Sync Daemon.
+   * Runs silently in the background, flushing queued field responses and pulling
+   * updated staff credentials whenever connectivity is present.
+   */
+  startBackgroundSyncDaemon() {
+    if (this._bgSyncTimer) {
+      clearInterval(this._bgSyncTimer);
+      this._bgSyncTimer = null;
+    }
+
+    if (this.settings.backgroundSyncEnabled === false) return;
+
+    // Heartbeat every 20-30 seconds (default: 25s)
+    const intervalSec = Math.max(10, parseInt(this.settings.backgroundSyncIntervalSec, 10) || 25);
+    const intervalMs = intervalSec * 1000;
+
+    this._bgSyncTimer = setInterval(async () => {
+      // Guard: skip if offline, simulated offline, no GAS URL, or sync already in flight
+      if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl || this._syncInFlight) {
+        return;
+      }
+
+      const hasUnsyncedResponses = this.responses.some((r) => r.syncStatus !== 'synced');
+      const hasQueuedItems = Array.isArray(this.syncQueue) && this.syncQueue.length > 0;
+
+      if (hasUnsyncedResponses || hasQueuedItems) {
+        try {
+          await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
+        } catch (e) {
+          // Silent retry on next interval tick
+        }
+      }
+    }, intervalMs);
+
+    // Event 1: Window focus / Visibility Change (when user switches back to tab or unlocks tablet)
+    if (typeof document !== 'undefined' && !this._visibilityBound) {
+      this._visibilityBound = true;
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.triggerBackgroundSyncNow();
+        }
+      });
+      window.addEventListener('focus', () => {
+        this.triggerBackgroundSyncNow();
+      });
+    }
+
+    // Event 2: Network online reconnection
+    if (typeof window !== 'undefined' && !this._onlineBound) {
+      this._onlineBound = true;
+      window.addEventListener('online', () => {
+        this.triggerBackgroundSyncNow();
+      });
+    }
+
+    // Event 3: PWA Service Worker Background Sync message
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && !this._swMsgBound) {
+      this._swMsgBound = true;
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'TRIGGER_BG_SYNC') {
+          this.triggerBackgroundSyncNow();
+        }
+      });
+    }
+  }
+
+  /**
+   * Debounced immediate trigger for background synchronization.
+   */
+  triggerBackgroundSyncNow(delayMs = 400) {
+    if (this._bgTriggerDebounce) {
+      clearTimeout(this._bgTriggerDebounce);
+      this._bgTriggerDebounce = null;
+    }
+    this._bgTriggerDebounce = setTimeout(async () => {
+      if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl || this._syncInFlight) {
+        return;
+      }
+      const hasUnsynced = this.responses.some((r) => r.syncStatus !== 'synced') || (this.syncQueue && this.syncQueue.length > 0);
+      if (hasUnsynced) {
+        try {
+          await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
+        } catch (e) {}
+      }
+    }, delayMs);
   }
 
   assignPersonnelTask(personId, surveyId, targetQuota = 10, notes = '', deadline = null, supervisorId = null) {
@@ -2513,11 +2603,16 @@ class AESurveyStore {
     );
     this.saveToLocalStorage();
 
-    // If online and autoSync is enabled, trigger non-blocking background flush
-    if (this.isEffectivelyOnline() && this.settings.autoSyncOnOnline && this.settings.gasWebAppUrl) {
-      setTimeout(() => {
-        this.syncWithGoogleSheets().catch(() => {});
-      }, 300);
+    // Trigger immediate background sync to stream new response to Google Sheets
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.triggerBackgroundSyncNow(250);
+    }
+
+    // Register with native W3C Service Worker Background Sync API if supported
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.sync.register('ae-background-sync').catch(() => {});
+      }).catch(() => {});
     }
 
     return record;
@@ -2590,6 +2685,9 @@ class AESurveyStore {
     }
 
     this._syncInFlight = true;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
+    }
     const startTime = performance.now();
     const unsyncedResponses = options.forceAll
       ? this.responses
@@ -2715,11 +2813,6 @@ class AESurveyStore {
       this.settings.lastSyncedAt = nowIso;
       this.lastSyncError = null;
 
-      // Merge remote personnel (staff credentials, roles, and PIN updates)
-      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
-        this.mergePersonnelFromCloud(data.personnel);
-      }
-
       const latencyMs = Math.round(performance.now() - startTime);
       this.syncLogs.unshift({
         id: 'log_' + Date.now().toString(36),
@@ -2734,20 +2827,18 @@ class AESurveyStore {
       return { ...resultSummary, latencyMs };
     } catch (err) {
       const nowIso = new Date().toISOString();
-      // Merge remote personnel (staff credentials, roles, and PIN updates)
-      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
-        this.mergePersonnelFromCloud(data.personnel);
-      }
-
       const latencyMs = Math.round(performance.now() - startTime);
       this.syncQueue.forEach((item) => {
         item.attempts = (item.attempts || 0) + 1;
       });
-      this.lastSyncError = {
-        message: err.message || 'Synchronization failed',
-        timestamp: nowIso,
-        gasUrl
-      };
+      // In background auto-sync mode, do not show a disruptive banner on transient timeout
+      if (!options.isBackground) {
+        this.lastSyncError = {
+          message: err.message || 'Synchronization failed',
+          timestamp: nowIso,
+          gasUrl
+        };
+      }
       this.syncLogs.unshift({
         id: 'log_' + Date.now().toString(36),
         timestamp: nowIso,
@@ -2760,6 +2851,9 @@ class AESurveyStore {
       throw err;
     } finally {
       this._syncInFlight = false;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+      }
     }
   }
 
@@ -2779,6 +2873,9 @@ class AESurveyStore {
     }
 
     this._syncInFlight = true;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
+    }
     const startTime = performance.now();
     try {
       const sep = gasUrl.includes('?') ? '&' : '?';
@@ -2894,11 +2991,6 @@ class AESurveyStore {
       };
     } catch (err) {
       const nowIso = new Date().toISOString();
-      // Merge remote personnel (staff credentials, roles, and PIN updates)
-      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
-        this.mergePersonnelFromCloud(data.personnel);
-      }
-
       const latencyMs = Math.round(performance.now() - startTime);
       this.lastSyncError = {
         message: err.message || 'Pull failed',
@@ -2917,6 +3009,9 @@ class AESurveyStore {
       throw err;
     } finally {
       this._syncInFlight = false;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+      }
     }
   }
 }

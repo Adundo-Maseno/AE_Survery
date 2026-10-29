@@ -4,7 +4,7 @@
  * so field enumerators can load, build, and administer surveys 100% offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.28';
+const CACHE_NAME = 'ae-survey-prod-v3.29';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
@@ -144,5 +144,18 @@ self.addEventListener('fetch', (event) => {
       return cachedResponse || networkFetch;
     })
   );
+});
+
+// W3C Service Worker Background Sync API (Handles background data flush when browser reconnects)
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'ae-background-sync') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'TRIGGER_BG_SYNC' });
+        });
+      })
+    );
+  }
 });
 

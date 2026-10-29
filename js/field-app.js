@@ -143,6 +143,11 @@ window.AEFieldApp = {
       this.renderHeader();
     });
 
+    // Listen for background auto-sync state changes
+    window.addEventListener('ae-sync-state-change', () => {
+      this.renderHeader();
+    });
+
     window.addEventListener('online', () => {
       this.showToast('Online connection restored. Syncing outbox…', 'success');
       this.triggerCloudSync(false);
@@ -394,13 +399,18 @@ window.AEFieldApp = {
 
     const isOnline = window.aeStore.isEffectivelyOnline();
     const queuedCount = window.aeStore.responses.filter((r) => r.syncStatus !== 'synced').length;
+    const isSyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
 
     const syncText = document.getElementById('ae_hdr_sync_text');
     const syncIcon = document.getElementById('ae_hdr_sync_icon');
     const syncBtn = document.getElementById('ae_hdr_sync_btn');
 
     if (syncText && syncIcon && syncBtn) {
-      if (!isOnline) {
+      if (isSyncing) {
+        syncIcon.className = 'fa-solid fa-arrows-rotate text-xs text-[#247B50] fa-spin';
+        syncText.textContent = 'Auto-syncing…';
+        syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs inline-flex items-center gap-1.5 ae-press opacity-85';
+      } else if (!isOnline) {
         syncIcon.className = 'fa-solid fa-cloud text-xs text-[#D97706]';
         syncText.textContent = `${queuedCount} ${this.t('offlineQueue')}`;
         syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#FFFBEB] text-[#92400E] text-xs inline-flex items-center gap-1.5 ae-press';
@@ -1449,6 +1459,8 @@ window.AEFieldApp = {
       if (showToast) this.showToast('Device is offline. Connect to internet to sync.', 'warning');
       return;
     }
+    this.isSyncing = true;
+    this.renderHeader();
     try {
       const res = await window.aeStore.syncWithGoogleSheets();
       if (showToast) {
@@ -1459,6 +1471,7 @@ window.AEFieldApp = {
         this.showToast(err.message || 'Sync failed', 'error');
       }
     } finally {
+      this.isSyncing = false;
       this.renderHeader();
     }
   },
