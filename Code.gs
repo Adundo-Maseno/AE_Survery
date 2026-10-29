@@ -170,6 +170,16 @@ function doGet(e) {
       });
     }
 
+    if (action === 'migrate') {
+      var migResult = migrateResponsesSheetLayout_();
+      return jsonResponse_({
+        ok: true,
+        action: 'migrate',
+        result: migResult,
+        serverTime: new Date().toISOString()
+      });
+    }
+
     // Optional: if hosted inside Apps Script HtmlService with an index.html file
     if (!action && params.mode === 'ui') {
       return HtmlService.createHtmlOutputFromFile('index')
@@ -477,6 +487,89 @@ function ensureDatabaseInitialized_() {
     try {
       ss.deleteSheet(defaultSheet);
     } catch (e) {}
+  }
+
+  // Automatically heal and align any legacy rows where AnswersJSON was in Col L instead of Col R
+  migrateResponsesSheetLayout_();
+}
+
+/**
+ * Custom Google Sheets Menu for one-click database management
+ */
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('AE Survey Database')
+      .addItem('Repair / Align Legacy Response Columns', 'migrateResponsesSheetLayout')
+      .addItem('Initialize / Refresh Database Tabs', 'setupDatabaseSheets')
+      .addToUi();
+  } catch (e) {}
+}
+
+/**
+ * Public runner function that can be selected from the Apps Script toolbar dropdown
+ */
+function migrateResponsesSheetLayout() {
+  var res = migrateResponsesSheetLayout_();
+  Logger.log('Migration Result: ' + JSON.stringify(res));
+  return res;
+}
+
+/**
+ * Automatically repairs and aligns legacy rows (e.g. Rows 2 to 11) in the 'Responses' sheet
+ * where AnswersJSON was stored in Column L (Index 11) instead of Column R (Index 17).
+ * Shifts AnswersJSON into Column R and Timestamp into Column S, ensuring 100% column consistency.
+ */
+function migrateResponsesSheetLayout_() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var rSheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
+    if (!rSheet || rSheet.getLastRow() <= 1) return { migrated: 0 };
+
+    var lastRow = rSheet.getLastRow();
+    var maxCols = Math.max(19, rSheet.getLastColumn());
+    var range = rSheet.getRange(2, 1, lastRow - 1, maxCols);
+    var values = range.getValues();
+    var migratedCount = 0;
+
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      var valL = String(row[11] || '').trim();
+      var valR = String(row[17] || '').trim();
+
+      // Detection: If Column L starts with '{' (is JSON answers) and Column R is not JSON answers
+      if (valL.charAt(0) === '{' && valR.charAt(0) !== '{') {
+        var oldAnswersJson = row[11];
+        var oldTimestamp = row[12] || row[5] || new Date().toISOString();
+
+        // Shift AnswersJSON from Column L (idx 11) to Column R (idx 17)
+        row[17] = oldAnswersJson;
+
+        // Shift Timestamp from Column M (idx 12) to Column S (idx 18)
+        row[18] = oldTimestamp;
+
+        // Reset Column L (idx 11) to 'approved'
+        row[11] = 'approved';
+
+        // Column M (idx 12) QAFlags
+        row[12] = 'LEGACY_MIGRATED';
+
+        // Initialize Columns N, O, P, Q (indices 13..16)
+        row[13] = '';
+        row[14] = '';
+        row[15] = '';
+        row[16] = '{}';
+
+        migratedCount++;
+      }
+    }
+
+    if (migratedCount > 0) {
+      range.setValues(values);
+    }
+    return { ok: true, migrated: migratedCount };
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 }
 
@@ -847,46 +940,45 @@ function readAllDatabaseData_() {
     for (var k = 0; k < rRows.length; k++) {
       var row = rRows[k];
 
-      // Parse AnswersJSON: In 19-col schema, answers are in Col 18 (index 17).
-      // Fallback: If Col 18 is empty but Col 12 (index 11) is valid JSON, use it.
+      // Adaptive schema detection:
+      // - Newer rows (Row 12 onwards): AnswersJSON in Col R (index 17).
+      // - Legacy rows (Rows 2 to 11): AnswersJSON in Col L (index 11).
       var answers = {};
-      var rawAns = row[17] || '';
-      if (!rawAns && typeof row[11] === 'string' && row[11].trim().charAt(0) === '{') {
-        rawAns = row[11];
-      }
-      if (typeof rawAns === 'string' && rawAns) {
-        try {
-          answers = JSON.parse(rawAns);
-        } catch (e) {
-          answers = {};
-        }
-      } else if (typeof rawAns === 'object' && rawAns !== null) {
-        answers = rawAns;
-      }
-
-      // Parse Calculated metrics: Col 17 (index 16)
-      var calculated = {};
-      var rawCalc = row[16] || '';
-      if (typeof rawCalc === 'string' && rawCalc) {
-        try {
-          calculated = JSON.parse(rawCalc);
-        } catch (e) {
-          calculated = {};
-        }
-      } else if (typeof rawCalc === 'object' && rawCalc !== null) {
-        calculated = rawCalc;
-      }
-
-      // Parse QA Flags: Col 13 (index 12)
-      var qaFlags = [];
-      if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
-        qaFlags = row[12].split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      }
-
-      // Parse Review Status: Col 12 (index 11)
       var reviewStatus = 'pending_review';
-      if (row[11] && typeof row[11] === 'string' && row[11].indexOf('{') === -1) {
-        reviewStatus = row[11];
+      var qaFlags = [];
+      var supervisorId = '';
+      var npsCategory = '';
+      var recordHash = '';
+      var calculated = {};
+      var syncedAt = String(row[5] || '');
+
+      var valR = String(row[17] || '').trim();
+      var valL = String(row[11] || '').trim();
+
+      if (valR.charAt(0) === '{') {
+        // Modern 19-column layout (Row 12 onwards)
+        try { answers = JSON.parse(row[17]); } catch (e) { answers = {}; }
+        reviewStatus = (valL && valL.charAt(0) !== '{') ? valL : 'pending_review';
+        if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
+          qaFlags = row[12].split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        }
+        supervisorId = String(row[13] || '');
+        npsCategory = String(row[14] || '');
+        recordHash = String(row[15] || '');
+        if (row[16]) {
+          try { calculated = typeof row[16] === 'object' ? row[16] : JSON.parse(row[16]); } catch (e) {}
+        }
+        syncedAt = String(row[18] || row[5] || '');
+      } else if (valL.charAt(0) === '{') {
+        // Legacy layout (Rows 2 to 11): Answers stored in Col L
+        try { answers = JSON.parse(row[11]); } catch (e) { answers = {}; }
+        reviewStatus = 'approved';
+        qaFlags = ['LEGACY_ROW'];
+        syncedAt = String(row[12] || row[5] || '');
+      } else if (typeof row[17] === 'object' && row[17] !== null) {
+        answers = row[17];
+      } else if (typeof row[11] === 'object' && row[11] !== null) {
+        answers = row[11];
       }
 
       responses.push({
