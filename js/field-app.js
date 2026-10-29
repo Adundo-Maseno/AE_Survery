@@ -2072,21 +2072,18 @@ window.AEFieldApp = {
             </div>
           </div>
         ` : `
-          <div class="text-center py-6 border-2 border-dashed border-[#CFD5D0] rounded-[6px] bg-white space-y-3">
-            <div class="w-12 h-12 rounded-full bg-[#247B50]/15 text-[#247B50] mx-auto flex items-center justify-center text-xl">
-              <i class="fa-solid fa-camera"></i>
-            </div>
+          <div class="text-center py-5 border border-[#CFD5D0] rounded-[6px] bg-[#FAFBF9] space-y-2.5">
             <div class="space-y-1">
-              <div class="text-xs font-semibold text-[#111613]">Capture Crop Trial / Agro-Dealer Photo</div>
+              <div class="text-xs font-semibold text-[#111613]">Capture Crop Trial / Agro-Dealer Photo Proof</div>
               <p class="text-[11px] text-[#525B56] max-w-xs mx-auto">
                 Opens smartphone camera directly. Compressed automatically to &le;150KB for offline storage.
               </p>
             </div>
             <div>
               <label for="input_photo_${q.id}"
-                class="h-9 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer ae-press">
-                <i class="fa-solid fa-camera"></i>
-                <span>Open Camera / Upload</span>
+                class="min-h-[44px] px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 cursor-pointer ae-press">
+                <i class="fa-solid fa-camera text-sm text-[#3FC07A]"></i>
+                <span>Open Camera / Upload Photo</span>
               </label>
               <input type="file" id="input_photo_${q.id}" accept="image/*" capture="environment" class="sr-only"
                 onchange="AEFieldApp.handlePhotoProofUpload('${q.id}', this)" />
@@ -2299,10 +2296,7 @@ window.AEFieldApp = {
                 </div>
               </div>`
             : `<div class="space-y-3">
-                <div class="p-5 text-center bg-white border border-[#CFD5D0] rounded-[6px] space-y-3">
-                  <div class="w-12 h-12 rounded-full bg-[#247B50]/15 text-[#247B50] mx-auto flex items-center justify-center text-xl">
-                    <i class="fa-solid fa-barcode"></i>
-                  </div>
+                <div class="p-4 text-center bg-[#FAFBF9] border border-[#CFD5D0] rounded-[6px] space-y-2">
                   <div class="space-y-1">
                     <div class="text-xs font-semibold text-[#111613]">Optical Camera Barcode / QR Scanner</div>
                     <p class="text-[11px] text-[#525B56] max-w-xs mx-auto">
@@ -2311,9 +2305,9 @@ window.AEFieldApp = {
                   </div>
                   <div>
                     <button type="button" onclick="AEFieldApp.triggerBarcodeScanner('${q.id}')"
-                      class="h-10 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
-                      <i class="fa-solid fa-camera"></i>
-                      <span>Tap to Scan Barcode</span>
+                      class="min-h-[44px] px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
+                      <i class="fa-solid fa-barcode text-sm text-[#3FC07A]"></i>
+                      <span>Launch Camera Barcode Scanner</span>
                     </button>
                   </div>
                 </div>
@@ -2328,10 +2322,10 @@ window.AEFieldApp = {
                   <input type="text"
                     id="input_barcode_${q.id}"
                     placeholder="e.g. KEPHIS-9823410"
-                    class="flex-1 h-10 text-xs sm:text-sm bg-white border border-[#CFD5D0] rounded-[6px] px-3.5 text-[#111613] font-mono focus:border-[#247B50] focus:outline-none" />
+                    class="flex-1 min-h-[44px] text-xs sm:text-sm bg-white border border-[#CFD5D0] rounded-[6px] px-3.5 text-[#111613] font-mono focus:border-[#247B50] focus:outline-none" />
                   <button type="button"
                     onclick="AEFieldApp.saveManualBarcode('${q.id}')"
-                    class="h-10 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
+                    class="min-h-[44px] px-5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
                     Verify
                   </button>
                 </div>
@@ -2375,16 +2369,16 @@ window.AEFieldApp = {
       <div class="space-y-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4">
         ${
           isRecording
-            ? `<div class="p-5 text-center bg-white border-2 border-[#C4242A] rounded-[6px] space-y-3 bg-[#FFEDEA]/20">
-                <div class="w-12 h-12 rounded-full bg-[#FFEDEA] text-[#C4242A] mx-auto flex items-center justify-center text-xl">
-                  <i class="fa-solid fa-microphone-lines"></i>
-                </div>
+            ? `<div class="p-4 text-center bg-[#FFEDEA]/40 border border-[#C4242A] rounded-[6px] space-y-2.5">
                 <div class="space-y-1">
-                  <div class="text-xs font-bold text-[#831C1E]">Recording Field Audio Testimony…</div>
+                  <div class="text-xs font-bold text-[#831C1E] inline-flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-[#C4242A] animate-ping"></span>
+                    <span>Recording Field Audio Testimony…</span>
+                  </div>
                   <div class="text-sm tabular-nums font-semibold text-[#111613]" id="audio_timer_${q.id}">00:08 / 02:00</div>
                 </div>
                 <button type="button" onclick="AEFieldApp.stopAudioRecording('${q.id}')"
-                  class="h-10 px-5 rounded-[6px] bg-[#C4242A] hover:bg-[#9B1D22] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
+                  class="min-h-[44px] px-5 rounded-[6px] bg-[#C4242A] hover:bg-[#9B1D22] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                   <i class="fa-solid fa-stop"></i>
                   <span>Stop & Save Recording</span>
                 </button>
@@ -2410,10 +2404,7 @@ window.AEFieldApp = {
                   </audio>
                 </div>
               </div>`
-            : `<div class="p-5 text-center bg-white border border-[#CFD5D0] rounded-[6px] space-y-3">
-                <div class="w-12 h-12 rounded-full bg-[#247B50]/15 text-[#247B50] mx-auto flex items-center justify-center text-xl">
-                  <i class="fa-solid fa-microphone"></i>
-                </div>
+            : `<div class="p-4 text-center bg-[#FAFBF9] border border-[#CFD5D0] rounded-[6px] space-y-2">
                 <div class="space-y-1">
                   <div class="text-xs font-semibold text-[#111613]">Farmer Qualitative Audio Testimony</div>
                   <p class="text-[11px] text-[#525B56] max-w-xs mx-auto">
@@ -2422,8 +2413,8 @@ window.AEFieldApp = {
                 </div>
                 <div>
                   <button type="button" onclick="AEFieldApp.startAudioRecording('${q.id}')"
-                    class="h-10 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
-                    <i class="fa-solid fa-microphone"></i>
+                    class="min-h-[44px] px-5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+                    <i class="fa-solid fa-microphone text-sm"></i>
                     <span>Start Voice Recording</span>
                   </button>
                 </div>

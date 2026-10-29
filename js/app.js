@@ -1177,11 +1177,9 @@ window.AEApp = {
 
         ${
           !isAdmin && currentUser
-            ? `<div class="p-3.5 rounded-[8px] bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-between gap-3 text-xs">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-7 h-7 rounded-[5px] bg-[#1E40AF] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                    <i class="fa-solid fa-user-shield"></i>
-                  </div>
+            ? `<div class="p-3 rounded-[8px] bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-between gap-3 text-xs">
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-user-shield text-[#1E40AF] text-sm shrink-0"></i>
                   <div>
                     <span class="font-semibold text-[#1E40AF]">Supervisor Scope: Assigned to ${this.escapeHtml(currentUser.county || 'Regional')} Hub</span>
                     <p class="text-[#1E40AF]/80 mt-0.5">Monitoring field enumeration quotas, outbox synchronization, and response verifications.</p>
@@ -1228,10 +1226,8 @@ window.AEApp = {
 
         <!-- 2. Survey Scope Selector: Multi-Survey vs Focused Instrument Scope -->
         <div class="bg-white p-3 rounded-[8px] border border-[#E4E7E4] flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <div class="w-7 h-7 rounded-[5px] bg-[#F4F6F4] border border-[#CFD5D0] flex items-center justify-center text-[#247B50] shrink-0">
-              <i class="fa-solid fa-sliders text-xs"></i>
-            </div>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="w-2 h-2 rounded-full bg-[#247B50] shrink-0"></span>
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold text-[#111613]">Overview Survey Scope</span>
@@ -1728,12 +1724,11 @@ window.AEApp = {
           ${isoDate}
         </td>
 
-        <td class="py-3.5 pl-3 pr-4 text-right whitespace-nowrap">
+        <td class="py-3 pl-3 pr-4 text-right whitespace-nowrap">
           <div class="inline-flex items-center justify-end gap-1.5">
-            <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}')"
-              title="${this.overviewSurveyFilter === s.id ? 'Currently active overview scope. Click to show all surveys.' : 'Focus overview dashboard on this survey'}"
-              class="h-7 px-2.5 rounded-[5px] border ${this.overviewSurveyFilter === s.id ? 'bg-[#247B50] text-white border-[#247B50]' : 'border-[#CFD5D0] bg-white text-[#525B56] hover:text-[#111613] hover:bg-[#F4F6F4]'} text-xs font-medium ae-press">
-              ${this.overviewSurveyFilter === s.id ? 'Active Scope' : 'Overview'}
+            <button onclick="AEApp.switchStage('analyze', '${s.id}')"
+              class="h-7 px-3 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold tabular-nums ae-press">
+              Analyze (${sResponses.length})
             </button>
             ${
               isAdmin
@@ -1741,7 +1736,12 @@ window.AEApp = {
                     class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
                     Build
                   </button>`
-                : ''
+                : s.status === 'Archived'
+                ? `<span class="h-7 px-2.5 rounded-[5px] bg-[#F4F6F4] text-[#88928B] text-xs font-medium inline-flex items-center" title="Archived: Field collection locked">Locked</span>`
+                : `<button onclick="AEApp.switchStage('collect', '${s.id}')"
+                    class="h-7 px-2.5 rounded-[5px] border border-[#247B50] bg-white hover:bg-[#DCFAE5] text-xs font-medium text-[#247B50] ae-press">
+                    Collect
+                  </button>`
             }
             ${
               isAdmin
@@ -1749,52 +1749,54 @@ window.AEApp = {
                     const assignedCount = (window.aeStore.personnel || []).filter(
                       (p) => Array.isArray(p.assignedSurveys) && p.assignedSurveys.includes(s.id)
                     ).length;
-                    return `<button onclick="AEApp.openAssignTeamModal('${s.id}')" title="Assign Field Team"
-                      class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1 ae-press">
-                      <i class="fa-solid fa-users text-[#247B50]"></i> <span class="hidden md:inline">Team</span> (${assignedCount})
-                    </button>`;
+                    return `
+                      <details class="relative inline-block text-left">
+                        <summary class="list-none w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs cursor-pointer ae-press" title="More Instrument Actions">
+                          <i class="fa-solid fa-ellipsis-vertical"></i>
+                        </summary>
+                        <div class="absolute right-0 z-30 mt-1 w-48 rounded-[6px] bg-white border border-[#E4E7E4] shadow-md py-1 text-xs text-[#111613]">
+                          <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}'); this.closest('details').removeAttribute('open');"
+                            class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
+                            <i class="fa-solid fa-crosshairs text-[#247B50] w-4"></i>
+                            <span>${this.overviewSurveyFilter === s.id ? 'Reset Scope' : 'Active Scope'}</span>
+                          </button>
+                          <button onclick="AEApp.openAssignTeamModal('${s.id}'); this.closest('details').removeAttribute('open');"
+                            class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
+                            <i class="fa-solid fa-users text-[#525B56] w-4"></i>
+                            <span>Assign Team (${assignedCount})</span>
+                          </button>
+                          <button onclick="AEApp.duplicateSurvey('${s.id}'); this.closest('details').removeAttribute('open');"
+                            class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
+                            <i class="fa-regular fa-copy text-[#525B56] w-4"></i>
+                            <span>Duplicate Instrument</span>
+                          </button>
+                          ${
+                            s.status === 'Archived'
+                              ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
+                                  class="w-full text-left px-3 py-1.5 hover:bg-[#DCFAE5] text-[#247B50] flex items-center gap-2">
+                                  <i class="fa-solid fa-rotate-left w-4"></i>
+                                  <span>Restore Instrument</span>
+                                </button>`
+                              : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
+                                  class="w-full text-left px-3 py-1.5 hover:bg-[#FFFBEB] text-[#92400E] flex items-center gap-2">
+                                  <i class="fa-solid fa-box-archive w-4"></i>
+                                  <span>Archive (Lock Field)</span>
+                                </button>`
+                          }
+                          ${
+                            window.aeStore.surveys.length > 1
+                              ? `<div class="my-1 border-t border-[#EFEFEF]"></div>
+                                 <button onclick="AEApp.deleteSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
+                                   class="w-full text-left px-3 py-1.5 hover:bg-[#FFEDEA] text-[#C4242A] flex items-center gap-2">
+                                   <i class="fa-regular fa-trash-can w-4"></i>
+                                   <span>Delete Instrument</span>
+                                 </button>`
+                              : ''
+                          }
+                        </div>
+                      </details>
+                    `;
                   })()
-                : ''
-            }
-            ${
-              s.status === 'Archived'
-                ? `<span class="h-7 px-2.5 rounded-[5px] bg-[#F4F6F4] text-[#88928B] text-xs font-medium inline-flex items-center" title="Archived: Field collection locked">Locked</span>`
-                : `<button onclick="AEApp.switchStage('collect', '${s.id}')"
-                    class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#247B50] ae-press">
-                    Collect
-                  </button>`
-            }
-            <button onclick="AEApp.switchStage('analyze', '${s.id}')"
-              class="h-7 px-2.5 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium tabular-nums ae-press">
-              Analyze (${sResponses.length})
-            </button>
-            ${
-              isAdmin
-                ? `<button onclick="AEApp.duplicateSurvey('${s.id}')" title="Duplicate Survey" aria-label="Duplicate Survey"
-                    class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs ae-press">
-                    <i class="fa-regular fa-copy"></i>
-                  </button>`
-                : ''
-            }
-            ${
-              isAdmin
-                ? s.status === 'Archived'
-                  ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}')" title="Restore Survey to Active" aria-label="Restore Survey"
-                      class="h-7 px-2.5 rounded-[5px] border border-[#247B50] bg-white hover:bg-[#DCFAE5] text-xs font-semibold text-[#247B50] inline-flex items-center gap-1 ae-press">
-                      <i class="fa-solid fa-rotate-left"></i> Restore
-                    </button>`
-                  : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}')" title="Archive Survey (Field Lockout)" aria-label="Archive Survey"
-                      class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs ae-press">
-                      <i class="fa-solid fa-box-archive"></i>
-                    </button>`
-                : ''
-            }
-            ${
-              isAdmin && window.aeStore.surveys.length > 1
-                ? `<button onclick="AEApp.deleteSurveyConfirm('${s.id}')" title="Delete Survey" aria-label="Delete Survey"
-                    class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] text-[#525B56] hover:text-[#C4242A] inline-flex items-center justify-center text-xs ae-press">
-                    <i class="fa-regular fa-trash-can"></i>
-                  </button>`
                 : ''
             }
           </div>

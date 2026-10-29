@@ -4,7 +4,7 @@
  * so field enumerators can load, build, and administer surveys 100% offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.36';
+const CACHE_NAME = 'ae-survey-prod-v3.37';
 const APP_SHELL_ASSETS = [
   './',
   './index.html',

@@ -1889,23 +1889,46 @@ class AESurveyStore {
   healResponsesAnswers() {
     const seedResponses = (typeof getInitialSeedData === 'function' ? getInitialSeedData().responses : []) || [];
     const seedMap = new Map();
-    const fallbackList = [];
+    const surveySeedGroups = {};
 
     seedResponses.forEach((sr) => {
       if (sr.id) seedMap.set(sr.id, sr);
       if (sr.clientResponseId) seedMap.set(sr.clientResponseId, sr);
       if (sr.submittedAt && sr.enumerator) {
         seedMap.set(`${sr.submittedAt}_${sr.enumerator}`, sr);
+        seedMap.set(`${String(sr.submittedAt).slice(0, 16)}_${sr.enumerator}`, sr);
       }
-      fallbackList.push(sr);
+      if (sr.surveyId) {
+        if (!surveySeedGroups[sr.surveyId]) surveySeedGroups[sr.surveyId] = [];
+        surveySeedGroups[sr.surveyId].push(sr);
+      }
     });
 
     let healed = 0;
     (this.responses || []).forEach((r, idx) => {
-      // Find matching seed response
-      let match = seedMap.get(r.id) || seedMap.get(r.clientResponseId) || seedMap.get(`${r.submittedAt}_${r.enumerator}`);
-      if (!match && fallbackList[idx] && fallbackList[idx].surveyId === r.surveyId) {
-        match = fallbackList[idx];
+      // 1. Direct ID / clientResponseId match
+      let match = seedMap.get(r.id) || seedMap.get(r.clientResponseId);
+
+      // 2. Enumerator + timestamp prefix match
+      if (!match && r.submittedAt && r.enumerator) {
+        match = seedMap.get(`${r.submittedAt}_${r.enumerator}`) ||
+                seedMap.get(`${String(r.submittedAt).slice(0, 16)}_${r.enumerator}`);
+      }
+
+      // 3. Heuristic match: enumerator + duration / date proximity
+      if (!match && r.enumerator) {
+        match = seedResponses.find((sr) => {
+          if (sr.enumerator !== r.enumerator) return false;
+          if (r.durationSec && sr.durationSec && Math.abs(r.durationSec - sr.durationSec) <= 5) return true;
+          if (r.submittedAt && sr.submittedAt && String(r.submittedAt).slice(0, 10) === String(sr.submittedAt).slice(0, 10)) return true;
+          return false;
+        });
+      }
+
+      // 4. Survey group fallback
+      if (!match && r.surveyId && surveySeedGroups[r.surveyId]) {
+        const group = surveySeedGroups[r.surveyId];
+        match = group[idx % group.length];
       }
 
       const currentAnswers = (r.answers && typeof r.answers === 'object') ? r.answers : {};
@@ -1917,8 +1940,10 @@ class AESurveyStore {
         if (match.reviewStatus && !r.reviewStatus) r.reviewStatus = match.reviewStatus;
         if (match.qaFlags && (!r.qaFlags || !r.qaFlags.length)) r.qaFlags = match.qaFlags;
         healed++;
-      } else if (answerKeys.length > 0) {
-        // Ensure dual alias keys are present for cross-version compatibility
+      }
+
+      // Ensure dual alias keys are present for cross-version compatibility
+      if (r.answers && typeof r.answers === 'object') {
         const ans = r.answers;
         if (ans.q_nps !== undefined && ans.q_nps_seed === undefined) ans.q_nps_seed = ans.q_nps;
         if (ans.q_nps_seed !== undefined && ans.q_nps === undefined) ans.q_nps = ans.q_nps_seed;

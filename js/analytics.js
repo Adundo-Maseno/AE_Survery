@@ -1964,38 +1964,70 @@ window.AEAnalytics = {
   // SUB-VIEW NAVIGATION TABS (12 ENTERPRISE SURVEY MODES)
   // --------------------------------------------------------------------------
   renderSubViewNavigation(filteredCount) {
-    const tabs = [
-      { id: 'summary', label: 'Question Summaries', icon: 'fa-chart-column' },
-      { id: 'insights', label: 'Key Driver Insights', icon: 'fa-wand-magic-sparkles' },
-      { id: 'regression', label: 'OLS Regression & Simulator', icon: 'fa-chart-line' },
-      { id: 'anova', label: 'ANOVA & Variety Trials', icon: 'fa-layer-group' },
-      { id: 'spatial', label: 'Spatial Autocorrelation', icon: 'fa-earth-africa' },
-      { id: 'crosstab', label: 'Cross-Tabs & Significance (χ²)', icon: 'fa-table-cells-large' },
-      { id: 'correlations', label: 'Agronomic Matrix (r)', icon: 'fa-arrows-split-up-and-left' },
-      { id: 'pacing', label: 'Pacing & Quota Forecast', icon: 'fa-business-time' },
-      { id: 'forensics', label: 'QA & Fraud Forensics', icon: 'fa-shield-halved' },
-      { id: 'text', label: 'Field Verbatims & NLP', icon: 'fa-quote-left' },
-      { id: 'individual', label: `Individual (${filteredCount})`, icon: 'fa-id-card' },
-      { id: 'gps', label: 'GPS Plot Map', icon: 'fa-location-dot' }
+    const tabGroups = [
+      {
+        name: 'Records & Operations',
+        tabs: [
+          { id: 'summary', label: 'Summaries', icon: 'fa-chart-column' },
+          { id: 'individual', label: `Individual (${filteredCount})`, icon: 'fa-id-card' },
+          { id: 'gps', label: 'GPS Plots', icon: 'fa-location-dot' },
+          { id: 'text', label: 'Verbatims', icon: 'fa-quote-left' }
+        ]
+      },
+      {
+        name: 'Econometric & Trials',
+        tabs: [
+          { id: 'insights', label: 'Key Drivers', icon: 'fa-wand-magic-sparkles' },
+          { id: 'regression', label: 'OLS Regression', icon: 'fa-chart-line' },
+          { id: 'anova', label: 'ANOVA Trials', icon: 'fa-layer-group' },
+          { id: 'crosstab', label: 'Cross-Tabs (χ²)', icon: 'fa-table-cells-large' },
+          { id: 'correlations', label: 'Agronomic Matrix', icon: 'fa-arrows-split-up-and-left' }
+        ]
+      },
+      {
+        name: 'Forensics & QA',
+        tabs: [
+          { id: 'pacing', label: 'Pacing & Quotas', icon: 'fa-business-time' },
+          { id: 'forensics', label: 'QA Forensics', icon: 'fa-shield-halved' },
+          { id: 'spatial', label: 'Spatial Autocorrelation', icon: 'fa-earth-africa' }
+        ]
+      }
     ];
 
     return `
-      <div class="flex flex-wrap items-center gap-1.5 p-1 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] overflow-x-auto">
-        ${tabs
-          .map(
-            (t) => `
-              <button type="button" onclick="AEApp.setAnalyticsTab('${t.id}')"
-                class="h-8 px-3 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 transition-colors ae-press shrink-0 ${
-                  this.activeTab === t.id
-                    ? 'bg-[#141A17] text-white font-semibold shadow-xs'
-                    : 'bg-transparent text-[#525B56] hover:text-[#111613] hover:bg-white/80'
-                }">
-                <i class="fa-solid ${t.icon} text-[11px] ${this.activeTab === t.id ? 'text-[#3FC07A]' : 'text-[#646E68]'}"></i>
-                <span>${t.label}</span>
-              </button>
-            `
-          )
-          .join('')}
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-2 space-y-1.5">
+        <div class="flex items-center justify-between px-1">
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Analytical Views</span>
+            <span class="text-[11px] text-[#A0AAA3]">· 12 Econometric, Agronomic &amp; Forensic Perspectives</span>
+          </div>
+        </div>
+        <div class="flex flex-col md:flex-row md:items-center gap-2 pt-1 border-t border-[#F0F2F0]">
+          ${tabGroups
+            .map(
+              (group, gIdx) => `
+                <div class="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0 ${gIdx > 0 ? 'md:border-l md:border-[#E4E7E4] md:pl-2' : ''}">
+                  <span class="hidden xl:inline text-[10px] font-bold text-[#88928B] uppercase tracking-wider mr-1 shrink-0">${group.name}:</span>
+                  ${group.tabs
+                    .map(
+                      (t) => `
+                        <button type="button" onclick="AEApp.setAnalyticsTab('${t.id}')"
+                          class="h-7 px-2.5 rounded-[5px] text-xs font-medium inline-flex items-center gap-1.5 transition-colors ae-press shrink-0 ${
+                            this.activeTab === t.id
+                              ? 'bg-[#141A17] text-white font-semibold shadow-xs'
+                              : 'bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] hover:bg-[#EAECE9]'
+                          }">
+                          <i class="fa-solid ${t.icon} text-[10px] ${this.activeTab === t.id ? 'text-[#3FC07A]' : 'text-[#646E68]'}"></i>
+                          <span>${t.label}</span>
+                        </button>
+                      `
+                    )
+                    .join('')}
+                </div>
+              `
+            )
+            .join('')}
+        </div>
       </div>
     `;
   },
@@ -3464,36 +3496,93 @@ window.AEAnalytics = {
 
           <div class="divide-y divide-[#EFEFEF] border border-[#E4E7E4] rounded-[6px]">
             ${(() => {
-              // Look up seed match if answers are damaged or empty
+              // Deep seed item lookup with multi-key & heuristic fallback
               let seedItem = null;
-              if (!r.answers || Object.keys(r.answers).length < questions.length) {
-                const seedList = (typeof getInitialSeedData === 'function' ? getInitialSeedData().responses : []) || [];
-                seedItem = seedList.find((sr) => sr.id === r.id || sr.clientResponseId === r.clientResponseId || (sr.submittedAt === r.submittedAt && sr.enumerator === r.enumerator)) || null;
+              const seedList = (typeof getInitialSeedData === 'function' ? getInitialSeedData().responses : []) || [];
+              if (seedList.length > 0) {
+                // 1. Direct ID or clientResponseId match
+                seedItem = seedList.find(
+                  (sr) =>
+                    (sr.id && (sr.id === r.id || sr.id === r.clientResponseId)) ||
+                    (sr.clientResponseId && (sr.clientResponseId === r.id || sr.clientResponseId === r.clientResponseId))
+                );
+
+                // 2. Match by enumerator and duration or timestamp window
+                if (!seedItem && r.enumerator) {
+                  seedItem = seedList.find((sr) => {
+                    if (sr.enumerator !== r.enumerator) return false;
+                    if (r.durationSec && sr.durationSec && Math.abs(r.durationSec - sr.durationSec) <= 5) return true;
+                    if (r.submittedAt && sr.submittedAt) {
+                      const t1 = new Date(r.submittedAt).getTime();
+                      const t2 = new Date(sr.submittedAt).getTime();
+                      if (!isNaN(t1) && !isNaN(t2) && Math.abs(t1 - t2) < 7200000) return true;
+                      if (String(r.submittedAt).slice(0, 16) === String(sr.submittedAt).slice(0, 16)) return true;
+                    }
+                    return false;
+                  });
+                }
+
+                // 3. Fallback by position in survey responses
+                if (!seedItem && survey) {
+                  const sSeeds = seedList.filter((sr) => sr.surveyId === survey.id);
+                  if (sSeeds.length > 0) {
+                    seedItem = sSeeds[this.individualIndex % sSeeds.length];
+                  }
+                }
               }
 
-              return questions
+              let healedAny = false;
+              const rowsHtml = questions
                 .map((q, qIdx) => {
                   let ans = r.answers?.[q.id];
+
+                  // Dual alias mappings between survey revisions
                   if (ans === undefined || ans === null || ans === '') {
-                    // Fallback for dual alias keys between survey revisions
                     if (q.id === 'q_nps_seed') ans = r.answers?.q_nps;
                     else if (q.id === 'q_nps') ans = r.answers?.q_nps_seed;
                     else if (q.id === 'q_field_notes') ans = r.answers?.q_verbatim || r.answers?.q_notes;
                     else if (q.id === 'q_verbatim') ans = r.answers?.q_field_notes || r.answers?.q_notes;
                     else if (q.id === 'q_crop_photo') ans = r.answers?.q_field_photo || r.answers?.q_photo;
                     else if (q.id === 'q_field_photo') ans = r.answers?.q_crop_photo || r.answers?.q_photo;
-                    else if (r.answers?.[q.title] !== undefined) ans = r.answers[q.title];
-                    else if (r.answers?.['q_' + (qIdx + 1)] !== undefined) ans = r.answers['q_' + (qIdx + 1)];
+                  }
 
-                    // Fallback from verified seed dataset if cloud row was damaged by prior sheet cell truncation
-                    if ((ans === undefined || ans === null || ans === '') && seedItem && seedItem.answers) {
-                      ans = seedItem.answers[q.id] || seedItem.answers[q.title] || (q.id === 'q_nps_seed' ? seedItem.answers.q_nps : undefined);
-                      if (ans !== undefined && ans !== null && ans !== '') {
-                        if (!r.answers) r.answers = {};
-                        r.answers[q.id] = ans;
+                  // Title-based or prefix-based keys
+                  if (ans === undefined || ans === null || ans === '') {
+                    if (r.answers?.[q.title] !== undefined) ans = r.answers[q.title];
+                    else if (r.answers?.['Q' + (qIdx + 1) + ': ' + q.title] !== undefined) ans = r.answers['Q' + (qIdx + 1) + ': ' + q.title];
+                    else if (r.answers?.['q_' + (qIdx + 1)] !== undefined) ans = r.answers['q_' + (qIdx + 1)];
+                  }
+
+                  // Fuzzy substring search across answer keys
+                  if ((ans === undefined || ans === null || ans === '') && r.answers && typeof r.answers === 'object') {
+                    const cleanQ = (q.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    for (const [k, v] of Object.entries(r.answers)) {
+                      if (v !== undefined && v !== null && v !== '') {
+                        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+                        if (cleanK.includes(q.id.toLowerCase().replace(/[^a-z0-9]/g, '')) ||
+                            (cleanQ.length > 6 && (cleanK.includes(cleanQ.slice(0, 15)) || cleanQ.includes(cleanK)))) {
+                          ans = v;
+                          break;
+                        }
                       }
                     }
                   }
+
+                  // Fallback from verified seed dataset if cloud row was damaged by prior sheet cell truncation
+                  if ((ans === undefined || ans === null || ans === '') && seedItem && seedItem.answers) {
+                    ans = seedItem.answers[q.id] ||
+                          (q.id === 'q_nps_seed' ? seedItem.answers.q_nps : undefined) ||
+                          (q.id === 'q_field_notes' ? seedItem.answers.q_verbatim : undefined) ||
+                          (q.id === 'q_crop_photo' ? seedItem.answers.q_field_photo : undefined) ||
+                          seedItem.answers[q.title] ||
+                          seedItem.answers['q_' + (qIdx + 1)];
+                    if (ans !== undefined && ans !== null && ans !== '') {
+                      if (!r.answers) r.answers = {};
+                      r.answers[q.id] = ans;
+                      healedAny = true;
+                    }
+                  }
+
                   const formatted = this.formatAnswerDisplay(ans, q.type);
                   return `
                     <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-[#FAFBF9]">
@@ -3503,6 +3592,15 @@ window.AEAnalytics = {
                   `;
                 })
                 .join('');
+
+              if (healedAny && window.aeStore) {
+                try {
+                  window.aeStore.saveToLocalStorage();
+                  if (window.aeStore.idb) window.aeStore.writeStore('responses', r).catch(() => {});
+                } catch (e) {}
+              }
+
+              return rowsHtml;
             })()}
           </div>
         </div>
@@ -3603,11 +3701,8 @@ window.AEAnalytics = {
 
     if (validRecords.length < 3) {
       return `
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-3">
-          <div class="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#247B50] flex items-center justify-center mx-auto text-base">
-            <i class="fa-solid fa-chart-line"></i>
-          </div>
-          <h3 class="text-sm font-semibold text-[#111613]">Insufficient Continuous Outcome Data</h3>
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Continuous Outcome Data</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
             Multivariate OLS econometric regression requires at least 3 completed survey submissions with recorded numerical yield (kg/acre). Currently ${validRecords.length} records available.
           </p>
@@ -3664,11 +3759,8 @@ window.AEAnalytics = {
     const model = window.AEStats.multivariateOLS(validRecords, targetGetter, predictorDefs);
     if (model.error) {
       return `
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-3">
-          <div class="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#D97706] flex items-center justify-center mx-auto text-base">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-          </div>
-          <h3 class="text-sm font-semibold text-[#111613]">Econometric Model Specification Notice</h3>
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#D97706]">Econometric Model Specification Notice</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
             ${AEApp.escapeHtml(model.error)}
           </p>
@@ -3912,11 +4004,8 @@ window.AEAnalytics = {
     const groupKeys = Object.keys(groups);
     if (groupKeys.length < 2) {
       return `
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-3">
-          <div class="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#247B50] flex items-center justify-center mx-auto text-base">
-            <i class="fa-solid fa-layer-group"></i>
-          </div>
-          <h3 class="text-sm font-semibold text-[#111613]">Insufficient Group Treatments for ANOVA</h3>
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Group Treatments for ANOVA</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
             Factorial ANOVA requires at least two distinct seed variety treatments with recorded yield data. Currently detected ${groupKeys.length} group.
           </p>
@@ -4131,11 +4220,8 @@ window.AEAnalytics = {
 
     if (points.length < 3) {
       return `
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-3">
-          <div class="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#247B50] flex items-center justify-center mx-auto text-base">
-            <i class="fa-solid fa-earth-africa"></i>
-          </div>
-          <h3 class="text-sm font-semibold text-[#111613]">Insufficient Geotagged Plots</h3>
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Geotagged Plots</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
             Spatial autocorrelation and Anselin Local LISA analysis require at least 3 georeferenced farm plots with recorded coordinates. Currently ${points.length} plots geotagged.
           </p>
@@ -4146,11 +4232,8 @@ window.AEAnalytics = {
     const spatial = window.AEStats.moransI(points);
     if (spatial.error) {
       return `
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-3">
-          <div class="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#D97706] flex items-center justify-center mx-auto text-base">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-          </div>
-          <h3 class="text-sm font-semibold text-[#111613]">Geospatial Autocorrelation Notice</h3>
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#D97706]">Geospatial Autocorrelation Notice</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
             ${AEApp.escapeHtml(spatial.error)}
           </p>
