@@ -2959,6 +2959,14 @@ class AESurveyStore {
           const key = localResp.clientResponseId || localResp.id;
           if (!respMap.has(key)) {
             respMap.set(key, localResp);
+          } else {
+            // Preserve rich local answers if remote answers were empty or stripped
+            const remoteItem = respMap.get(key);
+            const remoteHasAnswers = remoteItem && remoteItem.answers && Object.keys(remoteItem.answers).length > 0;
+            const localHasAnswers = localResp && localResp.answers && Object.keys(localResp.answers).length > 0;
+            if (!remoteHasAnswers && localHasAnswers) {
+              remoteItem.answers = { ...localResp.answers };
+            }
           }
         });
         this.responses = Array.from(respMap.values()).sort(

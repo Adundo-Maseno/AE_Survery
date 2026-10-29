@@ -470,6 +470,14 @@ function ensureDatabaseInitialized_() {
     'DuplicatesSkipped',
     'Status'
   ]);
+
+  // If default Sheet1 exists and is empty, remove it so operational tabs are immediately visible
+  var defaultSheet = ss.getSheetByName('Sheet1');
+  if (defaultSheet && defaultSheet.getLastRow() === 0 && ss.getSheets().length > 1) {
+    try {
+      ss.deleteSheet(defaultSheet);
+    } catch (e) {}
+  }
 }
 
 function ensureSheetWithHeaders_(ss, sheetName, headers) {
@@ -628,6 +636,11 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     var clientRespId = String(r.clientResponseId || r.id || Utilities.getUuid());
 
     if (existingIds[clientRespId]) {
+      // Ensure row is mirrored to the per-survey dedicated sheet if not already there
+      var existingSurvey = surveyMap[r.surveyId] || null;
+      if (existingSurvey && r.answers && Object.keys(r.answers).length > 0) {
+        appendToSurveyDedicatedSheet_(existingSurvey, r, clientRespId, nowIso);
+      }
       skipped++;
       syncedIds.push(clientRespId);
       continue;
@@ -733,6 +746,9 @@ function appendToSurveyDedicatedSheet_(survey, response, clientRespId, nowIso) {
   var sheet = syncSurveyDedicatedSheetHeader_(survey);
   if (!sheet) return;
 
+  var existingIds = getExistingColumnSet_(sheet, 1);
+  if (existingIds[clientRespId]) return;
+
   var questions = getFlattenedQuestions_(survey);
   var gps = response.gps || {};
   var answers = response.answers || {};
@@ -826,13 +842,53 @@ function readAllDatabaseData_() {
   var responses = [];
   var rSheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
   if (rSheet && rSheet.getLastRow() > 1) {
-    var rRows = rSheet.getRange(2, 1, rSheet.getLastRow() - 1, 13).getValues();
+    var maxCols = Math.max(19, rSheet.getLastColumn());
+    var rRows = rSheet.getRange(2, 1, rSheet.getLastRow() - 1, maxCols).getValues();
     for (var k = 0; k < rRows.length; k++) {
       var row = rRows[k];
+
+      // Parse AnswersJSON: In 19-col schema, answers are in Col 18 (index 17).
+      // Fallback: If Col 18 is empty but Col 12 (index 11) is valid JSON, use it.
       var answers = {};
-      try {
-        answers = JSON.parse(row[11] || '{}');
-      } catch (e) {}
+      var rawAns = row[17] || '';
+      if (!rawAns && typeof row[11] === 'string' && row[11].trim().charAt(0) === '{') {
+        rawAns = row[11];
+      }
+      if (typeof rawAns === 'string' && rawAns) {
+        try {
+          answers = JSON.parse(rawAns);
+        } catch (e) {
+          answers = {};
+        }
+      } else if (typeof rawAns === 'object' && rawAns !== null) {
+        answers = rawAns;
+      }
+
+      // Parse Calculated metrics: Col 17 (index 16)
+      var calculated = {};
+      var rawCalc = row[16] || '';
+      if (typeof rawCalc === 'string' && rawCalc) {
+        try {
+          calculated = JSON.parse(rawCalc);
+        } catch (e) {
+          calculated = {};
+        }
+      } else if (typeof rawCalc === 'object' && rawCalc !== null) {
+        calculated = rawCalc;
+      }
+
+      // Parse QA Flags: Col 13 (index 12)
+      var qaFlags = [];
+      if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
+        qaFlags = row[12].split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      }
+
+      // Parse Review Status: Col 12 (index 11)
+      var reviewStatus = 'pending_review';
+      if (row[11] && typeof row[11] === 'string' && row[11].indexOf('{') === -1) {
+        reviewStatus = row[11];
+      }
+
       responses.push({
         id: String(row[0]),
         clientResponseId: String(row[0]),
@@ -848,9 +904,15 @@ function readAllDatabaseData_() {
           accuracy: Number(row[9] || 0)
         } : null,
         status: String(row[10] || 'complete'),
+        reviewStatus: reviewStatus,
+        qaFlags: qaFlags,
+        supervisorId: String(row[13] || ''),
+        npsCategory: String(row[14] || ''),
+        recordHash: String(row[15] || ''),
+        calculated: calculated,
         answers: answers,
         syncStatus: 'synced',
-        syncedAt: String(row[12] || row[5])
+        syncedAt: String(row[18] || row[5])
       });
     }
   }
