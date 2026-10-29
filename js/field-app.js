@@ -3010,10 +3010,6 @@ window.AEFieldApp = {
                       .join('')
               }
             </div>
-                  `;
-                })
-                .join('')}
-            </div>
           </div>
         </div>
       `;
