@@ -165,7 +165,23 @@ window.AEFieldApp = {
   },
 
   initRunnerForActiveSurvey(forceReset = false) {
-    const survey = window.aeStore.getSurveyById(this.activeSurveyId);
+    let survey = window.aeStore.getSurveyById(this.activeSurveyId);
+    const activePerson = (window.aeStore.personnel || []).find(
+      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+    );
+    if (survey && window.aeStore.canUserCollectSurvey) {
+      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
+      if (!check.allowed) {
+        const userSurveys = window.aeStore.getSurveysForUser ? window.aeStore.getSurveysForUser(activePerson) : [];
+        if (userSurveys.length > 0) {
+          this.activeSurveyId = userSurveys[0].id;
+          survey = userSurveys[0];
+        } else {
+          this.activeSurveyId = null;
+          survey = null;
+        }
+      }
+    }
     if (!survey) return;
 
     const cols = window.aeStore.getCollectorsForSurvey(survey.id);
@@ -1348,6 +1364,17 @@ window.AEFieldApp = {
       return;
     }
 
+    const activePerson = (window.aeStore.personnel || []).find(
+      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+    );
+    if (window.aeStore.canUserCollectSurvey) {
+      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
+      if (!check.allowed) {
+        this.showToast(check.reason, 'error');
+        return;
+      }
+    }
+
     this.isSubmitting = true;
     try {
       let gpsMeta = null;
@@ -1529,6 +1556,16 @@ window.AEFieldApp = {
   },
 
   selectSurvey(surveyId) {
+    const activePerson = (window.aeStore.personnel || []).find(
+      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+    );
+    if (window.aeStore.canUserCollectSurvey) {
+      const check = window.aeStore.canUserCollectSurvey(activePerson, surveyId);
+      if (!check.allowed) {
+        this.showToast(check.reason, 'error');
+        return;
+      }
+    }
     this.activeSurveyId = surveyId;
     this.justSubmittedReceipt = null;
     this.showSurveyPickerModal = false;
@@ -2900,10 +2937,13 @@ window.AEFieldApp = {
     }
 
     if (this.showSurveyPickerModal) {
-      const rawSurveys = window.aeStore.surveys || [];
       const activePerson = (window.aeStore.personnel || []).find(
         (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
       );
+      const rawSurveys = window.aeStore.getSurveysForUser
+        ? window.aeStore.getSurveysForUser(activePerson)
+        : (window.aeStore.surveys || []).filter((s) => s.status !== 'Archived');
+
       modalRoot.innerHTML = `
         <div data-ui="modal-overlay"
           onclick="if(event.target===this) AEFieldApp.closeModals()"
@@ -2920,38 +2960,56 @@ window.AEFieldApp = {
             </div>
 
             <div class="space-y-2 max-h-72 overflow-y-auto">
-              ${rawSurveys
-                .map((s) => {
-                  const loc = window.AEI18n ? window.AEI18n.localizeSurvey(s, this.currentLang) : s;
-                  const active = s.id === this.activeSurveyId;
-                  const qCount = window.aeStore.getQuestionsForSurvey(s).length;
-                  const task =
-                    activePerson && typeof window.aeStore.getPersonnelTaskProgress === 'function'
-                      ? window.aeStore.getPersonnelTaskProgress(activePerson.id, s.id)
-                      : null;
-                  const isAssigned = task && task.isAssigned;
-
-                  return `
-                    <button type="button" onclick="AEFieldApp.selectSurvey('${s.id}')"
-                      class="w-full text-left p-3.5 rounded-[6px] border ${
-                        active ? 'border-[#247B50] bg-[#DCFAE5]/40 text-[#04250E]' : 'border-[#E4E7E4] hover:bg-[#F8F9F8] text-[#111613]'
-                      } transition-colors flex items-center justify-between gap-3 ae-press">
-                      <div class="min-w-0">
-                        <div class="text-xs font-semibold truncate">${this.escapeHtml(loc.title)}</div>
-                        <div class="text-[11px] text-[#525B56] truncate mt-0.5">${this.escapeHtml(loc.category || 'General')} · ${qCount} questions</div>
-                        ${
-                          isAssigned
-                            ? `<div class="flex items-center gap-2 mt-1">
-                                <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1">
-                                  <i class="fa-solid fa-list-check text-[9px]"></i> Assigned: ${task.completed}/${task.target} plots
-                                </span>
-                                ${task.deadline ? `<span class="text-[10px] text-[#525B56]">Due ${this.escapeHtml(task.deadline)}</span>` : ''}
-                              </div>`
-                            : ''
-                        }
+              ${
+                rawSurveys.length === 0
+                  ? `<div class="p-6 text-center space-y-2.5 bg-[#FAFBF9] rounded-[8px] border border-dashed border-[#CFD5D0]">
+                      <div class="w-10 h-10 rounded-full bg-[#FFFBEB] text-[#92400E] mx-auto flex items-center justify-center">
+                        <i class="fa-solid fa-lock text-sm"></i>
                       </div>
-                      ${active ? '<i class="fa-solid fa-circle-check text-[#247B50] shrink-0 text-sm"></i>' : ''}
-                    </button>
+                      <div class="text-xs font-semibold text-[#111613]">No Assigned Active Surveys</div>
+                      <p class="text-[11px] text-[#525B56] leading-relaxed">
+                        ${activePerson ? activePerson.fullName : 'Your enumerator profile'} currently has no active field surveys assigned. Contact your supervisor${
+                          activePerson && activePerson.supervisorId ? ` (${activePerson.supervisorId})` : ''
+                        } or HQ Admin to assign survey studies.
+                      </p>
+                    </div>`
+                  : rawSurveys
+                      .map((s) => {
+                        const loc = window.AEI18n ? window.AEI18n.localizeSurvey(s, this.currentLang) : s;
+                        const active = s.id === this.activeSurveyId;
+                        const qCount = window.aeStore.getQuestionsForSurvey(s).length;
+                        const task =
+                          activePerson && typeof window.aeStore.getPersonnelTaskProgress === 'function'
+                            ? window.aeStore.getPersonnelTaskProgress(activePerson.id, s.id)
+                            : null;
+                        const isAssigned = task && task.isAssigned;
+
+                        return `
+                          <button type="button" onclick="AEFieldApp.selectSurvey('${s.id}')"
+                            class="w-full text-left p-3.5 rounded-[6px] border ${
+                              active ? 'border-[#247B50] bg-[#DCFAE5]/40 text-[#04250E]' : 'border-[#E4E7E4] hover:bg-[#F8F9F8] text-[#111613]'
+                            } transition-colors flex items-center justify-between gap-3 ae-press">
+                            <div class="min-w-0">
+                              <div class="text-xs font-semibold truncate">${this.escapeHtml(loc.title)}</div>
+                              <div class="text-[11px] text-[#525B56] truncate mt-0.5">${this.escapeHtml(loc.category || 'General')} · ${qCount} questions</div>
+                              ${
+                                isAssigned
+                                  ? `<div class="flex items-center gap-2 mt-1">
+                                      <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1">
+                                        <i class="fa-solid fa-list-check text-[9px]"></i> Assigned: ${task.completed}/${task.target} plots
+                                      </span>
+                                      ${task.deadline ? `<span class="text-[10px] text-[#525B56]">Due ${this.escapeHtml(task.deadline)}</span>` : ''}
+                                    </div>`
+                                  : ''
+                              }
+                            </div>
+                            ${active ? '<i class="fa-solid fa-circle-check text-[#247B50] shrink-0 text-sm"></i>' : ''}
+                          </button>
+                        `;
+                      })
+                      .join('')
+              }
+            </div>
                   `;
                 })
                 .join('')}

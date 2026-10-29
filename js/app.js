@@ -32,6 +32,7 @@ window.AEApp = {
   assigningSurveyId: null,
   editingPersonnel: null,
   showResetPinPersonnel: null,
+  showAssignTeamSurveyId: null,
   showStudioMobileMenu: false,
   loginSelectedPersonId: 'ADM-01',
   loginError: '',
@@ -1044,7 +1045,9 @@ window.AEApp = {
       currentUser = window.AESession.getCurrentUser();
     }
     const isAdmin = currentUser && currentUser.role === 'admin';
-    const surveys = window.aeStore.surveys;
+    const surveys = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
+      : window.aeStore.surveys;
     const allResponses = window.aeStore.responses;
 
     // Safety fallback: if current filter points to non-existent survey, reset to 'all'
@@ -1068,7 +1071,12 @@ window.AEApp = {
     const isDomainView = this.selectedOverviewMetric === 'domain' || this.selectedOverviewMetric === 'yield';
 
     const filteredSurveys = surveys.filter((s) => {
-      const matchesStatus = this.statusFilter === 'All' || s.status === this.statusFilter;
+      const matchesStatus =
+        this.statusFilter === 'All'
+          ? s.status !== 'Archived'
+          : this.statusFilter === 'Archived'
+          ? s.status === 'Archived'
+          : s.status === this.statusFilter;
       const matchesQuery =
         !this.searchQuery ||
         s.title.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
@@ -1509,7 +1517,7 @@ window.AEApp = {
               </div>
 
               <div class="inline-flex rounded-[6px] border border-[#CFD5D0] bg-[#F8F9F8] p-0.5">
-                ${['All', 'Active', 'Draft', 'Closed']
+                ${['All', 'Active', 'Draft', 'Closed', 'Archived']
                   .map(
                     (st) => `
                   <button onclick="AEApp.setDashboardStatusFilter('${st}')"
@@ -1548,8 +1556,12 @@ window.AEApp = {
                 const sResponses = window.aeStore.getResponsesForSurvey(s.id);
                 const synced = sResponses.filter((r) => r.syncStatus === 'synced').length;
                 const unsynced = sResponses.length - synced;
+                const isArchived = s.status === 'Archived';
+                const assignedPersonnelCount = (window.aeStore.personnel || []).filter(
+                  (p) => Array.isArray(p.assignedSurveys) && p.assignedSurveys.includes(s.id)
+                ).length;
                 return `
-                  <div class="p-3.5 space-y-2 min-w-0">
+                  <div class="p-3.5 space-y-2 min-w-0 ${isArchived ? 'opacity-85 bg-[#FAFBF9]' : ''}">
                     <div class="flex items-start justify-between gap-2 min-w-0">
                       <button onclick="AEApp.switchStage('design', '${s.id}')" class="text-left font-semibold text-sm text-[#111613] leading-snug min-w-0 ae-break-words">
                         ${this.escapeHtml(s.title)}
@@ -1559,16 +1571,38 @@ window.AEApp = {
                           ? 'bg-[#DCFAE5] text-[#04250E]'
                           : s.status === 'Draft'
                           ? 'bg-[#FFFBEB] text-[#92400E]'
+                          : s.status === 'Archived'
+                          ? 'bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0]'
                           : 'bg-[#EAECE9] text-[#525B56]'
-                      }">${this.escapeHtml(s.status)}</span>
+                      }">
+                        ${isArchived ? '<i class="fa-solid fa-box-archive mr-1 text-[10px]"></i>' : ''}${this.escapeHtml(s.status)}
+                      </span>
                     </div>
                     <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#525B56] tabular-nums">
                       <span>${this.escapeHtml(s.category || 'General')} · ${qCount} questions · ${synced} synced${unsynced > 0 ? ` · ${unsynced} queued` : ''}</span>
-                      <div class="flex items-center gap-1.5">
+                      <div class="flex items-center gap-1.5 flex-wrap">
                         <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}')" class="h-7 px-2 rounded-[5px] border ${this.overviewSurveyFilter === s.id ? 'bg-[#247B50] text-white border-[#247B50]' : 'border-[#CFD5D0] bg-white text-[#525B56]'} text-xs font-medium">${this.overviewSurveyFilter === s.id ? 'Active' : 'Overview'}</button>
                         ${isAdmin ? `<button onclick="AEApp.switchStage('design', '${s.id}')" class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#111613]">Build</button>` : ''}
-                        <button onclick="AEApp.switchStage('collect', '${s.id}')" class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#247B50]">Collect</button>
+                        ${
+                          isAdmin
+                            ? `<button onclick="AEApp.openAssignTeamModal('${s.id}')" title="Assign Field Team" class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#111613] inline-flex items-center gap-1">
+                                <i class="fa-solid fa-users text-[#247B50]"></i> ${assignedPersonnelCount}
+                              </button>`
+                            : ''
+                        }
+                        ${
+                          isArchived
+                            ? `<span class="h-7 px-2.5 rounded-[5px] bg-[#F4F6F4] text-[#88928B] text-xs font-medium inline-flex items-center">Locked</span>`
+                            : `<button onclick="AEApp.switchStage('collect', '${s.id}')" class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#247B50]">Collect</button>`
+                        }
                         <button onclick="AEApp.switchStage('analyze', '${s.id}')" class="h-7 px-2.5 rounded-[5px] bg-[#141A17] text-white text-xs font-medium">Analyze (${sResponses.length})</button>
+                        ${
+                          isAdmin
+                            ? isArchived
+                              ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}')" title="Restore Survey" class="h-7 px-2 rounded-[5px] border border-[#247B50] bg-white text-[#247B50] text-xs font-semibold">Restore</button>`
+                              : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}')" title="Archive Survey" class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white text-[#525B56] text-xs"><i class="fa-solid fa-box-archive"></i></button>`
+                            : ''
+                        }
                       </div>
                     </div>
                   </div>
@@ -1665,9 +1699,11 @@ window.AEApp = {
               ? 'bg-[#DCFAE5] text-[#04250E]'
               : s.status === 'Draft'
               ? 'bg-[#FFFBEB] text-[#92400E]'
+              : s.status === 'Archived'
+              ? 'bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0]'
               : 'bg-[#EAECE9] text-[#525B56]'
           }">
-            ${this.escapeHtml(s.status)}
+            ${s.status === 'Archived' ? '<i class="fa-solid fa-box-archive mr-1 text-[10px]"></i>' : ''}${this.escapeHtml(s.status)}
           </span>
         </td>
 
@@ -1707,10 +1743,27 @@ window.AEApp = {
                   </button>`
                 : ''
             }
-            <button onclick="AEApp.switchStage('collect', '${s.id}')"
-              class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#247B50] ae-press">
-              Collect
-            </button>
+            ${
+              isAdmin
+                ? (() => {
+                    const assignedCount = (window.aeStore.personnel || []).filter(
+                      (p) => Array.isArray(p.assignedSurveys) && p.assignedSurveys.includes(s.id)
+                    ).length;
+                    return `<button onclick="AEApp.openAssignTeamModal('${s.id}')" title="Assign Field Team"
+                      class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1 ae-press">
+                      <i class="fa-solid fa-users text-[#247B50]"></i> <span class="hidden md:inline">Team</span> (${assignedCount})
+                    </button>`;
+                  })()
+                : ''
+            }
+            ${
+              s.status === 'Archived'
+                ? `<span class="h-7 px-2.5 rounded-[5px] bg-[#F4F6F4] text-[#88928B] text-xs font-medium inline-flex items-center" title="Archived: Field collection locked">Locked</span>`
+                : `<button onclick="AEApp.switchStage('collect', '${s.id}')"
+                    class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#247B50] ae-press">
+                    Collect
+                  </button>`
+            }
             <button onclick="AEApp.switchStage('analyze', '${s.id}')"
               class="h-7 px-2.5 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium tabular-nums ae-press">
               Analyze (${sResponses.length})
@@ -1721,6 +1774,19 @@ window.AEApp = {
                     class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs ae-press">
                     <i class="fa-regular fa-copy"></i>
                   </button>`
+                : ''
+            }
+            ${
+              isAdmin
+                ? s.status === 'Archived'
+                  ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}')" title="Restore Survey to Active" aria-label="Restore Survey"
+                      class="h-7 px-2.5 rounded-[5px] border border-[#247B50] bg-white hover:bg-[#DCFAE5] text-xs font-semibold text-[#247B50] inline-flex items-center gap-1 ae-press">
+                      <i class="fa-solid fa-rotate-left"></i> Restore
+                    </button>`
+                  : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}')" title="Archive Survey (Field Lockout)" aria-label="Archive Survey"
+                      class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs ae-press">
+                      <i class="fa-solid fa-box-archive"></i>
+                    </button>`
                 : ''
             }
             ${
@@ -1882,6 +1948,12 @@ window.AEApp = {
       return;
     }
 
+    const surveyCheckboxes = form.querySelectorAll('input[name="ae_per_surveys"]');
+    let assignedSurveys = this.editingPersonnel && Array.isArray(this.editingPersonnel.assignedSurveys) ? [...this.editingPersonnel.assignedSurveys] : [];
+    if (surveyCheckboxes.length > 0) {
+      assignedSurveys = Array.from(form.querySelectorAll('input[name="ae_per_surveys"]:checked')).map((el) => el.value);
+    }
+
     const personData = {
       id: this.editingPersonnel ? this.editingPersonnel.id : null,
       fullName,
@@ -1892,7 +1964,7 @@ window.AEApp = {
       email,
       supervisorId: supervisorId || null,
       pinCode,
-      assignedSurveys: this.editingPersonnel && Array.isArray(this.editingPersonnel.assignedSurveys) ? this.editingPersonnel.assignedSurveys : [],
+      assignedSurveys,
       taskQuotas: this.editingPersonnel && this.editingPersonnel.taskQuotas ? this.editingPersonnel.taskQuotas : {},
       active: true
     };
@@ -2564,8 +2636,127 @@ window.AEApp = {
     const modalRoot = document.getElementById('ae_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showSyncModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showStudioMobileMenu) {
+    if (!this.showSyncModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
       modalRoot.innerHTML = '';
+      return;
+    }
+
+    if (this.showAssignTeamSurveyId) {
+      const surveyId = this.showAssignTeamSurveyId;
+      const survey = window.aeStore.getSurveyById(surveyId);
+      if (!survey) {
+        this.showAssignTeamSurveyId = null;
+        modalRoot.innerHTML = '';
+        return;
+      }
+      const allPersonnel = (window.aeStore.personnel || []).filter((p) => p.active !== false);
+      const supervisors = allPersonnel.filter((p) => p.role === 'supervisor');
+      const enumerators = allPersonnel.filter((p) => p.role === 'enumerator');
+
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEApp.closeAssignTeamModal()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-center justify-center p-4 overflow-y-auto">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-lg w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
+            <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3">
+              <div>
+                <h3 class="text-base font-semibold text-[#111613]">Assign Field Team</h3>
+                <p class="text-xs text-[#525B56] mt-0.5 ae-break-words">
+                  Select which supervisors and enumerators have access to <strong>"${this.escapeHtml(survey.title)}"</strong>
+                </p>
+              </div>
+              <button onclick="AEApp.closeAssignTeamModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+
+            <form onsubmit="AEApp.saveAssignTeam('${surveyId}', event)" class="space-y-4 text-xs">
+              <!-- Field Supervisors Section -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-[#111613] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <i class="fa-solid fa-user-tie text-[#141A17]"></i> Regional Supervisors (${supervisors.length})
+                  </span>
+                  <span class="text-[10px] text-[#525B56]">Review &amp; sign-off authority</span>
+                </div>
+                <div class="border border-[#CFD5D0] rounded-[6px] max-h-36 overflow-y-auto p-2 bg-[#FAFBF9] space-y-1.5 divide-y divide-[#EFEFEF]">
+                  ${
+                    supervisors.length === 0
+                      ? `<div class="p-2 text-center text-[#525B56]">No active supervisors enrolled.</div>`
+                      : supervisors
+                          .map((sup) => {
+                            const isAssigned = Array.isArray(sup.assignedSurveys) && sup.assignedSurveys.includes(surveyId);
+                            return `
+                              <label class="flex items-center justify-between gap-2 pt-1.5 first:pt-0 cursor-pointer select-none">
+                                <div class="flex items-center gap-2 min-w-0">
+                                  <input type="checkbox" name="ae_team_person" value="${this.escapeAttr(sup.id)}" ${isAssigned ? 'checked' : ''}
+                                    class="rounded border-[#CFD5D0] text-[#247B50] focus:ring-[#247B50]" />
+                                  <span class="font-medium text-[#111613] truncate">${this.escapeHtml(sup.fullName)} (${sup.id})</span>
+                                </div>
+                                <span class="text-[11px] text-[#525B56] shrink-0">${this.escapeHtml(sup.county)}</span>
+                              </label>
+                            `;
+                          })
+                          .join('')
+                  }
+                </div>
+              </div>
+
+              <!-- Field Enumerators Section -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold text-[#111613] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-[#247B50]"></i> Field Enumerators (${enumerators.length})
+                  </span>
+                  <div class="flex items-center gap-2">
+                    <button type="button" onclick="AEApp.toggleAllEnumTeam(true)" class="text-[10px] text-[#247B50] hover:underline font-medium">Select All</button>
+                    <span class="text-[#CFD5D0]">·</span>
+                    <button type="button" onclick="AEApp.toggleAllEnumTeam(false)" class="text-[10px] text-[#525B56] hover:underline font-medium">Clear</button>
+                  </div>
+                </div>
+                <div id="ae_enum_team_container" class="border border-[#CFD5D0] rounded-[6px] max-h-48 overflow-y-auto p-2 bg-[#FAFBF9] space-y-1.5 divide-y divide-[#EFEFEF]">
+                  ${
+                    enumerators.length === 0
+                      ? `<div class="p-2 text-center text-[#525B56]">No active enumerators enrolled.</div>`
+                      : enumerators
+                          .map((enm) => {
+                            const isAssigned = Array.isArray(enm.assignedSurveys) && enm.assignedSurveys.includes(surveyId);
+                            const sup = enm.supervisorId ? window.aeStore.getPersonnelById(enm.supervisorId) : null;
+                            return `
+                              <label class="flex items-center justify-between gap-2 pt-1.5 first:pt-0 cursor-pointer select-none">
+                                <div class="flex items-center gap-2 min-w-0">
+                                  <input type="checkbox" name="ae_team_person" value="${this.escapeAttr(enm.id)}" ${isAssigned ? 'checked' : ''}
+                                    class="rounded border-[#CFD5D0] text-[#247B50] focus:ring-[#247B50]" />
+                                  <div class="min-w-0">
+                                    <div class="font-medium text-[#111613] truncate">${this.escapeHtml(enm.fullName)} (${enm.id})</div>
+                                    <div class="text-[10px] text-[#646E68] truncate">${this.escapeHtml(enm.county)} · ${sup ? `Sup: ${sup.fullName}` : 'No supervisor'}</div>
+                                  </div>
+                                </div>
+                                ${
+                                  isAssigned
+                                    ? `<span class="shrink-0 text-[9px] px-1.5 py-0.2 rounded font-semibold bg-[#DCFAE5] text-[#04250E]">Assigned</span>`
+                                    : `<span class="shrink-0 text-[9px] px-1.5 py-0.2 rounded font-medium bg-[#F4F6F4] text-[#88928B]">Unassigned</span>`
+                                }
+                              </label>
+                            `;
+                          })
+                          .join('')
+                  }
+                </div>
+              </div>
+
+              <div class="flex items-center justify-end gap-2 pt-3 border-t border-[#EFEFEF]">
+                <button type="button" onclick="AEApp.closeAssignTeamModal()" class="h-8 px-3 rounded-[5px] text-xs font-medium text-[#525B56] hover:text-[#111613]">
+                  Cancel
+                </button>
+                <button type="submit" class="h-8 px-4 rounded-[5px] bg-[#247B50] text-white text-xs font-semibold ae-press">
+                  Save Team Assignments
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
       return;
     }
 
@@ -2654,6 +2845,34 @@ window.AEApp = {
                     )
                     .join('')}
                 </select>
+              </div>
+
+              <!-- Assigned Field Surveys Multi-Select -->
+              <div class="space-y-1.5 pt-1">
+                <div class="flex items-center justify-between">
+                  <label class="block font-medium text-[#111613]">Assigned Field Surveys</label>
+                  <span class="text-[11px] text-[#525B56]">RBAC access permissions</span>
+                </div>
+                <div class="border border-[#CFD5D0] rounded-[6px] max-h-36 overflow-y-auto p-2 bg-[#FAFBF9] space-y-1.5 divide-y divide-[#EFEFEF]">
+                  ${(window.aeStore.surveys || [])
+                    .map((s) => {
+                      const isAssigned = Array.isArray(p.assignedSurveys) && p.assignedSurveys.includes(s.id);
+                      const isArchived = s.status === 'Archived';
+                      return `
+                        <label class="flex items-center justify-between gap-2 pt-1.5 first:pt-0 cursor-pointer select-none">
+                          <div class="flex items-center gap-2 min-w-0">
+                            <input type="checkbox" name="ae_per_surveys" value="${this.escapeAttr(s.id)}" ${isAssigned ? 'checked' : ''}
+                              class="rounded border-[#CFD5D0] text-[#247B50] focus:ring-[#247B50]" />
+                            <span class="text-xs text-[#111613] font-medium truncate">${this.escapeHtml(s.title)}</span>
+                          </div>
+                          <span class="shrink-0 text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                            isArchived ? 'bg-[#F4F6F4] text-[#88928B]' : 'bg-[#DCFAE5] text-[#04250E]'
+                          }">${this.escapeHtml(s.status)}</span>
+                        </label>
+                      `;
+                    })
+                    .join('')}
+                </div>
               </div>
 
               <div class="flex items-center justify-end gap-2 pt-3 border-t border-[#EFEFEF]">
@@ -3337,6 +3556,65 @@ window.AEApp = {
       this.activeSurveyId = window.aeStore.surveys[0].id;
     }
     this.showToast('Survey removed.', 'success');
+    this.render();
+  },
+
+  archiveSurveyConfirm(surveyId) {
+    if (window.AESession && !window.AESession.hasPermission('EDIT_SURVEY') && !window.AESession.isAdmin()) {
+      this.showToast('Access Denied: Only HQ Administrators can archive surveys.', 'error');
+      return;
+    }
+    const target = window.aeStore.getSurveyById(surveyId);
+    if (!target) return;
+    if (!window.confirm(`Archive survey "${target.title}"? Field enumerators will immediately lose access and new responses will be blocked.`)) {
+      return;
+    }
+    window.aeStore.archiveSurvey(surveyId);
+    this.showToast(`Survey "${target.title}" archived. Field collection locked.`, 'success');
+    this.render();
+  },
+
+  restoreSurveyConfirm(surveyId) {
+    if (window.AESession && !window.AESession.hasPermission('EDIT_SURVEY') && !window.AESession.isAdmin()) {
+      this.showToast('Access Denied: Only HQ Administrators can restore surveys.', 'error');
+      return;
+    }
+    const target = window.aeStore.getSurveyById(surveyId);
+    if (!target) return;
+    window.aeStore.restoreSurvey(surveyId, 'Active');
+    this.showToast(`Survey "${target.title}" restored to Active. Field collection unlocked.`, 'success');
+    this.render();
+  },
+
+  openAssignTeamModal(surveyId) {
+    if (window.AESession && !window.AESession.hasPermission('MANAGE_PERSONNEL') && !window.AESession.isAdmin()) {
+      this.showToast('Access Denied: Only HQ Administrators can assign field teams to surveys.', 'error');
+      return;
+    }
+    this.showAssignTeamSurveyId = surveyId;
+    this.renderModals();
+  },
+
+  closeAssignTeamModal() {
+    this.showAssignTeamSurveyId = null;
+    this.renderModals();
+  },
+
+  toggleAllEnumTeam(select) {
+    const container = document.getElementById('ae_enum_team_container');
+    if (!container) return;
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach((cb) => { cb.checked = Boolean(select); });
+  },
+
+  saveAssignTeam(surveyId, e) {
+    e.preventDefault();
+    const form = e.target;
+    const checked = Array.from(form.querySelectorAll('input[name="ae_team_person"]:checked')).map((el) => el.value);
+    const survey = window.aeStore.getSurveyById(surveyId);
+    window.aeStore.assignPersonnelToSurvey(surveyId, checked);
+    this.showToast(`Updated team assignments for "${survey ? survey.title : surveyId}" (${checked.length} staff allocated).`, 'success');
+    this.closeAssignTeamModal();
     this.render();
   },
 

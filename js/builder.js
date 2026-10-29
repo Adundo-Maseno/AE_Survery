@@ -246,7 +246,14 @@ window.AEBuilder = {
               <option value="Active" ${survey.status === 'Active' ? 'selected' : ''}>Status: Active</option>
               <option value="Draft" ${survey.status === 'Draft' ? 'selected' : ''}>Status: Draft</option>
               <option value="Closed" ${survey.status === 'Closed' ? 'selected' : ''}>Status: Closed</option>
+              <option value="Archived" ${survey.status === 'Archived' ? 'selected' : ''}>Status: Archived (Field Locked)</option>
             </select>
+
+            <!-- Assign Field Team -->
+            <button onclick="AEApp.openAssignTeamModal('${survey.id}')"
+              class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-users-gear text-[#247B50]"></i> Assign Team
+            </button>
 
             <!-- Preview & Kiosk -->
             <button onclick="AEApp.switchStage('collect', '${survey.id}')"
@@ -287,6 +294,8 @@ window.AEBuilder = {
                     ? 'bg-[#DCFAE5] text-[#04250E]'
                     : survey.status === 'Draft'
                     ? 'bg-[#FFFBEB] text-[#92400E]'
+                    : survey.status === 'Archived'
+                    ? 'bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0]'
                     : 'bg-[#EAECE9] text-[#525B56]'
                 }">
                   ${AEApp.escapeHtml(survey.status)}

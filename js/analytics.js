@@ -1251,6 +1251,18 @@ window.AEAnalytics = {
     const all = window.aeStore.getResponsesForSurvey(surveyId);
     const f = this.filterState;
 
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+
+    let supervisedNames = null;
+    let supervisedIds = null;
+    if (currentUser && currentUser.role === 'supervisor') {
+      const myStaff = (window.aeStore.personnel || []).filter((p) => p.supervisorId === currentUser.id);
+      supervisedNames = new Set(myStaff.map((p) => p.fullName).concat([currentUser.fullName]));
+      supervisedIds = new Set(myStaff.map((p) => p.id).concat([currentUser.id]));
+    }
+
     let startMs = -Infinity;
     let endMs = Infinity;
     if (f.datePreset !== 'all') {
@@ -1268,6 +1280,16 @@ window.AEAnalytics = {
     }
 
     return all.filter((r) => {
+      // Supervisory Team Isolation (Supervisor only sees supervised enumerator submissions)
+      if (currentUser && currentUser.role === 'supervisor' && supervisedNames && supervisedIds) {
+        const matchesDirectSup = r.supervisorId === currentUser.id;
+        const matchesUser = r.submittedByUserId && supervisedIds.has(r.submittedByUserId);
+        const matchesEnumName = Array.from(supervisedNames).some((n) => (r.enumerator || '').includes(n));
+        if (!matchesDirectSup && !matchesUser && !matchesEnumName) {
+          return false;
+        }
+      }
+
       // 1. Sync Status
       if (f.syncStatus === 'synced' && r.syncStatus !== 'synced') return false;
       if (f.syncStatus === 'queued' && r.syncStatus === 'synced') return false;
@@ -1477,6 +1499,13 @@ window.AEAnalytics = {
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2.5">
               <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Analyze Results &amp; Agronomic Intelligence</h1>
+              ${
+                survey.status === 'Archived'
+                  ? `<span class="px-2.5 py-0.5 rounded-[4px] text-xs font-semibold bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0] inline-flex items-center gap-1">
+                      <i class="fa-solid fa-box-archive text-[10px]"></i> Archived (Read-Only)
+                    </span>`
+                  : ''
+              }
               <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56]">
                 <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
                 <span class="tabular-nums">${filtered.length} of ${allResponses.length} records in scope</span>
@@ -1491,13 +1520,19 @@ window.AEAnalytics = {
             <!-- Active Survey Switcher -->
             <select onchange="AEApp.switchStage('analyze', this.value)"
               aria-label="Select Survey to Analyze"
-              class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[220px] truncate">
-              ${window.aeStore.surveys
+              class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[240px] truncate">
+              ${(window.aeStore.getSurveysForUser
+                ? window.aeStore.getSurveysForUser(
+                    window.AESession && typeof window.AESession.getCurrentUser === 'function' ? window.AESession.getCurrentUser() : null,
+                    { includeArchived: true }
+                  )
+                : window.aeStore.surveys
+              )
                 .map(
                   (s) =>
                     `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
-                      s.title.substring(0, 32)
-                    )}${s.title.length > 32 ? '…' : ''}</option>`
+                      s.title.substring(0, 30)
+                    )}${s.title.length > 30 ? '…' : ''}${s.status === 'Archived' ? ' [Archived]' : ''}</option>`
                 )
                 .join('')}
             </select>

@@ -2670,6 +2670,153 @@ class AESurveyStore {
     this.saveToLocalStorage();
   }
 
+  /**
+   * Sets survey status to 'Archived'.
+   * Archived surveys are hidden from field enumerators and locked from new responses.
+   * Historical responses remain in Analytics/Exports for Admins and Supervisors.
+   */
+  archiveSurvey(surveyId) {
+    const survey = this.getSurveyById(surveyId);
+    if (!survey) return null;
+    survey.status = 'Archived';
+    survey.updatedAt = new Date().toISOString();
+    this._surveysDirty = true;
+    this.saveToLocalStorage();
+    this.enqueueSyncItem('UPSERT_SURVEY', survey.id, `Archive Survey: ${survey.title}`);
+    if (this.isEffectivelyOnline()) {
+      this.syncWithGoogleSheets({ manual: true }).catch(() => {});
+    }
+    return survey;
+  }
+
+  /**
+   * Restores an archived survey back to 'Active' (or a specified status).
+   */
+  restoreSurvey(surveyId, targetStatus = 'Active') {
+    const survey = this.getSurveyById(surveyId);
+    if (!survey) return null;
+    survey.status = targetStatus;
+    survey.updatedAt = new Date().toISOString();
+    this._surveysDirty = true;
+    this.saveToLocalStorage();
+    this.enqueueSyncItem('UPSERT_SURVEY', survey.id, `Restore Survey: ${survey.title} (${targetStatus})`);
+    if (this.isEffectivelyOnline()) {
+      this.syncWithGoogleSheets({ manual: true }).catch(() => {});
+    }
+    return survey;
+  }
+
+  /**
+   * Evaluates if a given user/personnel is permitted to collect data for this survey.
+   * Returns { allowed: boolean, reason: string }
+   */
+  canUserCollectSurvey(personnelOrUser, surveyId) {
+    const survey = this.getSurveyById(surveyId);
+    if (!survey) {
+      return { allowed: false, reason: 'Survey instrument not found.' };
+    }
+    if (survey.status === 'Archived') {
+      return { allowed: false, reason: 'This survey has been archived by HQ and no longer accepts field responses.' };
+    }
+    if (survey.status === 'Closed') {
+      return { allowed: false, reason: 'This survey is closed. New submissions are disabled.' };
+    }
+    if (!personnelOrUser) {
+      return { allowed: survey.status === 'Active', reason: survey.status === 'Active' ? '' : `Survey status is ${survey.status}` };
+    }
+
+    const role = String(personnelOrUser.role || '').toLowerCase();
+    if (role === 'admin') {
+      return { allowed: true, reason: '' };
+    }
+
+    const assigned = Array.isArray(personnelOrUser.assignedSurveys) ? personnelOrUser.assignedSurveys : [];
+    if (!assigned.includes(surveyId)) {
+      return { allowed: false, reason: 'This survey is not assigned to your personnel account.' };
+    }
+    if (survey.status !== 'Active') {
+      return { allowed: false, reason: `Survey is in ${survey.status} status (must be Active to collect).` };
+    }
+    return { allowed: true, reason: '' };
+  }
+
+  /**
+   * Returns the list of surveys accessible to a specific user based on role and assignments.
+   */
+  getSurveysForUser(personnelOrUser, filter = {}) {
+    const all = this.surveys || [];
+    if (!personnelOrUser) {
+      return all.filter((s) => s.status !== 'Archived' || filter.includeArchived);
+    }
+    const role = String(personnelOrUser.role || '').toLowerCase();
+    if (role === 'admin') {
+      if (filter.status && filter.status !== 'All') {
+        return all.filter((s) => (s.status || '').toLowerCase() === filter.status.toLowerCase());
+      }
+      return all;
+    }
+    if (role === 'supervisor') {
+      const assigned = Array.isArray(personnelOrUser.assignedSurveys) ? personnelOrUser.assignedSurveys : [];
+      let scoped = all.filter((s) => assigned.includes(s.id));
+      if (!filter.includeArchived) {
+        scoped = scoped.filter((s) => s.status !== 'Archived');
+      }
+      if (filter.status && filter.status !== 'All') {
+        scoped = scoped.filter((s) => (s.status || '').toLowerCase() === filter.status.toLowerCase());
+      }
+      return scoped;
+    }
+    if (role === 'enumerator') {
+      const assigned = Array.isArray(personnelOrUser.assignedSurveys) ? personnelOrUser.assignedSurveys : [];
+      // Enumerators can only see assigned, Active surveys
+      return all.filter((s) => assigned.includes(s.id) && s.status === 'Active');
+    }
+    return all.filter((s) => s.status === 'Active');
+  }
+
+  /**
+   * Returns list of enumerators who report to a given supervisor.
+   */
+  getSupervisedEnumerators(supervisorId) {
+    if (!supervisorId) return [];
+    return (this.personnel || []).filter((p) => p.supervisorId === supervisorId && p.active !== false);
+  }
+
+  /**
+   * Batch-assigns multiple personnel to a survey.
+   * @param {string} surveyId
+   * @param {string[]} personnelIds - IDs of personnel who should have this survey assigned
+   */
+  assignPersonnelToSurvey(surveyId, personnelIds = []) {
+    const targetSet = new Set(personnelIds || []);
+    let changed = 0;
+    (this.personnel || []).forEach((p) => {
+      p.assignedSurveys = Array.isArray(p.assignedSurveys) ? p.assignedSurveys : [];
+      const hasSurvey = p.assignedSurveys.includes(surveyId);
+      const shouldHave = targetSet.has(p.id);
+
+      if (shouldHave && !hasSurvey) {
+        p.assignedSurveys.push(surveyId);
+        p.updatedAt = new Date().toISOString();
+        changed++;
+        this.enqueueSyncItem('UPSERT_PERSONNEL', p.id, `Assign Survey ${surveyId} -> ${p.fullName}`);
+      } else if (!shouldHave && hasSurvey) {
+        p.assignedSurveys = p.assignedSurveys.filter((id) => id !== surveyId);
+        p.updatedAt = new Date().toISOString();
+        changed++;
+        this.enqueueSyncItem('UPSERT_PERSONNEL', p.id, `Unassign Survey ${surveyId} -> ${p.fullName}`);
+      }
+    });
+
+    if (changed > 0) {
+      this.saveToLocalStorage();
+      if (this.isEffectivelyOnline()) {
+        this.syncWithGoogleSheets({ manual: true }).catch(() => {});
+      }
+    }
+    return changed;
+  }
+
   upsertCollector(collector) {
     const cleanCol = this.sanitizeCollectorRecord(collector);
     if (!cleanCol) return null;
@@ -2688,6 +2835,10 @@ class AESurveyStore {
     const nowIso = new Date().toISOString();
     const id = cleanPayload.id || 'resp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
     const survey = this.getSurveyById(cleanPayload.surveyId);
+
+    if (survey && survey.status === 'Archived') {
+      throw new Error(`Survey "${survey.title}" has been archived by HQ. New field responses cannot be submitted.`);
+    }
 
     // Compute automated data quality flags & calculated metrics
     const durationSec = Math.max(0, Number(responsePayload.durationSec) || 45);
