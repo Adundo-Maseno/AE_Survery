@@ -154,7 +154,19 @@ function doGet(e) {
         serverTime: new Date().toISOString(),
         surveys: data.surveys,
         collectors: data.collectors,
-        responses: data.responses
+        responses: data.responses,
+        personnel: data.personnel
+      });
+    }
+
+    if (action === 'pullPersonnel') {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var personnel = readPersonnelRows_(ss);
+      logSyncEvent_('PULL_PERSONNEL', sanitizeSheetCell_(params.deviceId || 'web-client'), 0, 0, 0, 'OK');
+      return jsonResponse_({
+        ok: true,
+        serverTime: new Date().toISOString(),
+        personnel: personnel
       });
     }
 
@@ -269,15 +281,18 @@ function doPost(e) {
     }
 
     if (action === 'UPSERT_PERSONNEL' && payload.personnel) {
-      if (!isCallerAdmin_(payload.callerId)) {
-        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
+      var isSelf = payload.callerId && String(payload.callerId).trim() === String(payload.personnel.id || '').trim();
+      if (!isCallerAdmin_(payload.callerId) && !isSelf) {
+        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' }, 403);
       }
       upsertPersonnelRow_(payload.personnel);
       logSyncEvent_('UPSERT_PERSONNEL', deviceId, 0, 0, 0, 'OK');
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
       return jsonResponse_({
         ok: true,
         action: action,
         personnelId: String(payload.personnel.id || ''),
+        personnel: readPersonnelRows_(ss),
         serverTime: new Date().toISOString()
       });
     }
@@ -359,6 +374,7 @@ function doPost(e) {
       responsesInserted: batchStats.inserted,
       duplicatesSkipped: batchStats.skipped,
       syncedResponseIds: batchStats.syncedIds,
+      personnel: readPersonnelRows_(SpreadsheetApp.getActiveSpreadsheet()),
       serverTime: new Date().toISOString(),
       counts: getRowCounts_()
     });

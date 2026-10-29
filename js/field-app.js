@@ -1484,12 +1484,14 @@ window.AEFieldApp = {
     }, 40);
   },
 
-  verifyAdminPin() {
+  async verifyAdminPin() {
     const el = document.getElementById('ae_field_admin_pin');
     const pin = (el ? el.value : '').trim();
 
-    if (window.aeStore && typeof window.aeStore.verifyPersonnelPin === 'function') {
-      const check = window.aeStore.verifyPersonnelPin(null, pin);
+    if (window.aeStore) {
+      const check = typeof window.aeStore.verifyPersonnelPinAsync === 'function'
+        ? await window.aeStore.verifyPersonnelPinAsync(null, pin)
+        : window.aeStore.verifyPersonnelPin(null, pin);
       if (check.ok) {
         if (window.AESession && check.person) {
           window.AESession.setCurrentUser(check.person);
@@ -1564,7 +1566,7 @@ window.AEFieldApp = {
     this.render();
   },
 
-  confirmEnumeratorPin() {
+  async confirmEnumeratorPin() {
     if (!this.pendingEnumPinPerson) return;
     const el = document.getElementById('ae_enum_pin_challenge');
     const pin = (el ? el.value : '').trim();
@@ -1573,7 +1575,9 @@ window.AEFieldApp = {
       this.renderModals();
       return;
     }
-    const check = window.aeStore.verifyPersonnelPin(this.pendingEnumPinPerson.id, pin);
+    const check = typeof window.aeStore.verifyPersonnelPinAsync === 'function'
+      ? await window.aeStore.verifyPersonnelPinAsync(this.pendingEnumPinPerson.id, pin)
+      : window.aeStore.verifyPersonnelPin(this.pendingEnumPinPerson.id, pin);
     if (check.ok) {
       const person = check.person || window.aeStore.getPersonnelById(this.pendingEnumPinPerson.id);
       const chosenLabel = this.pendingEnumPinPerson.label;

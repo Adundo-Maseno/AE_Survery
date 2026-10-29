@@ -313,7 +313,7 @@ window.AEApp = {
     this.render();
   },
 
-  handleLoginSubmit() {
+  async handleLoginSubmit() {
     const personSelect = document.getElementById('ae_login_person_select');
     const pinInput = document.getElementById('ae_login_pin_input');
     const rememberBox = document.getElementById('ae_login_remember');
@@ -332,7 +332,7 @@ window.AEApp = {
       return;
     }
 
-    const res = window.AESession.login(personId, pin, remember);
+    const res = await window.AESession.login(personId, pin, remember);
     if (res.ok) {
       this.loginError = '';
       this.showToast(`Welcome, ${res.user.fullName} (${res.user.role.toUpperCase()})`, 'success');
@@ -1874,6 +1874,10 @@ window.AEApp = {
     if (isSelf && window.AESession) {
       window.AESession.setCurrentUser(saved, true);
     }
+    // Push updated credentials directly to Google Sheets so other devices receive them immediately
+    if (window.aeStore && typeof window.aeStore.syncPersonnelToCloud === 'function') {
+      window.aeStore.syncPersonnelToCloud(saved).catch(() => {});
+    }
     this.showToast(
       this.editingPersonnel ? `Updated credentials for ${saved.fullName}` : `Enrolled ${saved.fullName} as ${saved.role}`,
       'success'
@@ -1913,6 +1917,10 @@ window.AEApp = {
     }
     if (isSelf && window.AESession) {
       window.AESession.setCurrentUser(updated, true);
+    }
+    // Push updated PIN directly to Google Sheets so other devices receive it immediately
+    if (window.aeStore && typeof window.aeStore.syncPersonnelToCloud === 'function') {
+      window.aeStore.syncPersonnelToCloud(updated).catch(() => {});
     }
     this.showToast(`PIN updated for ${this.showResetPinPersonnel.fullName}`, 'success');
     this.closePersonnelModals();

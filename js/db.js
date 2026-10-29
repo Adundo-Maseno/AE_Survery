@@ -1236,9 +1236,11 @@ window.AESession = {
     }
   },
 
-  login(personnelId, candidatePin, persist = true) {
+  async login(personnelId, candidatePin, persist = true) {
     if (!window.aeStore) return { ok: false, error: 'Database not initialized.' };
-    const check = window.aeStore.verifyPersonnelPin(personnelId, candidatePin);
+    let check = typeof window.aeStore.verifyPersonnelPinAsync === 'function'
+      ? await window.aeStore.verifyPersonnelPinAsync(personnelId, candidatePin)
+      : window.aeStore.verifyPersonnelPin(personnelId, candidatePin);
     if (!check.ok) return check;
 
     const person = check.person || window.aeStore.getPersonnelById(personnelId);
@@ -1391,6 +1393,10 @@ class AESurveyStore {
       await this.reconcileIndexedDB();
     } catch (e) {
       console.warn('IndexedDB unavailable, using synchronous localStorage engine:', e);
+    }
+    // Refresh personnel roster from Google Sheets in background so cross-device PIN changes take effect immediately
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.refreshPersonnelFromCloud().catch(() => {});
     }
     return this;
   }
@@ -1722,6 +1728,187 @@ class AESurveyStore {
       return { ok: true, person, role: person.role, supervisorOverride: true, supervisor: matchingSupervisor };
     }
     return check;
+  }
+
+  /**
+   * Asynchronous PIN verification with cloud fallback.
+   * If candidate PIN doesn't match locally stored PIN (e.g. updated on another device),
+   * queries Google Sheets in real-time, synchronizes the new PIN, and authenticates.
+   */
+  async verifyPersonnelPinAsync(personId, candidatePin) {
+    let check = this.verifyPersonnelPin(personId, candidatePin);
+    if (!check.ok && this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      try {
+        await this.refreshPersonnelFromCloud();
+        check = this.verifyPersonnelPin(personId, candidatePin);
+      } catch (e) {}
+    }
+    return check;
+  }
+
+  /**
+   * Pushes updated personnel credentials/PIN directly to Google Sheets in background.
+   */
+  async syncPersonnelToCloud(person) {
+    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !this.isValidGasUrl(gasUrl) || !this.isEffectivelyOnline()) return false;
+
+    const currentSessionUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+
+    const payload = {
+      action: 'UPSERT_PERSONNEL',
+      syncToken: this.settings.syncToken || '',
+      deviceId: this.settings.deviceId,
+      callerId: currentSessionUser ? currentSessionUser.id : (person ? person.id : 'ADM-01'),
+      personnel: person
+    };
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        redirect: 'follow',
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.ok) {
+          if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+            this.mergePersonnelFromCloud(data.personnel);
+          }
+          this.syncQueue = this.syncQueue.filter((q) => q.recordId !== person.id);
+          this.saveToLocalStorage();
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('Direct personnel sync fallback to batch sync:', e);
+    }
+    return false;
+  }
+
+  /**
+   * Fetches latest personnel roster and PIN updates from Google Sheets.
+   */
+  async refreshPersonnelFromCloud() {
+    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !this.isValidGasUrl(gasUrl) || !this.isEffectivelyOnline()) return null;
+
+    try {
+      const sep = gasUrl.includes('?') ? '&' : '?';
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      let response;
+      try {
+        response = await fetch(
+          `${gasUrl}${sep}action=pullPersonnel&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`,
+          { method: 'GET', redirect: 'follow', signal: controller.signal }
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (response && response.ok) {
+        const data = await response.json();
+        if (data && data.ok && Array.isArray(data.personnel) && data.personnel.length > 0) {
+          this.mergePersonnelFromCloud(data.personnel);
+          return data.personnel;
+        }
+      }
+    } catch (e) {
+      // Non-blocking background refresh
+    }
+    return null;
+  }
+
+  /**
+   * Merges remote staff credentials and PINs into local IndexedDB/localStorage.
+   */
+  mergePersonnelFromCloud(remotePersonnel) {
+    if (!Array.isArray(remotePersonnel) || remotePersonnel.length === 0) return;
+    const perMap = new Map((this.personnel || []).map((p) => [p.id, p]));
+    let changed = false;
+
+    remotePersonnel.forEach((rp) => {
+      if (!rp || !rp.id) return;
+      const existing = perMap.get(rp.id);
+      if (!existing) {
+        perMap.set(rp.id, {
+          id: rp.id,
+          fullName: rp.fullName || 'Staff Member',
+          role: rp.role || 'enumerator',
+          county: rp.county || 'Unassigned',
+          subCounty: rp.subCounty || '',
+          phone: rp.phone || '',
+          email: rp.email || '',
+          supervisorId: rp.supervisorId || null,
+          assignedSurveys: Array.isArray(rp.assignedSurveys) ? rp.assignedSurveys : [],
+          taskQuotas: rp.taskQuotas || {},
+          active: rp.active !== false,
+          pinCode: String(rp.pinCode || '1234').trim(),
+          createdAt: rp.createdAt || new Date().toISOString(),
+          updatedAt: rp.updatedAt || new Date().toISOString()
+        });
+        changed = true;
+      } else {
+        if (rp.pinCode && String(rp.pinCode).trim() !== existing.pinCode) {
+          existing.pinCode = String(rp.pinCode).trim();
+          changed = true;
+        }
+        if (rp.fullName && rp.fullName !== existing.fullName) {
+          existing.fullName = rp.fullName;
+          changed = true;
+        }
+        if (rp.role && rp.role !== existing.role) {
+          existing.role = rp.role;
+          changed = true;
+        }
+        if (rp.county && rp.county !== existing.county) {
+          existing.county = rp.county;
+          changed = true;
+        }
+        if (rp.subCounty && rp.subCounty !== existing.subCounty) {
+          existing.subCounty = rp.subCounty;
+          changed = true;
+        }
+        if (rp.phone && rp.phone !== existing.phone) {
+          existing.phone = rp.phone;
+          changed = true;
+        }
+        if (rp.email && rp.email !== existing.email) {
+          existing.email = rp.email;
+          changed = true;
+        }
+        if (rp.active !== undefined && rp.active !== existing.active) {
+          existing.active = rp.active;
+          changed = true;
+        }
+        if (Array.isArray(rp.assignedSurveys)) {
+          existing.assignedSurveys = rp.assignedSurveys;
+        }
+        if (rp.updatedAt) {
+          existing.updatedAt = rp.updatedAt;
+        }
+      }
+    });
+
+    if (changed) {
+      this.personnel = Array.from(perMap.values());
+      this.saveToLocalStorage();
+      if (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function') {
+        const cur = window.AESession.getCurrentUser();
+        if (cur && cur.id) {
+          const live = this.getPersonnelById(cur.id);
+          if (live) window.AESession.syncCurrentUser(live);
+        }
+      }
+    }
   }
 
   assignPersonnelTask(personId, surveyId, targetQuota = 10, notes = '', deadline = null, supervisorId = null) {
@@ -2492,7 +2679,7 @@ class AESurveyStore {
           throw new Error(data.error || 'Google Apps Script returned an error');
         }
         if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
-          this.personnel = data.personnel;
+          this.mergePersonnelFromCloud(data.personnel);
         }
         this._surveysDirty = false;
         resultSummary = {
@@ -2528,6 +2715,11 @@ class AESurveyStore {
       this.settings.lastSyncedAt = nowIso;
       this.lastSyncError = null;
 
+      // Merge remote personnel (staff credentials, roles, and PIN updates)
+      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+        this.mergePersonnelFromCloud(data.personnel);
+      }
+
       const latencyMs = Math.round(performance.now() - startTime);
       this.syncLogs.unshift({
         id: 'log_' + Date.now().toString(36),
@@ -2542,6 +2734,11 @@ class AESurveyStore {
       return { ...resultSummary, latencyMs };
     } catch (err) {
       const nowIso = new Date().toISOString();
+      // Merge remote personnel (staff credentials, roles, and PIN updates)
+      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+        this.mergePersonnelFromCloud(data.personnel);
+      }
+
       const latencyMs = Math.round(performance.now() - startTime);
       this.syncQueue.forEach((item) => {
         item.attempts = (item.attempts || 0) + 1;
@@ -2672,6 +2869,11 @@ class AESurveyStore {
         );
       }
 
+      // Merge remote personnel (staff credentials, roles, and PIN updates)
+      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+        this.mergePersonnelFromCloud(data.personnel);
+      }
+
       const latencyMs = Math.round(performance.now() - startTime);
       this.settings.lastSyncedAt = new Date().toISOString();
       this.lastSyncError = null;
@@ -2692,6 +2894,11 @@ class AESurveyStore {
       };
     } catch (err) {
       const nowIso = new Date().toISOString();
+      // Merge remote personnel (staff credentials, roles, and PIN updates)
+      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+        this.mergePersonnelFromCloud(data.personnel);
+      }
+
       const latencyMs = Math.round(performance.now() - startTime);
       this.lastSyncError = {
         message: err.message || 'Pull failed',
