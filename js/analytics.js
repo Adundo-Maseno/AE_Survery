@@ -2002,12 +2002,12 @@ window.AEAnalytics = {
             <span class="text-[11px] text-[#A0AAA3]">· 12 Econometric, Agronomic &amp; Forensic Perspectives</span>
           </div>
         </div>
-        <div class="flex flex-col md:flex-row md:items-center gap-2 pt-1 border-t border-[#F0F2F0]">
+        <div class="flex flex-wrap items-start gap-x-3 gap-y-2 pt-2 border-t border-[#F0F2F0]">
           ${tabGroups
             .map(
               (group, gIdx) => `
-                <div class="flex items-center gap-1 overflow-x-auto pb-1 md:pb-0 ${gIdx > 0 ? 'md:border-l md:border-[#E4E7E4] md:pl-2' : ''}">
-                  <span class="hidden xl:inline text-[10px] font-bold text-[#88928B] uppercase tracking-wider mr-1 shrink-0">${group.name}:</span>
+                <div class="flex flex-wrap items-center gap-1 ${gIdx > 0 ? 'lg:border-l lg:border-[#E4E7E4] lg:pl-3' : ''}">
+                  <span class="text-[10px] font-bold text-[#88928B] uppercase tracking-wider mr-1 shrink-0">${group.name}:</span>
                   ${group.tabs
                     .map(
                       (t) => `
