@@ -1005,7 +1005,7 @@ function getInitialPersonnelSeed() {
       email: 'm.adundo@agriexperience.com',
       supervisorId: null,
       pinCode: '9999',
-      assignedSurveys: ['srv_maize_2026', 'srv_agro_dealer_2026', 'srv_chd_agro_dealer_stock'],
+      assignedSurveys: ['srv_maize_2026', 'srv_agrodealer_2026', 'srv_extension_pulse'],
       active: true,
       createdAt: daysAgo(30),
       updatedAt: daysAgo(2)
@@ -1020,7 +1020,7 @@ function getInitialPersonnelSeed() {
       email: 's.ndungu@agriexperience.com',
       supervisorId: null,
       pinCode: '8888',
-      assignedSurveys: ['srv_maize_2026', 'srv_agro_dealer_2026', 'srv_chd_agro_dealer_stock'],
+      assignedSurveys: ['srv_maize_2026', 'srv_agrodealer_2026', 'srv_extension_pulse'],
       active: true,
       createdAt: daysAgo(28),
       updatedAt: daysAgo(1)
@@ -1035,7 +1035,7 @@ function getInitialPersonnelSeed() {
       email: 'p.kamau@agriexperience.com',
       supervisorId: 'ADM-01',
       pinCode: '1234',
-      assignedSurveys: ['srv_maize_2026', 'srv_agro_dealer_2026'],
+      assignedSurveys: ['srv_maize_2026', 'srv_agrodealer_2026'],
       active: true,
       createdAt: daysAgo(25),
       updatedAt: daysAgo(1)
@@ -1050,7 +1050,7 @@ function getInitialPersonnelSeed() {
       email: 'e.achieng@agriexperience.com',
       supervisorId: 'ADM-01',
       pinCode: '5678',
-      assignedSurveys: ['srv_maize_2026', 'srv_chd_agro_dealer_stock'],
+      assignedSurveys: ['srv_maize_2026', 'srv_extension_pulse'],
       active: true,
       createdAt: daysAgo(25),
       updatedAt: daysAgo(2)
@@ -1065,10 +1065,10 @@ function getInitialPersonnelSeed() {
       email: 'g.wanjiku@agriexperience.com',
       supervisorId: 'SUP-01',
       pinCode: '1111',
-      assignedSurveys: ['srv_maize_2026', 'srv_agro_dealer_2026'],
+      assignedSurveys: ['srv_maize_2026', 'srv_agrodealer_2026'],
       taskQuotas: {
         'srv_maize_2026': { target: 12, notes: 'Target high-elevation plots in Nakuru East', deadline: '2026-11-15' },
-        'srv_agro_dealer_2026': { target: 6, notes: 'Stock audit across registered retailers', deadline: '2026-11-20' }
+        'srv_agrodealer_2026': { target: 6, notes: 'Stock audit across registered retailers', deadline: '2026-11-20' }
       },
       active: true,
       createdAt: daysAgo(20),
@@ -1084,10 +1084,10 @@ function getInitialPersonnelSeed() {
       email: 's.ochieng@agriexperience.com',
       supervisorId: 'SUP-02',
       pinCode: '2222',
-      assignedSurveys: ['srv_maize_2026', 'srv_chd_agro_dealer_stock'],
+      assignedSurveys: ['srv_maize_2026', 'srv_extension_pulse'],
       taskQuotas: {
         'srv_maize_2026': { target: 10, notes: 'Bungoma Central farmer clusters', deadline: '2026-11-14' },
-        'srv_chd_agro_dealer_stock': { target: 5, notes: 'Check seed packaging seals & lot dates', deadline: '2026-11-25' }
+        'srv_extension_pulse': { target: 5, notes: 'Extension training demo feedback', deadline: '2026-11-25' }
       },
       active: true,
       createdAt: daysAgo(20),
@@ -1103,10 +1103,10 @@ function getInitialPersonnelSeed() {
       email: 'd.mutua@agriexperience.com',
       supervisorId: 'SUP-01',
       pinCode: '3333',
-      assignedSurveys: ['srv_maize_2026', 'srv_agro_dealer_2026'],
+      assignedSurveys: ['srv_maize_2026', 'srv_agrodealer_2026'],
       taskQuotas: {
         'srv_maize_2026': { target: 15, notes: 'Drought-tolerant hybrid plot audits', deadline: '2026-11-18' },
-        'srv_agro_dealer_2026': { target: 8, notes: 'Eldoret hub agro-dealers', deadline: '2026-11-22' }
+        'srv_agrodealer_2026': { target: 8, notes: 'Eldoret hub agro-dealers', deadline: '2026-11-22' }
       },
       active: true,
       createdAt: daysAgo(18),
@@ -1140,7 +1140,7 @@ function getInitialPersonnelSeed() {
       email: 'm.kiprono@agriexperience.com',
       supervisorId: 'SUP-02',
       pinCode: '5555',
-      assignedSurveys: ['srv_maize_2026', 'srv_agro_dealer_2026', 'srv_chd_agro_dealer_stock'],
+      assignedSurveys: ['srv_maize_2026', 'srv_agrodealer_2026', 'srv_extension_pulse'],
       active: true,
       createdAt: daysAgo(15),
       updatedAt: daysAgo(1)
@@ -1895,7 +1895,12 @@ window.AESession = {
           user.subCounty = live.subCounty;
           user.phone = live.phone;
           user.email = live.email;
+          user.assignedSurveys = Array.isArray(live.assignedSurveys) ? [...live.assignedSurveys] : [];
         }
+      }
+
+      if (!Array.isArray(user.assignedSurveys)) {
+        user.assignedSurveys = [];
       }
 
       return user;
@@ -1925,6 +1930,7 @@ window.AESession = {
       county: String(user.county || 'All'),
       phone: String(user.phone || ''),
       email: String(user.email || ''),
+      assignedSurveys: Array.isArray(user.assignedSurveys) ? [...user.assignedSurveys] : [],
       loggedInAt: new Date().toISOString()
     };
     sessionStorage.setItem(this.STORAGE_KEY, JSON.stringify(safeUser));
@@ -2544,7 +2550,17 @@ class AESurveyStore {
       email: String(person.email || '').trim().slice(0, 80),
       supervisorId: person.supervisorId ? String(person.supervisorId).trim() : null,
       pinCode: String(person.pinCode || '1234').trim().slice(0, 8),
-      assignedSurveys: Array.isArray(person.assignedSurveys) ? person.assignedSurveys : [],
+      assignedSurveys: Array.isArray(person.assignedSurveys)
+        ? Array.from(
+            new Set(
+              person.assignedSurveys.map((sId) => {
+                if (sId === 'srv_agro_dealer_2026') return 'srv_agrodealer_2026';
+                if (sId === 'srv_chd_agro_dealer_stock') return 'srv_extension_pulse';
+                return sId;
+              })
+            )
+          )
+        : [],
       taskQuotas: person.taskQuotas && typeof person.taskQuotas === 'object' ? person.taskQuotas : {},
       active: person.active !== false,
       createdAt: person.createdAt || new Date().toISOString(),
@@ -2787,7 +2803,15 @@ class AESurveyStore {
           changed = true;
         }
         if (Array.isArray(rp.assignedSurveys)) {
-          existing.assignedSurveys = rp.assignedSurveys;
+          existing.assignedSurveys = Array.from(
+            new Set(
+              rp.assignedSurveys.map((sId) => {
+                if (sId === 'srv_agro_dealer_2026') return 'srv_agrodealer_2026';
+                if (sId === 'srv_chd_agro_dealer_stock') return 'srv_extension_pulse';
+                return sId;
+              })
+            )
+          );
         }
         if (rp.updatedAt) {
           existing.updatedAt = rp.updatedAt;
@@ -3475,17 +3499,25 @@ class AESurveyStore {
       return { allowed: false, reason: 'This survey is closed. New submissions are disabled.' };
     }
     if (!personnelOrUser) {
-      return { allowed: survey.status === 'Active', reason: survey.status === 'Active' ? '' : `Survey status is ${survey.status}` };
+      return { allowed: false, reason: 'Operator profile required. Please select or authenticate an active operator.' };
     }
 
-    const role = String(personnelOrUser.role || '').toLowerCase();
+    const person = typeof personnelOrUser === 'string'
+      ? this.getPersonnelById(personnelOrUser)
+      : (personnelOrUser && personnelOrUser.id ? (this.getPersonnelById(personnelOrUser.id) || personnelOrUser) : personnelOrUser);
+
+    if (!person) {
+      return { allowed: false, reason: 'Operator personnel account not found in database.' };
+    }
+
+    const role = String(person.role || '').toLowerCase();
     if (role === 'admin') {
       return { allowed: true, reason: '' };
     }
 
-    const assigned = Array.isArray(personnelOrUser.assignedSurveys) ? personnelOrUser.assignedSurveys : [];
+    const assigned = Array.isArray(person.assignedSurveys) ? person.assignedSurveys : [];
     if (!assigned.includes(surveyId)) {
-      return { allowed: false, reason: 'This survey is not assigned to your personnel account.' };
+      return { allowed: false, reason: `Survey "${survey.title}" is not assigned to ${person.fullName || 'your account'}.` };
     }
     if (survey.status !== 'Active') {
       return { allowed: false, reason: `Survey is in ${survey.status} status (must be Active to collect).` };
@@ -3494,37 +3526,82 @@ class AESurveyStore {
   }
 
   /**
+   * Evaluates if a given user/personnel is permitted to read or access this survey instrument.
+   * Admin can access all surveys. Personnel can ONLY access surveys assigned to them.
+   * Returns { allowed: boolean, reason: string }
+   */
+  canUserAccessSurvey(personnelOrUser, surveyId) {
+    const survey = this.getSurveyById(surveyId);
+    if (!survey) {
+      return { allowed: false, reason: 'Survey not found.' };
+    }
+    if (!personnelOrUser) {
+      return { allowed: false, reason: 'Authentication required to access survey data.' };
+    }
+
+    const person = typeof personnelOrUser === 'string'
+      ? this.getPersonnelById(personnelOrUser)
+      : (personnelOrUser && personnelOrUser.id ? (this.getPersonnelById(personnelOrUser.id) || personnelOrUser) : personnelOrUser);
+
+    if (!person) {
+      return { allowed: false, reason: 'Personnel account not found.' };
+    }
+
+    const role = String(person.role || '').toLowerCase();
+    if (role === 'admin') {
+      return { allowed: true, reason: '' };
+    }
+
+    const assigned = Array.isArray(person.assignedSurveys) ? person.assignedSurveys : [];
+    if (!assigned.includes(surveyId)) {
+      return { allowed: false, reason: `Access Denied: Survey "${survey.title}" is not assigned to ${person.fullName || 'your account'}.` };
+    }
+
+    return { allowed: true, reason: '' };
+  }
+
+  /**
    * Returns the list of surveys accessible to a specific user based on role and assignments.
+   * Admin gets all matching surveys. Personnel gets strictly their assignedSurveys.
    */
   getSurveysForUser(personnelOrUser, filter = {}) {
     const all = this.surveys || [];
     if (!personnelOrUser) {
-      return all.filter((s) => s.status !== 'Archived' || filter.includeArchived);
+      return [];
     }
-    const role = String(personnelOrUser.role || '').toLowerCase();
+
+    const person = typeof personnelOrUser === 'string'
+      ? this.getPersonnelById(personnelOrUser)
+      : (personnelOrUser && personnelOrUser.id ? (this.getPersonnelById(personnelOrUser.id) || personnelOrUser) : personnelOrUser);
+
+    if (!person) {
+      return [];
+    }
+
+    const role = String(person.role || '').toLowerCase();
     if (role === 'admin') {
       if (filter.status && filter.status !== 'All') {
         return all.filter((s) => (s.status || '').toLowerCase() === filter.status.toLowerCase());
       }
+      if (!filter.includeArchived) {
+        return all.filter((s) => s.status !== 'Archived');
+      }
       return all;
     }
-    if (role === 'supervisor') {
-      const assigned = Array.isArray(personnelOrUser.assignedSurveys) ? personnelOrUser.assignedSurveys : [];
-      let scoped = all.filter((s) => assigned.includes(s.id));
-      if (!filter.includeArchived) {
-        scoped = scoped.filter((s) => s.status !== 'Archived');
-      }
-      if (filter.status && filter.status !== 'All') {
-        scoped = scoped.filter((s) => (s.status || '').toLowerCase() === filter.status.toLowerCase());
-      }
-      return scoped;
+
+    const assigned = Array.isArray(person.assignedSurveys) ? person.assignedSurveys : [];
+    let scoped = all.filter((s) => assigned.includes(s.id));
+    if (!filter.includeArchived) {
+      scoped = scoped.filter((s) => s.status !== 'Archived');
+    }
+    if (filter.status && filter.status !== 'All') {
+      scoped = scoped.filter((s) => (s.status || '').toLowerCase() === filter.status.toLowerCase());
     }
     if (role === 'enumerator') {
-      const assigned = Array.isArray(personnelOrUser.assignedSurveys) ? personnelOrUser.assignedSurveys : [];
-      // Enumerators can only see assigned, Active surveys
-      return all.filter((s) => assigned.includes(s.id) && s.status === 'Active');
+      // Enumerators can only see active assigned surveys
+      scoped = scoped.filter((s) => s.status === 'Active');
     }
-    return all.filter((s) => s.status === 'Active');
+    return scoped;
   }
 
   /**

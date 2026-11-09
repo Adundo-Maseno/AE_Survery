@@ -81,13 +81,6 @@ window.AEFieldApp = {
     const paramSurvey = urlParams.get('survey');
     const paramCollector = urlParams.get('collector');
 
-    const surveys = window.aeStore.surveys || [];
-    if (paramSurvey && window.aeStore.getSurveyById(paramSurvey)) {
-      this.activeSurveyId = paramSurvey;
-    } else if (surveys.length > 0) {
-      this.activeSurveyId = surveys[0].id;
-    }
-
     if (paramCollector) {
       this.activeCollectorId = paramCollector;
     }
@@ -146,6 +139,31 @@ window.AEFieldApp = {
       }
     }
 
+    // Resolve active operator personnel profile
+    const activePerson = (window.aeStore.personnel || []).find(
+      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+    ) || (window.AESession ? window.AESession.getCurrentUser() : null);
+
+    const accessibleSurveys = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(activePerson)
+      : (window.aeStore.surveys || []).filter((s) => s.status === 'Active');
+
+    if (paramSurvey && window.aeStore.getSurveyById(paramSurvey)) {
+      const check = window.aeStore.canUserCollectSurvey
+        ? window.aeStore.canUserCollectSurvey(activePerson, paramSurvey)
+        : { allowed: true };
+      if (check.allowed) {
+        this.activeSurveyId = paramSurvey;
+      } else {
+        this.showToast(check.reason || 'Requested survey is not assigned to your operator account.', 'warning');
+        this.activeSurveyId = accessibleSurveys.length > 0 ? accessibleSurveys[0].id : null;
+      }
+    } else if (accessibleSurveys.length > 0) {
+      this.activeSurveyId = accessibleSurveys[0].id;
+    } else {
+      this.activeSurveyId = null;
+    }
+
     // Subscribe to store updates (so queue badge & sync logs stay live)
     window.aeStore.subscribe(() => {
       this.renderHeader();
@@ -173,14 +191,16 @@ window.AEFieldApp = {
   },
 
   initRunnerForActiveSurvey(forceReset = false) {
-    let survey = window.aeStore.getSurveyById(this.activeSurveyId);
     const activePerson = (window.aeStore.personnel || []).find(
       (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
-    );
+    ) || (window.AESession ? window.AESession.getCurrentUser() : null);
+
+    const userSurveys = window.aeStore.getSurveysForUser ? window.aeStore.getSurveysForUser(activePerson) : [];
+    let survey = this.activeSurveyId ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+
     if (survey && window.aeStore.canUserCollectSurvey) {
       const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
       if (!check.allowed) {
-        const userSurveys = window.aeStore.getSurveysForUser ? window.aeStore.getSurveysForUser(activePerson) : [];
         if (userSurveys.length > 0) {
           this.activeSurveyId = userSurveys[0].id;
           survey = userSurveys[0];
@@ -189,6 +209,9 @@ window.AEFieldApp = {
           survey = null;
         }
       }
+    } else if (!survey && userSurveys.length > 0) {
+      this.activeSurveyId = userSurveys[0].id;
+      survey = userSurveys[0];
     }
     if (!survey) return;
 
@@ -561,6 +584,42 @@ window.AEFieldApp = {
       `;
       this.renderModals();
       return;
+    }
+
+    const activePerson = (window.aeStore.personnel || []).find(
+      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+    ) || (window.AESession ? window.AESession.getCurrentUser() : null);
+
+    if (survey && window.aeStore.canUserCollectSurvey) {
+      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
+      if (!check.allowed) {
+        viewport.innerHTML = `
+          <div class="bg-white border-2 border-[#C4242A] rounded-[12px] p-8 text-center space-y-4 max-w-md mx-auto my-6 shadow-sm">
+            <div class="w-12 h-12 rounded-full bg-[#FFEDEA] text-[#C4242A] mx-auto flex items-center justify-center text-xl">
+              <i class="fa-solid fa-lock"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-[#111613]">Access Restricted</h2>
+              <p class="text-xs text-[#525B56] mt-1.5 leading-relaxed">
+                ${this.escapeHtml(check.reason)}
+              </p>
+            </div>
+            <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <button onclick="AEFieldApp.openSurveyPicker()"
+                class="w-full sm:w-auto h-9 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
+                Switch to Assigned Survey
+              </button>
+              <button onclick="AEFieldApp.openEnumeratorPicker()"
+                class="w-full sm:w-auto h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
+                Switch Operator
+              </button>
+            </div>
+          </div>
+        `;
+        this.renderModals();
+        this.renderBottomNav();
+        return;
+      }
     }
 
     if (this.runnerMode === 'focus') {
@@ -1713,7 +1772,18 @@ window.AEFieldApp = {
     this.enumeratorName = cleanName;
     localStorage.setItem('ae_active_enumerator', cleanName);
     this.showEnumPickerModal = false;
-    this.showToast(`Active Enumerator: ${cleanName}`, 'success');
+
+    // Synchronize session user
+    const person = (window.aeStore.personnel || []).find(
+      (p) => cleanName.includes(p.id) || cleanName.includes(p.fullName)
+    );
+    if (person && window.AESession) {
+      window.AESession.setCurrentUser(person, false);
+    }
+
+    // Immediately re-validate active survey for the new operator
+    this.initRunnerForActiveSurvey(false);
+    this.showToast(`Active Operator: ${cleanName}`, 'success');
     this.render();
   },
 
@@ -3423,7 +3493,7 @@ window.AEFieldApp = {
     if (this.showSurveyPickerModal) {
       const activePerson = (window.aeStore.personnel || []).find(
         (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
-      );
+      ) || (window.AESession ? window.AESession.getCurrentUser() : null);
       const rawSurveys = window.aeStore.getSurveysForUser
         ? window.aeStore.getSurveysForUser(activePerson)
         : (window.aeStore.surveys || []).filter((s) => s.status !== 'Archived');

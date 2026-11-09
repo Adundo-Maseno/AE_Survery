@@ -45,17 +45,31 @@ window.AEApp = {
     } catch (err) {
       console.warn('[AEApp] Store init non-fatal warning:', err);
     }
-    if (window.aeStore.surveys.length > 0 && !window.aeStore.getSurveyById(this.activeSurveyId)) {
-      this.activeSurveyId = window.aeStore.surveys[0].id;
-    }
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+
+    const accessibleSurveys = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
+      : window.aeStore.surveys || [];
 
     // Check URL query param `?survey=srv_...` for direct respondent link
     const params = new URLSearchParams(window.location.search);
     const linkedSurveyId = params.get('survey');
     if (linkedSurveyId && window.aeStore.getSurveyById(linkedSurveyId)) {
-      this.activeSurveyId = linkedSurveyId;
-      this.currentStage = 'collect';
-      window.AECollector.initRunnerForSurvey(window.aeStore.getSurveyById(linkedSurveyId));
+      if (!currentUser || currentUser.role === 'admin' || (currentUser.assignedSurveys && currentUser.assignedSurveys.includes(linkedSurveyId))) {
+        this.activeSurveyId = linkedSurveyId;
+        this.currentStage = 'collect';
+        window.AECollector.initRunnerForSurvey(window.aeStore.getSurveyById(linkedSurveyId));
+      } else {
+        this.activeSurveyId = accessibleSurveys.length > 0 ? accessibleSurveys[0].id : null;
+      }
+    } else if (accessibleSurveys.length > 0) {
+      if (!this.activeSurveyId || !accessibleSurveys.some((s) => s.id === this.activeSurveyId)) {
+        this.activeSurveyId = accessibleSurveys[0].id;
+      }
+    } else {
+      this.activeSurveyId = null;
     }
 
     // Register Service Worker for offline PWA capability
@@ -303,14 +317,31 @@ window.AEApp = {
       return;
     }
     const stageChanged = this.currentStage !== stage;
-    if (surveyId && window.aeStore.getSurveyById(surveyId)) {
-      this.activeSurveyId = surveyId;
-    } else if (!window.aeStore.getSurveyById(this.activeSurveyId) && window.aeStore.surveys.length > 0) {
-      this.activeSurveyId = window.aeStore.surveys[0].id;
+
+    const accessibleSurveys = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(user, { includeArchived: true })
+      : window.aeStore.surveys || [];
+
+    const targetSurveyId = surveyId || this.activeSurveyId;
+    if (targetSurveyId && window.aeStore.canUserAccessSurvey) {
+      const check = window.aeStore.canUserAccessSurvey(user, targetSurveyId);
+      if (check.allowed) {
+        this.activeSurveyId = targetSurveyId;
+      } else {
+        if (surveyId) {
+          this.showToast(check.reason || 'This survey is not assigned to your account.', 'error');
+        }
+        this.activeSurveyId = accessibleSurveys.length > 0 ? accessibleSurveys[0].id : null;
+      }
+    } else if (accessibleSurveys.length > 0) {
+      this.activeSurveyId = accessibleSurveys[0].id;
+    } else {
+      this.activeSurveyId = null;
     }
+
     this.currentStage = stage;
     if (stage === 'collect') {
-      const s = window.aeStore.getSurveyById(this.activeSurveyId);
+      const s = this.activeSurveyId ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
       if (s) window.AECollector.initRunnerForSurvey(s);
     }
     this.render();
@@ -555,6 +586,10 @@ window.AEApp = {
   },
 
   renderEnumeratorPortal(user) {
+    const assignedSurveys = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(user)
+      : [];
+
     return `
       <div class="py-12 px-4 flex flex-col items-center justify-center min-h-[60vh]">
         <div class="max-w-lg w-full bg-white border border-[#E4E7E4] rounded-[16px] p-8 space-y-6 text-center ae-dialog-animate">
@@ -568,14 +603,54 @@ window.AEApp = {
             <h2 class="text-xl font-bold text-[#111613] tracking-tight mt-2">${this.escapeHtml(user.fullName)}</h2>
             <p class="text-xs text-[#525B56] mt-1">Staff ID: <code>${this.escapeHtml(user.id)}</code> · County: <strong>${this.escapeHtml(user.county)}</strong></p>
           </div>
-          <p class="text-xs text-[#525B56] leading-relaxed max-w-sm mx-auto">
-            You are authenticated for field interview collection. Survey design and administrative settings are managed by HQ. Please open the Mobile Field Collector to capture interviews offline.
-          </p>
-          <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+
+          <!-- Assigned Survey Instruments List -->
+          <div class="text-left space-y-2 pt-2 border-t border-[#EFEFEF]">
+            <div class="text-xs font-bold text-[#111613] uppercase tracking-wider">
+              Assigned Field Studies (${assignedSurveys.length})
+            </div>
+            ${
+              assignedSurveys.length === 0
+                ? `<div class="p-4 rounded-[8px] bg-[#FFFBEB] border border-[#FDE68A] text-center text-xs text-[#92400E]">
+                    <i class="fa-solid fa-triangle-exclamation mb-1 text-sm block"></i>
+                    No field surveys are currently assigned to your account. Please contact your supervisor (${this.escapeHtml(user.supervisorId || 'Regional Lead')}) or HQ Admin to assign active surveys.
+                  </div>`
+                : `<div class="space-y-2 max-h-64 overflow-y-auto">
+                    ${assignedSurveys
+                      .map((s) => {
+                        const quota = (user.taskQuotas && user.taskQuotas[s.id]) || { target: 10 };
+                        const taskProgress = window.aeStore.getPersonnelTaskProgress
+                          ? window.aeStore.getPersonnelTaskProgress(user.id, s.id)
+                          : { completed: 0, target: quota.target || 10 };
+                        return `
+                          <div class="p-3 rounded-[8px] border border-[#E4E7E4] bg-[#F8F9F8] flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                              <div class="text-xs font-semibold text-[#111613] truncate">${this.escapeHtml(s.title)}</div>
+                              <div class="text-[11px] text-[#525B56] mt-0.5 flex items-center gap-2">
+                                <span class="px-1.5 py-0.2 rounded bg-[#DCFAE5] text-[#04250E] text-[10px] font-bold">
+                                  ${taskProgress.completed}/${taskProgress.target} Plots
+                                </span>
+                                <span class="truncate">· ${this.escapeHtml(s.category || 'Field Survey')}</span>
+                              </div>
+                            </div>
+                            <a href="./field.html?survey=${encodeURIComponent(s.id)}"
+                              class="shrink-0 h-8 px-3 rounded-[5px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                              <span>Collect</span>
+                              <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                            </a>
+                          </div>
+                        `;
+                      })
+                      .join('')}
+                  </div>`
+            }
+          </div>
+
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 border-t border-[#EFEFEF]">
             <a href="./field.html"
-              class="w-full sm:w-auto h-10 px-5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+              class="w-full sm:w-auto h-10 px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
               <i class="fa-solid fa-mobile-screen-button"></i>
-              <span>Launch Mobile Field Collector</span>
+              <span>Launch Mobile Field App</span>
             </a>
             <button onclick="AEApp.handleLogout()"
               class="w-full sm:w-auto h-10 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-xs font-medium text-[#111613] inline-flex items-center justify-center gap-2 ae-press">
@@ -1120,9 +1195,12 @@ window.AEApp = {
     const surveys = window.aeStore.getSurveysForUser
       ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
       : window.aeStore.surveys;
-    const allResponses = window.aeStore.responses;
+    const accessibleSurveyIds = new Set(surveys.map((s) => s.id));
+    const allResponses = isAdmin
+      ? window.aeStore.responses
+      : window.aeStore.responses.filter((r) => accessibleSurveyIds.has(r.surveyId));
 
-    // Safety fallback: if current filter points to non-existent survey, reset to 'all'
+    // Safety fallback: if current filter points to non-existent or unassigned survey, reset
     if (this.overviewSurveyFilter !== 'all' && !surveys.some((s) => s.id === this.overviewSurveyFilter)) {
       this.overviewSurveyFilter = 'all';
     }
@@ -4467,10 +4545,20 @@ window.AEApp = {
   },
 
   exportSurveyResponsesCSV(surveyId) {
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (window.aeStore && window.aeStore.canUserAccessSurvey) {
+      const check = window.aeStore.canUserAccessSurvey(currentUser, surveyId);
+      if (!check.allowed) {
+        this.showToast(check.reason || 'Access denied: You are not assigned to this survey.', 'error');
+        return;
+      }
+    }
     const survey = window.aeStore.getSurveyById(surveyId);
     if (!survey) return;
     const questions = window.aeStore.getQuestionsForSurvey(survey);
-    const responses = window.aeStore.getResponsesForSurvey(surveyId);
+    const responses = window.aeStore.getResponsesForSurvey(surveyId, currentUser);
 
     const headers = [
       'Response_ID',
@@ -4630,8 +4718,19 @@ window.AEApp = {
   },
 
   async exportResponsesPackJSON(surveyId) {
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (window.aeStore && window.aeStore.canUserAccessSurvey) {
+      const check = window.aeStore.canUserAccessSurvey(currentUser, surveyId);
+      if (!check.allowed) {
+        this.showToast(check.reason || 'Access denied: You are not assigned to this survey.', 'error');
+        return;
+      }
+    }
     const survey = window.aeStore.getSurveyById(surveyId);
-    const responses = window.aeStore.getResponsesForSurvey(surveyId);
+    if (!survey) return;
+    const responses = window.aeStore.getResponsesForSurvey(surveyId, currentUser);
     const payload = {
       survey,
       responses

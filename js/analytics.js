@@ -1516,7 +1516,34 @@ window.AEAnalytics = {
   renderAnalyzeStage(survey) {
     if (!survey) return '<div class="p-8 text-center text-[#525B56]">No survey selected for analysis.</div>';
 
-    const allResponses = window.aeStore.getResponsesForSurvey(survey.id);
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+
+    if (window.aeStore && window.aeStore.canUserAccessSurvey) {
+      const check = window.aeStore.canUserAccessSurvey(currentUser, survey.id);
+      if (!check.allowed) {
+        return `
+          <div class="bg-white border-2 border-[#C4242A] rounded-[12px] p-8 text-center space-y-4 max-w-md mx-auto my-12 shadow-sm">
+            <div class="w-12 h-12 rounded-full bg-[#FFEDEA] text-[#C4242A] mx-auto flex items-center justify-center text-xl">
+              <i class="fa-solid fa-lock"></i>
+            </div>
+            <div>
+              <h2 class="text-base font-bold text-[#111613]">Access Restricted</h2>
+              <p class="text-xs text-[#525B56] mt-1.5 leading-relaxed">
+                ${AEApp.escapeHtml(check.reason)}
+              </p>
+            </div>
+            <button onclick="AEApp.switchStage('dashboard')"
+              class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
+              Return to Operations Dashboard
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    const allResponses = window.aeStore.getResponsesForSurvey(survey.id, currentUser);
     const filtered = this.getFilteredResponses(survey.id);
     const collectors = window.aeStore.getCollectorsForSurvey(survey.id);
 
@@ -5958,6 +5985,16 @@ window.AEAnalytics = {
   // ENTERPRISE 7-WORKSHEET EXCEL WORKBOOK GENERATOR (XML SpreadsheetML)
   // --------------------------------------------------------------------------
   exportExcelWorkbook(surveyId) {
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (window.aeStore && window.aeStore.canUserAccessSurvey) {
+      const check = window.aeStore.canUserAccessSurvey(currentUser, surveyId);
+      if (!check.allowed) {
+        if (window.AEApp) window.AEApp.showToast(check.reason || 'Access denied: You are not assigned to this survey.', 'error');
+        return;
+      }
+    }
     const survey = window.aeStore.getSurveyById(surveyId);
     if (!survey) return;
     const questions = window.aeStore.getQuestionsForSurvey(survey);
