@@ -1556,6 +1556,12 @@ window.AEFieldApp = {
       return;
     }
 
+    this.showMobileMenu = false;
+    this.showPacingModal = false;
+    this.showSurveyPickerModal = false;
+    this.showEnumPickerModal = false;
+    this.showEnumPinModal = false;
+    this.showIosInstallModal = false;
     this.showAdminPinModal = true;
     this.adminPinError = '';
     this.renderModals();
@@ -1592,6 +1598,12 @@ window.AEFieldApp = {
   },
 
   openSurveyPicker() {
+    this.showMobileMenu = false;
+    this.showPacingModal = false;
+    this.showAdminPinModal = false;
+    this.showEnumPickerModal = false;
+    this.showEnumPinModal = false;
+    this.showIosInstallModal = false;
     this.showSurveyPickerModal = true;
     this.renderModals();
   },
@@ -1610,11 +1622,18 @@ window.AEFieldApp = {
     this.activeSurveyId = surveyId;
     this.justSubmittedReceipt = null;
     this.showSurveyPickerModal = false;
+    this.showMobileMenu = false;
     this.initRunnerForActiveSurvey(false);
     this.render();
   },
 
   openEnumeratorPicker() {
+    this.showMobileMenu = false;
+    this.showPacingModal = false;
+    this.showAdminPinModal = false;
+    this.showSurveyPickerModal = false;
+    this.showEnumPinModal = false;
+    this.showIosInstallModal = false;
     this.showEnumPickerModal = true;
     this.renderModals();
     setTimeout(() => {
@@ -1632,6 +1651,7 @@ window.AEFieldApp = {
     if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'supervisor')) {
       this.setEnumerator(label);
       this.showEnumPickerModal = false;
+      this.showMobileMenu = false;
       this.showToast(`${currentUser.role === 'admin' ? 'HQ Admin' : 'Supervisor'} assigned active profile: ${label}`, 'success');
       this.render();
       return;
@@ -1639,6 +1659,7 @@ window.AEFieldApp = {
 
     this.pendingEnumPinPerson = { id: personId, label: label };
     this.enumPinError = '';
+    this.showMobileMenu = false;
     this.showEnumPickerModal = false;
     this.showEnumPinModal = true;
     this.renderModals();
@@ -1840,6 +1861,12 @@ window.AEFieldApp = {
         }
       });
     } else {
+      this.showMobileMenu = false;
+      this.showPacingModal = false;
+      this.showAdminPinModal = false;
+      this.showSurveyPickerModal = false;
+      this.showEnumPickerModal = false;
+      this.showEnumPinModal = false;
       this.showIosInstallModal = true;
       this.renderModals();
     }
