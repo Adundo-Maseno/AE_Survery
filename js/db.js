@@ -1720,13 +1720,13 @@ window.AEPinSecurity = {
   setLockState(state) {
     try {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(state));
-    } catch (e) {}
+    } catch (e) { }
   },
 
   clearLockout() {
     try {
       localStorage.removeItem(this.STORAGE_KEY);
-    } catch (e) {}
+    } catch (e) { }
   },
 
   constantTimeCompare(a, b) {
@@ -1804,10 +1804,10 @@ window.AEIntegrityEngine = {
       answers: record.answers || {},
       gps: record.gps
         ? {
-            lat: record.gps.lat,
-            lng: record.gps.lng,
-            accuracy: record.gps.accuracy
-          }
+          lat: record.gps.lat,
+          lng: record.gps.lng,
+          accuracy: record.gps.accuracy
+        }
         : null
     };
   },
@@ -1820,7 +1820,7 @@ window.AEIntegrityEngine = {
         const buf = await window.crypto.subtle.digest('SHA-256', enc);
         const arr = Array.from(new Uint8Array(buf));
         return arr.map((b) => (b < 16 ? '0' : '') + b.toString(16)).join('');
-      } catch (e) {}
+      } catch (e) { }
     }
     // Fallback deterministic digest for non-crypto environments
     let h1 = 0xdeadbeef ^ 0,
@@ -1944,7 +1944,7 @@ window.AESession = {
         if (!savedEnum || savedEnum.includes('HQ Admin') || savedEnum.includes('Supervisor') || savedEnum.includes('Dr. John Mutua')) {
           localStorage.setItem('ae_active_enumerator', `${safeUser.fullName} (${roleSuffix})`);
         }
-      } catch (e) {}
+      } catch (e) { }
     }
   },
 
@@ -2112,7 +2112,7 @@ class AESurveyStore {
         if (updated) {
           this.saveToLocalStorage();
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     try {
@@ -2123,7 +2123,7 @@ class AESurveyStore {
     }
     // Refresh personnel roster from Google Sheets in background so cross-device PIN changes take effect immediately
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
-      this.refreshPersonnelFromCloud().catch(() => {});
+      this.refreshPersonnelFromCloud().catch(() => { });
     }
     // Launch continuous background auto-sync daemon
     this.startBackgroundSyncDaemon();
@@ -2153,7 +2153,7 @@ class AESurveyStore {
     if (!this.idb) {
       try {
         localStorage.setItem('ae_media_' + mediaId, typeof blobOrBase64 === 'string' ? blobOrBase64 : '');
-      } catch (e) {}
+      } catch (e) { }
       return mediaId;
     }
     return new Promise((resolve) => {
@@ -2266,7 +2266,7 @@ class AESurveyStore {
       // 2. Enumerator + timestamp prefix match
       if (!match && r.submittedAt && r.enumerator) {
         match = seedMap.get(`${r.submittedAt}_${r.enumerator}`) ||
-                seedMap.get(`${String(r.submittedAt).slice(0, 16)}_${r.enumerator}`);
+          seedMap.get(`${String(r.submittedAt).slice(0, 16)}_${r.enumerator}`);
       }
 
       // 3. Heuristic match: enumerator + duration / date proximity
@@ -2312,7 +2312,7 @@ class AESurveyStore {
       this.saveToLocalStorage();
       if (this.idb) {
         (this.responses || []).forEach((r) => {
-          this.writeStore('responses', r).catch(() => {});
+          this.writeStore('responses', r).catch(() => { });
         });
       }
     }
@@ -2459,7 +2459,7 @@ class AESurveyStore {
     this.listeners.forEach((fn) => {
       try {
         fn(this);
-      } catch (e) {}
+      } catch (e) { }
     });
   }
 
@@ -2552,14 +2552,14 @@ class AESurveyStore {
       pinCode: String(person.pinCode || '1234').trim().slice(0, 8),
       assignedSurveys: Array.isArray(person.assignedSurveys)
         ? Array.from(
-            new Set(
-              person.assignedSurveys.map((sId) => {
-                if (sId === 'srv_agro_dealer_2026') return 'srv_agrodealer_2026';
-                if (sId === 'srv_chd_agro_dealer_stock') return 'srv_extension_pulse';
-                return sId;
-              })
-            )
+          new Set(
+            person.assignedSurveys.map((sId) => {
+              if (sId === 'srv_agro_dealer_2026') return 'srv_agrodealer_2026';
+              if (sId === 'srv_chd_agro_dealer_stock') return 'srv_extension_pulse';
+              return sId;
+            })
           )
+        )
         : [],
       taskQuotas: person.taskQuotas && typeof person.taskQuotas === 'object' ? person.taskQuotas : {},
       active: person.active !== false,
@@ -2624,7 +2624,7 @@ class AESurveyStore {
       try {
         await this.refreshPersonnelFromCloud();
         check = this.verifyPersonnelPin(personId, candidatePin);
-      } catch (e) {}
+      } catch (e) { }
     }
     return check;
   }
@@ -2915,7 +2915,7 @@ class AESurveyStore {
       if (hasUnsynced) {
         try {
           await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
-        } catch (e) {}
+        } catch (e) { }
       }
     }, delayMs);
   }
@@ -3271,42 +3271,42 @@ class AESurveyStore {
     const safeId = this.sanitizeSafeId(survey.id, 'srv');
     const pages = Array.isArray(survey.pages)
       ? survey.pages.map((p, idx) => ({
-          id: this.sanitizeSafeId(p && p.id, `page_${idx + 1}`),
-          title: String((p && p.title) || `Section ${idx + 1}`).slice(0, 240),
-          description: String((p && p.description) || '').slice(0, 600),
-          questions: Array.isArray(p && p.questions)
-            ? p.questions.map((q, qIdx) => {
-                const rawType = String((q && q.type) || 'multiple_choice');
-                const safeType = ALLOWED_TYPES.has(rawType) ? rawType : 'short_text';
-                const logic = (q && q.logic && typeof q.logic === 'object') ? q.logic : {};
-                return {
-                  ...q,
-                  id: this.sanitizeSafeId(q && q.id, `q_${idx + 1}_${qIdx + 1}`),
-                  type: safeType,
-                  title: String((q && q.title) || 'Untitled Question').slice(0, 400),
-                  helpText: String((q && q.helpText) || '').slice(0, 500),
-                  required: Boolean(q && q.required),
-                  logic: {
-                    enabled: Boolean(logic.enabled),
-                    condition: 'equals',
-                    value: String(logic.value || '').slice(0, 200),
-                    target: logic.target ? this.sanitizeSafeId(logic.target, 'page') : ''
-                  }
-                };
-              })
-            : []
-        }))
+        id: this.sanitizeSafeId(p && p.id, `page_${idx + 1}`),
+        title: String((p && p.title) || `Section ${idx + 1}`).slice(0, 240),
+        description: String((p && p.description) || '').slice(0, 600),
+        questions: Array.isArray(p && p.questions)
+          ? p.questions.map((q, qIdx) => {
+            const rawType = String((q && q.type) || 'multiple_choice');
+            const safeType = ALLOWED_TYPES.has(rawType) ? rawType : 'short_text';
+            const logic = (q && q.logic && typeof q.logic === 'object') ? q.logic : {};
+            return {
+              ...q,
+              id: this.sanitizeSafeId(q && q.id, `q_${idx + 1}_${qIdx + 1}`),
+              type: safeType,
+              title: String((q && q.title) || 'Untitled Question').slice(0, 400),
+              helpText: String((q && q.helpText) || '').slice(0, 500),
+              required: Boolean(q && q.required),
+              logic: {
+                enabled: Boolean(logic.enabled),
+                condition: 'equals',
+                value: String(logic.value || '').slice(0, 200),
+                target: logic.target ? this.sanitizeSafeId(logic.target, 'page') : ''
+              }
+            };
+          })
+          : []
+      }))
       : [];
 
     const quotas = Array.isArray(survey.quotas)
       ? survey.quotas.map((qta, qIdx) => ({
-          id: this.sanitizeSafeId(qta && qta.id, `qta_${qIdx + 1}`),
-          name: String((qta && qta.name) || `Target Quota ${qIdx + 1}`).slice(0, 140),
-          questionId: String((qta && qta.questionId) || 'q_county').slice(0, 80),
-          match: String((qta && qta.match) || '').slice(0, 100),
-          target: Math.max(1, Number(qta && qta.target) || 50),
-          action: qta && qta.action === 'block' ? 'block' : 'warn'
-        }))
+        id: this.sanitizeSafeId(qta && qta.id, `qta_${qIdx + 1}`),
+        name: String((qta && qta.name) || `Target Quota ${qIdx + 1}`).slice(0, 140),
+        questionId: String((qta && qta.questionId) || 'q_county').slice(0, 80),
+        match: String((qta && qta.match) || '').slice(0, 100),
+        target: Math.max(1, Number(qta && qta.target) || 50),
+        action: qta && qta.action === 'block' ? 'block' : 'warn'
+      }))
       : [];
 
     const theme = (survey.theme && typeof survey.theme === 'object') ? survey.theme : {};
@@ -3461,7 +3461,7 @@ class AESurveyStore {
     this.saveToLocalStorage();
     this.enqueueSyncItem('UPSERT_SURVEY', survey.id, `Archive Survey: ${survey.title}`);
     if (this.isEffectivelyOnline()) {
-      this.syncWithGoogleSheets({ manual: true }).catch(() => {});
+      this.syncWithGoogleSheets({ manual: true }).catch(() => { });
     }
     return survey;
   }
@@ -3478,7 +3478,7 @@ class AESurveyStore {
     this.saveToLocalStorage();
     this.enqueueSyncItem('UPSERT_SURVEY', survey.id, `Restore Survey: ${survey.title} (${targetStatus})`);
     if (this.isEffectivelyOnline()) {
-      this.syncWithGoogleSheets({ manual: true }).catch(() => {});
+      this.syncWithGoogleSheets({ manual: true }).catch(() => { });
     }
     return survey;
   }
@@ -3641,7 +3641,7 @@ class AESurveyStore {
     if (changed > 0) {
       this.saveToLocalStorage();
       if (this.isEffectivelyOnline()) {
-        this.syncWithGoogleSheets({ manual: true }).catch(() => {});
+        this.syncWithGoogleSheets({ manual: true }).catch(() => { });
       }
     }
     return changed;
@@ -3734,8 +3734,8 @@ class AESurveyStore {
     // Register with native W3C Service Worker Background Sync API if supported
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'SyncManager' in window) {
       navigator.serviceWorker.ready.then((reg) => {
-        reg.sync.register('ae-background-sync').catch(() => {});
-      }).catch(() => {});
+        reg.sync.register('ae-background-sync').catch(() => { });
+      }).catch(() => { });
     }
 
     return record;
@@ -3773,7 +3773,7 @@ class AESurveyStore {
     };
     try {
       localStorage.setItem(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
-    } catch (e) {}
+    } catch (e) { }
   }
 
   getRunnerDraft(surveyId) {
@@ -3786,7 +3786,7 @@ class AESurveyStore {
     delete this.runnerDrafts[surveyId];
     try {
       localStorage.setItem(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
-    } catch (e) {}
+    } catch (e) { }
   }
 
   /**
