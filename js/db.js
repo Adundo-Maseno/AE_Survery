@@ -1971,6 +1971,21 @@ window.AESession = {
     localStorage.removeItem(this.STORAGE_KEY);
   },
 
+  isAdmin() {
+    const user = this.getCurrentUser();
+    return Boolean(user && user.role === 'admin');
+  },
+
+  isSupervisor() {
+    const user = this.getCurrentUser();
+    return Boolean(user && user.role === 'supervisor');
+  },
+
+  isEnumerator() {
+    const user = this.getCurrentUser();
+    return Boolean(user && user.role === 'enumerator');
+  },
+
   hasPermission(permission) {
     const user = this.getCurrentUser();
     if (!user) return false;
