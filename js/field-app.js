@@ -2913,10 +2913,47 @@ window.AEFieldApp = {
   <meta name="theme-color" content="#141A17" />
   <title>${this.escapeHtml(survey.title)} · AE Standalone Field Collector</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" />
-  <script src="https://cdn.tailwindcss.com"><\/script>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #F4F6F4; color: #111613; }
+    *, ::before, ::after { box-sizing: border-box; border-width: 0; border-style: solid; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #F4F6F4; color: #111613; margin: 0; min-height: 100vh; display: flex; flex-direction: column; padding: 1rem; max-width: 42rem; margin-left: auto; margin-right: auto; }
     .ae-press:active { transform: scale(0.98); }
+    .bg-white { background-color: #FFFFFF; }
+    .border { border-width: 1px; }
+    .border-\[\#E4E7E4\] { border-color: #E4E7E4; }
+    .rounded-\[10px\] { border-radius: 10px; }
+    .rounded-\[6px\] { border-radius: 6px; }
+    .rounded { border-radius: 0.25rem; }
+    .p-4 { padding: 1rem; }
+    .p-6 { padding: 1.5rem; }
+    .px-2 { padding-left: 0.5rem; padding-right: 0.5rem; }
+    .py-0\.5 { padding-top: 0.125rem; padding-bottom: 0.125rem; }
+    .mb-4 { margin-bottom: 1rem; }
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .gap-2 { gap: 0.5rem; }
+    .gap-3 { gap: 0.75rem; }
+    .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 1rem; }
+    .text-xs { font-size: 0.75rem; line-height: 1rem; }
+    .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
+    .text-base { font-size: 1rem; line-height: 1.5rem; }
+    .text-\[10px\] { font-size: 10px; }
+    .font-medium { font-weight: 500; }
+    .font-semibold { font-weight: 600; }
+    .font-bold { font-weight: 700; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .text-white { color: #FFFFFF; }
+    .text-\[\#525B56\] { color: #525B56; }
+    .text-\[\#A3ACA6\] { color: #A3ACA6; }
+    .text-\[\#04250E\] { color: #04250E; }
+    .text-\[\#247B50\] { color: #247B50; }
+    .bg-\[\#141A17\] { background-color: #141A17; }
+    .bg-\[\#247B50\] { background-color: #247B50; }
+    .bg-\[\#DCFAE5\] { background-color: #DCFAE5; }
+    .shrink-0 { flex-shrink: 0; }
+    .min-w-0 { min-width: 0; }
+    .max-w-xs { max-width: 20rem; }
+    .hidden { display: none; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col p-4 sm:p-6 max-w-2xl mx-auto">
