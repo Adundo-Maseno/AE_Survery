@@ -2599,11 +2599,20 @@ class AESurveyStore {
   }
 
   /**
-   * Pushes updated personnel credentials/PIN directly to Google Sheets in background.
+   * Pushes updated personnel credentials/PIN directly to Google Sheets in background
+   * with live sync state feedback and automatic outbox queuing if offline.
    */
   async syncPersonnelToCloud(person) {
+    if (!person || !person.id) return { ok: false, error: 'Invalid personnel object' };
+
     const gasUrl = (this.settings.gasWebAppUrl || '').trim();
-    if (!gasUrl || !this.isValidGasUrl(gasUrl) || !this.isEffectivelyOnline()) return false;
+    const isOnline = this.isEffectivelyOnline();
+
+    if (!gasUrl || !this.isValidGasUrl(gasUrl) || !isOnline) {
+      this.enqueueSyncItem('UPSERT_PERSONNEL', person.id, `Personnel (${person.role || 'Staff'}): ${person.fullName || person.id}`);
+      this.saveToLocalStorage();
+      return { ok: false, offline: true, error: 'Device is offline or GAS Web App URL is not set. Queued in outbox.' };
+    }
 
     const currentSessionUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
@@ -2617,6 +2626,11 @@ class AESurveyStore {
       personnel: person
     };
 
+    this._syncInFlight = true;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
+    }
+
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20000);
@@ -2628,6 +2642,7 @@ class AESurveyStore {
         signal: controller.signal
       });
       clearTimeout(timer);
+
       if (res && res.ok) {
         const data = await res.json();
         if (data && data.ok) {
@@ -2635,14 +2650,29 @@ class AESurveyStore {
             this.mergePersonnelFromCloud(data.personnel);
           }
           this.syncQueue = this.syncQueue.filter((q) => q.recordId !== person.id);
+          this.settings.lastSyncedAt = new Date().toISOString();
           this.saveToLocalStorage();
-          return true;
+          this._syncInFlight = false;
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+          }
+          return { ok: true, personnel: data.personnel };
+        } else {
+          throw new Error(data && data.error ? data.error : 'GAS rejected personnel upsert');
         }
+      } else {
+        throw new Error(`HTTP ${res.status}: Google Apps Script returned an error.`);
       }
     } catch (e) {
-      console.warn('Direct personnel sync fallback to batch sync:', e);
+      console.warn('Direct personnel sync failed, safely preserved in local outbox:', e);
+      this.enqueueSyncItem('UPSERT_PERSONNEL', person.id, `Personnel (${person.role || 'Staff'}): ${person.fullName || person.id}`);
+      this.saveToLocalStorage();
+      this._syncInFlight = false;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+      }
+      return { ok: false, error: e.message || 'Network error during cloud sync' };
     }
-    return false;
   }
 
   /**

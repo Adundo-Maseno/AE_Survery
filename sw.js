@@ -3,12 +3,13 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.52';
+const CACHE_NAME = 'ae-survey-prod-v3.53';
 
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
   './field.html',
+  './css/tailwind.min.css',
   './manifest.json',
   './manifest-collector.json',
   './icons/agri_experience_logo.png',
@@ -36,7 +37,6 @@ const APP_SHELL_ASSETS = [
   './js/analytics.js',
   './js/app.js',
   './js/field-app.js',
-  'https://cdn.tailwindcss.com',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',

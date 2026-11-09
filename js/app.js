@@ -2050,9 +2050,15 @@ window.AEApp = {
     if (isSelf && window.AESession) {
       window.AESession.setCurrentUser(saved, true);
     }
-    // Push updated credentials directly to Google Sheets so other devices receive them immediately
+    // Push updated credentials directly to Google Sheets with real-time feedback
     if (window.aeStore && typeof window.aeStore.syncPersonnelToCloud === 'function') {
-      window.aeStore.syncPersonnelToCloud(saved).catch(() => {});
+      window.aeStore.syncPersonnelToCloud(saved).then((syncRes) => {
+        if (syncRes && syncRes.ok) {
+          this.showToast(`Synchronized credentials for ${saved.fullName} to Google Sheets.`, 'success');
+        } else {
+          this.showToast(`Saved locally. Queued in outbox to auto-sync when online.`, 'info');
+        }
+      }).catch(() => {});
     }
     this.showToast(
       this.editingPersonnel ? `Updated credentials for ${saved.fullName}` : `Enrolled ${saved.fullName} as ${saved.role}`,
@@ -2072,7 +2078,7 @@ window.AEApp = {
     this.render();
   },
 
-  saveResetPin(e) {
+  async saveResetPin(e) {
     e.preventDefault();
     const currentUser = window.AESession ? window.AESession.getCurrentUser() : null;
     const isSelf = this.showResetPinPersonnel && currentUser && currentUser.id === this.showResetPinPersonnel.id;
@@ -2086,6 +2092,7 @@ window.AEApp = {
       return;
     }
     if (!this.showResetPinPersonnel) return;
+    const personName = this.showResetPinPersonnel.fullName;
     this.showResetPinPersonnel.pinCode = newPin;
     const updated = window.aeStore.upsertPersonnel(this.showResetPinPersonnel);
     if (window.AEPinSecurity && typeof window.AEPinSecurity.clearLockout === 'function') {
@@ -2094,12 +2101,21 @@ window.AEApp = {
     if (isSelf && window.AESession) {
       window.AESession.setCurrentUser(updated, true);
     }
-    // Push updated PIN directly to Google Sheets so other devices receive it immediately
-    if (window.aeStore && typeof window.aeStore.syncPersonnelToCloud === 'function') {
-      window.aeStore.syncPersonnelToCloud(updated).catch(() => {});
-    }
-    this.showToast(`PIN updated for ${this.showResetPinPersonnel.fullName}`, 'success');
     this.closePersonnelModals();
+    this.render();
+
+    // Push updated PIN directly to Google Sheets with real-time feedback
+    if (window.aeStore && typeof window.aeStore.syncPersonnelToCloud === 'function') {
+      this.showToast(`Syncing PIN for ${personName} to Google Sheets…`, 'info');
+      const syncRes = await window.aeStore.syncPersonnelToCloud(updated);
+      if (syncRes && syncRes.ok) {
+        this.showToast(`PIN updated for ${personName} and synchronized to Google Sheets.`, 'success');
+      } else {
+        this.showToast(`PIN updated locally. Queued in outbox — will sync when online.`, 'info');
+      }
+    } else {
+      this.showToast(`PIN updated for ${personName}`, 'success');
+    }
   },
 
   togglePersonnelStatus(personId) {

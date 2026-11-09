@@ -102,9 +102,9 @@ function isCallerAdmin_(callerId) {
     for (var i = 1; i < data.length; i++) {
       var rowId = String(data[i][0] || '').trim();
       var role = String(data[i][2] || '').trim().toLowerCase();
-      var active = data[i][7];
+      var active = data[i][9]; // Column 9 is Status ('Active' / 'Inactive')
       if (rowId === safeId) {
-        var isActive = active === true || active === 'TRUE' || active === 1 || String(active).toLowerCase() === 'true';
+        var isActive = active === true || active === 'TRUE' || active === 1 || String(active).toLowerCase() === 'active' || String(active).toLowerCase() === 'true';
         return role === 'admin' && isActive;
       }
     }
