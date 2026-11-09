@@ -4786,7 +4786,9 @@ window.AEAnalytics = {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
     }
 
-    const forecast = this.forecastCompletion(responses, 100, '2026-11-15');
+    const targetQuota = Number(this.customQuota || survey?.targetQuota || 100);
+    const campaignDeadline = this.customDeadline || survey?.targetDate || '2026-11-30';
+    const forecast = this.forecastCompletion(responses, targetQuota, campaignDeadline);
 
     const enumCounts = {};
     responses.forEach((r) => {
@@ -4811,19 +4813,33 @@ window.AEAnalytics = {
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
-        <!-- Header -->
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <!-- Header with Interactive Pacing Targets -->
+        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <h2 class="text-base font-semibold text-[#111613]">Field Enumeration Pacing &amp; Quota Completion Forecast</h2>
             <p class="text-xs text-[#525B56] mt-0.5">
               Holt's linear exponential smoothing forecast projecting campaign completion dates against targeted quotas.
             </p>
           </div>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
-            forecast.isOnTrack ? 'bg-[#DCFAE5] text-[#04250E] border border-[#247B50]/30' : 'bg-[#FFFBEB] text-[#92400E] border border-[#D97706]/30'
-          } self-start sm:self-auto">
-            ${forecast.isOnTrack ? 'Campaign On Track' : 'Pacing Alert · Quota Deficit'}
-          </span>
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-1.5 text-xs bg-[#FAFBF9] border border-[#E4E7E4] px-2.5 py-1 rounded-[6px]">
+              <span class="font-semibold text-[#111613]">Target Quota:</span>
+              <input type="number" min="1" max="50000" step="5" value="${targetQuota}"
+                onchange="window.AEAnalytics.customQuota = Number(this.value); window.AEApp.render();"
+                class="w-16 h-6 px-1.5 text-xs font-mono font-semibold text-[#247B50] bg-white border border-[#CFD5D0] rounded focus:outline-none focus:border-[#247B50] text-center" />
+            </div>
+            <div class="flex items-center gap-1.5 text-xs bg-[#FAFBF9] border border-[#E4E7E4] px-2.5 py-1 rounded-[6px]">
+              <span class="font-semibold text-[#111613]">Deadline:</span>
+              <input type="date" value="${campaignDeadline}"
+                onchange="window.AEAnalytics.customDeadline = this.value; window.AEApp.render();"
+                class="h-6 px-1.5 text-xs font-mono font-semibold text-[#111613] bg-white border border-[#CFD5D0] rounded focus:outline-none focus:border-[#247B50]" />
+            </div>
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
+              forecast.isOnTrack ? 'bg-[#DCFAE5] text-[#04250E] border border-[#247B50]/30' : 'bg-[#FFFBEB] text-[#92400E] border border-[#D97706]/30'
+            }">
+              ${forecast.isOnTrack ? 'Campaign On Track' : 'Pacing Alert · Quota Deficit'}
+            </span>
+          </div>
         </div>
 
         <!-- Pacing Summary Cards -->
@@ -4857,7 +4873,7 @@ window.AEAnalytics = {
             <div class="flex items-center gap-3 text-[11px] text-[#525B56]">
               <span class="flex items-center gap-1.5"><span class="w-2.5 h-0.5 bg-[#247B50]"></span> Actual Completed</span>
               <span class="flex items-center gap-1.5"><span class="w-2.5 h-0.5 bg-[#3FC07A] border-dashed"></span> Holt's Forecast</span>
-              <span class="flex items-center gap-1.5"><span class="w-2.5 h-0.5 bg-[#DC2626]"></span> Quota Target (100)</span>
+              <span class="flex items-center gap-1.5"><span class="w-2.5 h-0.5 bg-[#DC2626]"></span> Quota Target (${targetQuota})</span>
             </div>
           </div>
           <div class="h-72 w-full p-2 border border-[#E4E7E4] rounded-[6px] bg-white">
@@ -5279,11 +5295,13 @@ window.AEAnalytics = {
     this.mapInstances['gps_log'] = map;
   },
 
-  mountPacingChart(responses) {
+  mountPacingChart(responses, survey) {
     const canvas = document.getElementById('ae_pacing_chart');
     if (!canvas || typeof window.Chart === 'undefined') return;
 
-    const forecast = this.forecastCompletion(responses, 100, '2026-11-15');
+    const targetQuota = Number(this.customQuota || survey?.targetQuota || 100);
+    const campaignDeadline = this.customDeadline || survey?.targetDate || '2026-11-30';
+    const forecast = this.forecastCompletion(responses, targetQuota, campaignDeadline);
     const dpr = this.getOptimalDevicePixelRatio();
 
     const actualDays = forecast.sortedDays;
@@ -5341,8 +5359,8 @@ window.AEAnalytics = {
             pointBackgroundColor: '#3FC07A'
           },
           {
-            label: 'Quota Target (100)',
-            data: labels.map(() => 100),
+            label: `Quota Target (${targetQuota})`,
+            data: labels.map(() => targetQuota),
             borderColor: '#DC2626',
             borderDash: [4, 4],
             borderWidth: 1.5,
@@ -5802,7 +5820,7 @@ window.AEAnalytics = {
 
     // Mount Pacing Forecast Chart if container is present
     if (this.activeTab === 'pacing') {
-      this.mountPacingChart(responses);
+      this.mountPacingChart(responses, survey);
     }
 
     // Mount Forensics Duration Histogram if container is present
