@@ -477,10 +477,15 @@ window.AEApp = {
           <!-- Logo & Brand Header -->
           <div class="text-center space-y-3">
             <div class="flex items-center justify-center">
-              <img src="./icons/agri_experience_logo.png"
-                alt="Agri Experience Limited"
-                class="h-10 w-auto object-contain"
-                onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+              <picture>
+                <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+                <img src="./icons/agri_experience_logo.png"
+                  alt="Agri Experience Limited"
+                  width="95" height="40"
+                  fetchpriority="high"
+                  class="h-10 w-auto object-contain"
+                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+              </picture>
               <div class="hidden w-10 h-10 rounded-[8px] bg-[#247B50] text-white items-center justify-center text-lg font-bold">
                 <i class="fa-solid fa-seedling"></i>
               </div>
@@ -762,10 +767,14 @@ window.AEApp = {
       headerEl.innerHTML = `
         <div class="max-w-[1340px] mx-auto px-3 sm:px-5 py-2 sm:py-0 sm:h-12 flex items-center justify-between gap-4">
           <div class="flex items-center gap-2.5 shrink-0">
-            <img src="./icons/agri_experience_logo.png"
-              alt="Agri Experience Limited"
-              class="h-7 w-auto max-w-[120px] object-contain shrink-0"
-              onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+            <picture>
+              <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+              <img src="./icons/agri_experience_logo.png"
+                alt="Agri Experience Limited"
+                width="66" height="28"
+                class="h-7 w-auto max-w-[120px] object-contain shrink-0"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+            </picture>
             <span class="hidden w-6 h-6 rounded-[5px] bg-[#247B50] text-white items-center justify-center text-xs font-semibold">
               <i class="fa-solid fa-seedling"></i>
             </span>
@@ -815,10 +824,14 @@ window.AEApp = {
         <div class="flex items-center gap-2.5 min-w-0 shrink-0">
           <button onclick="AEApp.switchStage('dashboard')"
             class="flex items-center gap-2.5 text-left focus:outline-none shrink-0 ae-press">
-            <img src="./icons/agri_experience_logo.png"
-              alt="Agri Experience Limited"
-              class="h-7 w-auto max-w-[100px] sm:max-w-[120px] object-contain shrink-0"
-              onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+            <picture>
+              <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+              <img src="./icons/agri_experience_logo.png"
+                alt="Agri Experience Limited"
+                width="66" height="28"
+                class="h-7 w-auto max-w-[100px] sm:max-w-[120px] object-contain shrink-0"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+            </picture>
             <span class="hidden w-6 h-6 rounded-[5px] bg-[#247B50] text-white items-center justify-center text-xs font-semibold">
               <i class="fa-solid fa-seedling"></i>
             </span>

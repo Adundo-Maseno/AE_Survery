@@ -699,11 +699,15 @@ window.AEFieldApp = {
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-3 border-t-4" style="border-top-color: ${accent};">
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0">
-              <img src="./icons/agri_experience_logo.png"
-                alt="Agri Experience Logo"
-                class="h-8 w-auto max-w-[130px] object-contain shrink-0"
-                loading="eager"
-                onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+              <picture>
+                <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+                <img src="./icons/agri_experience_logo.png"
+                  alt="Agri Experience Logo"
+                  width="76" height="32"
+                  fetchpriority="high"
+                  class="h-8 w-auto max-w-[130px] object-contain shrink-0"
+                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+              </picture>
               <div class="w-8 h-8 rounded-[6px] bg-[#247B50] text-white hidden items-center justify-center font-bold text-xs shrink-0">
                 <i class="fa-solid fa-seedling text-sm"></i>
               </div>

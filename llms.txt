@@ -1,0 +1,7 @@
+# AE Survey · Agri Experience Field Operations
+
+> AE Survey is an offline-first agricultural field enumeration, survey design, and real-time analytics platform for Agri Experience Limited.
+
+## Core Interfaces
+- [Operations Studio](https://ae-survey.pages.dev/): Management portal for survey design, team task assignment, and agronomic analytics.
+- [Mobile Field Collector](https://ae-survey.pages.dev/field.html): Dedicated offline PWA for agricultural enumerators and extension officers.

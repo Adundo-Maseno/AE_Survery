@@ -21,25 +21,34 @@
   <link rel="icon" type="image/png" sizes="512x512" href="./icons/icon-512.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
 
+  <!-- Preload Critical LCP Asset -->
+  <link rel="preload" as="image" href="./icons/agri_experience_logo.webp" type="image/webp" fetchpriority="high" />
+
   <!-- Google Fonts: Plus Jakarta Sans (Unified UI & Tabular Figures) + Fraunces (Respondent Header Accent) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
-    rel="stylesheet" />
-
-  <!-- Font Awesome 6 Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-    crossorigin="anonymous" referrerpolicy="no-referrer" />
-
-  <!-- Leaflet 1.9.4 Geospatial GIS Engine (cdnjs.cloudflare.com) -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
-    crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"
-    referrerpolicy="no-referrer"></script>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'" />
+  <noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" />
+  </noscript>
 
   <!-- Production Compiled Tailwind CSS v3 -->
   <link rel="stylesheet" href="./css/tailwind.min.css" />
+
+  <!-- Font Awesome 6 Icons (Asynchronous non-blocking) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'" />
+  <noscript>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  </noscript>
+
+  <!-- Leaflet 1.9.4 Geospatial GIS Engine (Asynchronous non-blocking) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+    crossorigin="anonymous" referrerpolicy="no-referrer" media="print" onload="this.media='all'" />
+  <noscript>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  </noscript>
 
   <style>
     :root {
@@ -506,9 +515,12 @@
     <footer class="border-t border-[#EFEFEF] px-4 sm:px-6 py-3.5 mt-10">
       <div class="max-w-[1320px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs text-[#525B56]">
         <div class="flex items-center gap-2.5">
-          <img src="./icons/agri_experience_logo.png"
-            alt="Agri Experience Limited" class="h-6 w-auto object-contain shrink-0"
-            onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';" />
+          <picture>
+            <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+            <img src="./icons/agri_experience_logo.png"
+              alt="Agri Experience Limited" width="57" height="24" loading="lazy" class="h-6 w-auto object-contain shrink-0"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';" />
+          </picture>
           <span class="hidden w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
           <strong class="font-medium text-[#111613]">Agri Experience Limited</strong>
           <span>· Kenya Seed &amp; Input Retail Field Enumeration · IndexedDB + Service Worker PWA</span>
@@ -528,16 +540,17 @@
   <div id="ae_toast_container" data-ui="toast" role="status" aria-live="polite" aria-atomic="true"
     class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
 
-  <!-- Application Scripts -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="./js/qrcode.js"></script>
-  <script src="./js/db.js"></script>
-  <script src="./js/i18n.js"></script>
-  <script src="./js/builder.js"></script>
-  <script src="./js/collector.js"></script>
-  <script src="./js/chart.umd.min.js"></script>
-  <script src="./js/analytics.js"></script>
-  <script src="./js/app.js"></script>
+  <!-- Application Scripts (Deferred for instant paint and non-blocking execution) -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script defer src="./js/qrcode.js"></script>
+  <script defer src="./js/db.js"></script>
+  <script defer src="./js/i18n.js"></script>
+  <script defer src="./js/builder.js"></script>
+  <script defer src="./js/collector.js"></script>
+  <script defer src="./js/chart.umd.min.js"></script>
+  <script defer src="./js/analytics.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script defer src="./js/app.js"></script>
 </body>
 
 </html>
