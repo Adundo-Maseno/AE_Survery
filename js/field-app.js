@@ -443,30 +443,30 @@ window.AEFieldApp = {
       if (isSyncing) {
         syncIcon.className = 'fa-solid fa-arrows-rotate text-xs text-[#247B50] fa-spin';
         syncText.textContent = this.t('autoSyncing');
-        syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs inline-flex items-center gap-1.5 ae-press opacity-85';
+        syncBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs items-center gap-1.5 ae-press opacity-85';
       } else if (!isOnline) {
         syncIcon.className = 'fa-solid fa-cloud text-xs text-[#D97706]';
         syncText.textContent = `${queuedCount} ${this.t('offlineQueue')}`;
-        syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#FFFBEB] text-[#92400E] text-xs inline-flex items-center gap-1.5 ae-press';
+        syncBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#FFFBEB] text-[#92400E] text-xs items-center gap-1.5 ae-press';
       } else if (queuedCount > 0) {
         syncIcon.className = 'fa-solid fa-cloud-arrow-up text-xs text-[#247B50]';
         syncText.textContent = `${queuedCount} ${this.t('pending')}`;
-        syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs inline-flex items-center gap-1.5 ae-press';
+        syncBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-white text-[#111613] text-xs items-center gap-1.5 ae-press';
       } else {
         syncIcon.className = 'fa-solid fa-cloud-check text-xs text-[#3FC07A]';
         syncText.textContent = this.t('synced');
-        syncBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-white/10 hover:bg-white/15 text-white text-xs inline-flex items-center gap-1.5 ae-press';
+        syncBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-white/10 hover:bg-white/15 text-white text-xs items-center gap-1.5 ae-press';
       }
     }
 
     const installBtn = document.getElementById('ae_hdr_install_btn');
     if (installBtn) {
       if (this.isAppInstalled) {
-        installBtn.className = 'hidden sm:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] items-center gap-1.5 pointer-events-none shrink-0';
+        installBtn.className = 'hidden md:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] items-center gap-1.5 pointer-events-none shrink-0';
         installBtn.innerHTML = `<i class="fa-solid fa-circle-check text-xs text-[#3FC07A]"></i><span class="hidden sm:inline">${this.t('installed')}</span>`;
       } else {
         const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        installBtn.className = 'hidden sm:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 shrink-0 ae-press';
+        installBtn.className = 'hidden md:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 shrink-0 ae-press';
         installBtn.innerHTML = `<i class="fa-solid fa-mobile-screen-button text-xs"></i><span class="hidden xs:inline sm:inline" id="ae_hdr_install_label">${isIos ? this.t('addToHome') : this.t('installApp')}</span>`;
       }
     }

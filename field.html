@@ -294,29 +294,29 @@
           <span id="ae_hdr_role_badge" class="hidden shrink-0"></span>
         </div>
         <button type="button" onclick="AEFieldApp.openSurveyPicker()"
-          class="text-[11px] sm:text-xs text-[#CFD5D0] hover:text-white truncate flex items-center gap-1 text-left max-w-[140px] xs:max-w-[180px] sm:max-w-[240px] md:max-w-[320px] lg:max-w-[440px] xl:max-w-[520px]">
+          class="text-[11px] sm:text-xs text-[#CFD5D0] hover:text-white truncate flex items-center gap-1 text-left w-full max-w-[280px] xs:max-w-[340px] sm:max-w-[440px] lg:max-w-[560px]">
           <span id="ae_hdr_survey_title" class="truncate font-medium">Loading survey…</span>
           <i class="fa-solid fa-chevron-down text-[9px] text-[#A3ACA6] shrink-0"></i>
         </button>
       </div>
     </div>
 
-    <!-- Right Section: Tiered Action Cluster + Drawer Toggle -->
+    <!-- Right Section: Desktop Action Cluster (Hidden on mobile < md: where actions are docked at bottom) -->
     <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-      <!-- Sync Status Pill (Always visible across mobile & desktop) -->
+      <!-- Sync Status Pill (Visible on md: and up; on mobile accessible via bottom dock) -->
       <button type="button" onclick="AEFieldApp.triggerCloudSync()"
         id="ae_hdr_sync_btn"
         title="Click to synchronize with Google Sheets"
-        class="h-8 px-2 sm:px-3 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+        class="hidden md:inline-flex h-8 px-2 sm:px-3 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 shrink-0 ae-press">
         <i id="ae_hdr_sync_icon" class="fa-solid fa-cloud-arrow-up text-xs text-[#3FC07A]"></i>
         <span id="ae_hdr_sync_text" class="tabular-nums font-medium hidden sm:inline">Synced</span>
       </button>
 
-      <!-- Install PWA Button (Visible on sm: and up; on mobile phones accessible in Bottom Nav & Drawer) -->
+      <!-- Install PWA Button (Visible on md: and up; on mobile accessible via bottom dock & drawer) -->
       <button type="button" onclick="AEFieldApp.promptInstall()"
         id="ae_hdr_install_btn"
         title="Install AE Field App PWA on device home screen"
-        class="hidden sm:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 shrink-0 ae-press">
+        class="hidden md:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 shrink-0 ae-press">
         <i class="fa-solid fa-mobile-screen-button text-xs"></i>
         <span class="hidden xs:inline sm:inline" id="ae_hdr_install_label">Install</span>
       </button>
@@ -369,11 +369,11 @@
         <span class="hidden lg:inline">Admin Studio</span>
       </button>
 
-      <!-- Menu Drawer Button (Visible on screens < xl:) -->
+      <!-- Menu Drawer Button (Visible only on tablets md:flex xl:hidden; on mobile phones accessible in Bottom Nav) -->
       <button type="button" onclick="AEFieldApp.toggleMobileMenu()"
         id="ae_hdr_mobile_menu_btn"
         aria-label="Open Field Operations Menu"
-        class="xl:hidden h-8 w-8 rounded-[6px] bg-white/10 hover:bg-white/15 text-white flex items-center justify-center relative shrink-0 ae-press">
+        class="hidden md:flex xl:hidden h-8 w-8 rounded-[6px] bg-white/10 hover:bg-white/15 text-white items-center justify-center relative shrink-0 ae-press">
         <i class="fa-solid fa-bars text-xs"></i>
         <span id="ae_hdr_mobile_dot" class="hidden absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#3FC07A]"></span>
       </button>
