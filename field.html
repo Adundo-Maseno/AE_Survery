@@ -301,8 +301,8 @@
       </div>
     </div>
 
-    <!-- Right Section: Desktop Action Cluster (Hidden on mobile < md: where actions are docked at bottom) -->
-    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+    <!-- Right Section: Desktop Action Cluster (Exclusively hidden on mobile < md: where actions are docked at bottom) -->
+    <div class="hidden md:flex items-center gap-1.5 sm:gap-2 shrink-0">
       <!-- Sync Status Pill (Visible on md: and up; on mobile accessible via bottom dock) -->
       <button type="button" onclick="AEFieldApp.triggerCloudSync()"
         id="ae_hdr_sync_btn"

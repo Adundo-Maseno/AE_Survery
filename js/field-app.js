@@ -475,10 +475,10 @@ window.AEFieldApp = {
     const focusLabel = document.getElementById('ae_hdr_focus_label');
     if (focusBtn && focusLabel) {
       if (this.runnerMode === 'focus') {
-        focusBtn.className = 'h-8 px-2 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
+        focusBtn.className = 'hidden 2xl:inline-flex h-8 px-2 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white items-center gap-1.5 ae-press';
         focusLabel.textContent = this.t('focusOn');
       } else {
-        focusBtn.className = 'h-8 px-2 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white inline-flex items-center gap-1.5 ae-press';
+        focusBtn.className = 'hidden 2xl:inline-flex h-8 px-2 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 ae-press';
         focusLabel.textContent = this.t('focus');
       }
     }
