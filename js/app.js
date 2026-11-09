@@ -446,7 +446,7 @@ window.AEApp = {
           <!-- Logo & Brand Header -->
           <div class="text-center space-y-3">
             <div class="flex items-center justify-center">
-              <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+              <img src="./icons/agri_experience_logo.png"
                 alt="Agri Experience Limited"
                 class="h-10 w-auto object-contain"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
@@ -687,7 +687,7 @@ window.AEApp = {
       headerEl.innerHTML = `
         <div class="max-w-[1340px] mx-auto px-3 sm:px-5 py-2 sm:py-0 sm:h-12 flex items-center justify-between gap-4">
           <div class="flex items-center gap-2.5 shrink-0">
-            <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+            <img src="./icons/agri_experience_logo.png"
               alt="Agri Experience Limited"
               class="h-7 w-auto max-w-[120px] object-contain shrink-0"
               onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
@@ -740,7 +740,7 @@ window.AEApp = {
         <div class="flex items-center gap-2.5 min-w-0 shrink-0">
           <button onclick="AEApp.switchStage('dashboard')"
             class="flex items-center gap-2.5 text-left focus:outline-none shrink-0 ae-press">
-            <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+            <img src="./icons/agri_experience_logo.png"
               alt="Agri Experience Limited"
               class="h-7 w-auto max-w-[100px] sm:max-w-[120px] object-contain shrink-0"
               onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
@@ -1704,29 +1704,29 @@ window.AEApp = {
         <section class="space-y-2.5">
           <div class="flex items-baseline justify-between gap-2">
             <div>
-              <h2 class="text-[18px] font-medium text-[#111613]">Initialize from a Field Template</h2>
-              <p class="text-xs text-[#525B56]">Pre-built multi-page instruments with conditional skip rules, GPS plot capture, and Likert matrices</p>
+              <h2 class="text-[18px] font-medium text-[#111613]">Initialize from a Universal Template</h2>
+              <p class="text-xs text-[#525B56]">Production-ready multi-page survey instruments across Public Health, Enterprise HR, Humanitarian Aid, Customer Experience, and Field Agriculture</p>
             </div>
           </div>
 
-          <div class="bg-white border border-[#E4E7E4] rounded-[8px] grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#EFEFEF]">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             ${window.SURVEY_TEMPLATES.map(
               (tpl) => `
-              <div class="p-5 flex flex-col justify-between gap-4 ae-row-hover">
+              <div class="p-4 bg-white border border-[#E4E7E4] rounded-[8px] flex flex-col justify-between gap-3 ae-card-hover">
                 <div class="space-y-1.5">
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs font-medium text-[#247B50]">${this.escapeHtml(tpl.category)}</span>
-                    <span class="text-xs text-[#646E68]">${this.escapeHtml(tpl.badge)}</span>
+                    <span class="text-[11px] font-semibold text-[#247B50]">${this.escapeHtml(tpl.category)}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-[#F8F9F8] border border-[#E4E7E4] text-[#525B56]">${this.escapeHtml(tpl.badge)}</span>
                   </div>
-                  <h3 class="text-base font-semibold text-[#111613]">${this.escapeHtml(tpl.name)}</h3>
-                  <p class="text-xs text-[#525B56] leading-relaxed">${this.escapeHtml(tpl.description)}</p>
+                  <h3 class="text-sm font-semibold text-[#111613] leading-snug">${this.escapeHtml(tpl.name)}</h3>
+                  <p class="text-xs text-[#525B56] line-clamp-3 leading-relaxed">${this.escapeHtml(tpl.description)}</p>
                 </div>
                 <div class="pt-2 flex items-center justify-between border-t border-[#EFEFEF]">
-                  <span class="text-xs text-[#646E68]">Offline + Sheets ready</span>
+                  <span class="text-[11px] text-[#646E68] inline-flex items-center gap-1"><i class="fa-solid fa-cloud-arrow-up text-[10px] text-[#247B50]"></i> Offline Ready</span>
                   <button onclick="AEApp.createFromTemplate('${tpl.id}')"
-                    class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#141A17] hover:text-white hover:border-[#141A17] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-                    <span>Use template</span>
-                    <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                    class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#141A17] hover:text-white hover:border-[#141A17] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+                    <span>Use Template</span>
+                    <i class="fa-solid fa-arrow-right text-[9px]"></i>
                   </button>
                 </div>
               </div>
@@ -4591,7 +4591,7 @@ window.AEApp = {
 <body class="min-h-screen flex flex-col p-4 sm:p-6 max-w-2xl mx-auto">
   <header class="bg-[#141A17] text-white p-4 rounded-[10px] mb-4 flex items-center justify-between gap-3">
     <div class="flex items-center gap-3 min-w-0">
-      <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+      <img src="./icons/agri_experience_logo.png"
         alt="Agri Experience Logo"
         class="h-8 w-auto max-w-[120px] object-contain rounded shrink-0"
         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />

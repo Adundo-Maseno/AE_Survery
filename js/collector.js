@@ -358,7 +358,7 @@ window.AECollector = {
           <div class="p-6 sm:p-7 text-white" style="background-color: ${headerBg}">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
               <div class="flex items-center gap-2.5">
-                <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+                <img src="./icons/agri_experience_logo.png"
                   alt="Agri Experience Logo"
                   class="h-7 w-auto max-w-[120px] object-contain rounded bg-white/10 px-1 py-0.5 shrink-0"
                   onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />

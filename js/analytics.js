@@ -1051,12 +1051,54 @@ window.AEAnalytics = {
   crossTabColQId: null,
   crossTabMetric: 'count', // 'count' | 'rowPct' | 'colPct' | 'residuals'
   verbatimSearchQuery: '',
+  selectedRegressionTarget: null,
+  selectedAnovaOutcome: null,
+  selectedAnovaGroup: null,
+  selectedSpatialMetric: null,
   questionViewModes: {}, // qId -> 'both' | 'chart' | 'table'
   questionSubTabs: {}, // qId -> 'chart' | 'table' | 'stats' | 'verbatim'
   questionChartTypes: {}, // qId -> 'horizontalBar' | 'bar' | 'doughnut'
   chartInstances: {}, // qId -> Chart.js instance
   mapInstances: {}, // qId -> Leaflet map instance
   _mapFocusBounds: {}, // mapKey -> { countryName, countryBounds, plotBounds, center, zoom }
+
+  getNumericQuestions(survey) {
+    if (!survey || !window.aeStore) return [];
+    const questions = window.aeStore.getQuestionsForSurvey(survey);
+    return questions.filter((q) =>
+      q.type === 'number_yield' ||
+      q.type === 'nps' ||
+      q.type === 'star_rating' ||
+      (q.type === 'short_text' && /yield|cost|price|income|acres|hectares|amount|quantity|size|score|rating|age|tenure|duration|temp|members|kg/i.test(q.title || ''))
+    );
+  },
+
+  getCategoricalQuestions(survey) {
+    if (!survey || !window.aeStore) return [];
+    const questions = window.aeStore.getQuestionsForSurvey(survey);
+    return questions.filter((q) =>
+      q.type === 'multiple_choice' ||
+      q.type === 'dropdown' ||
+      q.type === 'checkboxes' ||
+      q.type === 'cascading_dropdown' ||
+      q.type === 'nps' ||
+      q.type === 'star_rating'
+    );
+  },
+
+  getContinuousValue(r, qId) {
+    if (!r || !r.answers || !qId) return null;
+    let raw = r.answers[qId];
+    if (raw === undefined || raw === null || raw === '') return null;
+    if (typeof raw === 'object') {
+      if (raw.code || raw.serial) raw = raw.code || raw.serial;
+      else if (raw.value !== undefined) raw = raw.value;
+      else if (raw.lat !== undefined) raw = raw.lat;
+      else if (raw.durationSec !== undefined) raw = raw.durationSec;
+    }
+    const num = Number(raw);
+    return !isNaN(num) ? num : null;
+  },
 
   // Geographic Bounding Extents for Target Agricultural Countries
   COUNTRY_EXTENTS: {
@@ -1489,7 +1531,7 @@ window.AEAnalytics = {
         <!-- Print-only Brand Header -->
         <div class="hidden print:flex items-center justify-between pb-4 border-b border-[#CFD5D0]">
           <div class="flex items-center gap-3">
-            <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+            <img src="./icons/agri_experience_logo.png"
               alt="Agri Experience Limited" class="h-10 w-auto object-contain" />
             <div>
               <div class="text-sm font-bold text-[#111613]">Agri Experience Limited</div>
@@ -1748,92 +1790,114 @@ window.AEAnalytics = {
   },
 
   // --------------------------------------------------------------------------
-  // AUTOMATED AGRONOMIC KEY DRIVER & INSIGHT DISCOVERY ENGINE
+  // AUTOMATED KEY DRIVER & STATISTICAL INSIGHT DISCOVERY ENGINE
   // --------------------------------------------------------------------------
   renderAutomatedInsightsBanner(survey, responses) {
     if (!responses || responses.length === 0) return '';
+    const insights = [];
 
-    // Algorithmic Discovery 1: Seed Variety Yield Disparity
-    const varietyYields = {};
-    responses.forEach((r) => {
-      const v = r.answers?.q_seed_variety || r.answers?.q_variety;
-      const y = Number(r.answers?.q_yield_kg);
-      if (v && !isNaN(y) && y > 0) {
-        const vKey = Array.isArray(v) ? v[0] : String(v);
-        if (!varietyYields[vKey]) varietyYields[vKey] = [];
-        varietyYields[vKey].push(y);
+    const numQs = this.getNumericQuestions(survey);
+    const catQs = this.getCategoricalQuestions(survey);
+
+    const primaryNumQ = numQs.find((q) => q.id === 'q_yield_kg') || numQs[0];
+    const primaryCatQ = catQs.find((q) => q.id === 'q_seed_variety' || q.id === 'q_variety') || catQs[0];
+
+    // Algorithmic Discovery 1: Categorical Grouping Variance & Treatment Lift
+    if (primaryNumQ && primaryCatQ) {
+      const groups = {};
+      responses.forEach((r) => {
+        const catVal = r.answers?.[primaryCatQ.id];
+        const numVal = this.getContinuousValue(r, primaryNumQ.id);
+        if (catVal && numVal !== null && numVal > 0) {
+          const key = Array.isArray(catVal) ? String(catVal[0]) : String(catVal);
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(numVal);
+        }
+      });
+
+      const groupKeys = Object.keys(groups);
+      if (groupKeys.length >= 2) {
+        const sorted = groupKeys
+          .map((k) => ({
+            name: k,
+            mean: window.AEStats.mean(groups[k]),
+            n: groups[k].length,
+            arr: groups[k]
+          }))
+          .sort((a, b) => b.mean - a.mean);
+
+        const top = sorted[0];
+        const bot = sorted[sorted.length - 1];
+
+        if (top && bot && top.n >= 1 && bot.n >= 1) {
+          const liftPct = bot.mean > 0 ? Math.round(((top.mean - bot.mean) / bot.mean) * 100) : 0;
+          const testRes = window.AEStats.welchTTest(top.arr, bot.arr);
+          const cohen = window.AEStats.cohensD(top.arr, bot.arr);
+
+          insights.push({
+            type: 'superiority',
+            title: `Benchmark Leader: ${top.name.split('(')[0].trim()}`,
+            badge: testRes.isSignificant ? 'p < 0.05 Statistically Significant' : 'Directional Trend',
+            badgeClass: testRes.isSignificant ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]',
+            body: `Average ${primaryNumQ.title.split(/[:\?(]/)[0].trim()} achieved <strong>${Math.round(top.mean).toLocaleString()} ${primaryNumQ.unit || ''}</strong> (+${liftPct}% lift over lowest tier <em>${bot.name.split('(')[0].trim()}</em> at ${Math.round(bot.mean).toLocaleString()} ${primaryNumQ.unit || ''}; Cohen's d = ${cohen.toFixed(2)}).`
+          });
+        }
       }
-    });
+    }
 
-    const varietyInsights = [];
-    const varKeys = Object.keys(varietyYields);
-    if (varKeys.length >= 2) {
-      const sortedByMean = varKeys
-        .map((k) => ({
-          name: k,
-          mean: window.AEStats.mean(varietyYields[k]),
-          n: varietyYields[k].length,
-          arr: varietyYields[k]
-        }))
-        .sort((a, b) => b.mean - a.mean);
-
-      const topVar = sortedByMean[0];
-      const botVar = sortedByMean[sortedByMean.length - 1];
-
-      if (topVar && botVar && topVar.n >= 1 && botVar.n >= 1) {
-        const liftPct = botVar.mean > 0 ? Math.round(((topVar.mean - botVar.mean) / botVar.mean) * 100) : 0;
-        const testRes = window.AEStats.welchTTest(topVar.arr, botVar.arr);
-        const cohen = window.AEStats.cohensD(topVar.arr, botVar.arr);
-
-        varietyInsights.push({
-          type: 'superiority',
-          title: `Yield Leader: ${topVar.name.split('(')[0].trim()}`,
-          badge: testRes.isSignificant ? 'p < 0.05 Statistically Significant' : 'Directional Trend',
-          badgeClass: testRes.isSignificant ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]',
-          body: `Average harvest achieved <strong>${Math.round(topVar.mean).toLocaleString()} kg/acre</strong> (+${liftPct}% lift over lowest group <em>${botVar.name.split('(')[0].trim()}</em> at ${Math.round(botVar.mean).toLocaleString()} kg/acre; Cohen's d = ${cohen.toFixed(2)}).`
+    // Algorithmic Discovery 2: Practice / Binary Input Co-Application Lift
+    const inputQ = catQs.find((q) => q.type === 'checkboxes' || /input|practice|service|feature|symptom/i.test(q.title || ''));
+    if (primaryNumQ && inputQ) {
+      const optCounts = {};
+      responses.forEach((r) => {
+        const val = r.answers?.[inputQ.id];
+        if (Array.isArray(val)) {
+          val.forEach((opt) => (optCounts[opt] = (optCounts[opt] || 0) + 1));
+        } else if (val) {
+          optCounts[val] = (optCounts[val] || 0) + 1;
+        }
+      });
+      const topOpt = Object.keys(optCounts).sort((a, b) => optCounts[b] - optCounts[a])[0];
+      if (topOpt) {
+        const applied = [];
+        const control = [];
+        responses.forEach((r) => {
+          const numVal = this.getContinuousValue(r, primaryNumQ.id);
+          if (numVal === null || numVal <= 0) return;
+          const val = r.answers?.[inputQ.id];
+          const hasOpt = Array.isArray(val) ? val.includes(topOpt) : String(val || '').includes(topOpt);
+          if (hasOpt) applied.push(numVal);
+          else control.push(numVal);
         });
+
+        if (applied.length >= 1 && control.length >= 1) {
+          const meanApp = window.AEStats.mean(applied);
+          const meanCtrl = window.AEStats.mean(control);
+          const lift = meanCtrl > 0 ? Math.round(((meanApp - meanCtrl) / meanCtrl) * 100) : 0;
+          insights.push({
+            type: 'treatment_lift',
+            title: `Treatment Factor: ${topOpt.split('(')[0].trim()}`,
+            badge: lift > 10 ? '+High Factor Lift' : 'Moderate Lift',
+            badgeClass: 'bg-[#DCFAE5] text-[#04250E]',
+            body: `Records confirming ${topOpt} averaged <strong>${Math.round(meanApp).toLocaleString()} ${primaryNumQ.unit || ''}</strong> vs. ${Math.round(meanCtrl).toLocaleString()} ${primaryNumQ.unit || ''} without (${lift > 0 ? '+' : ''}${lift}% differential across ${responses.length} submissions).`
+          });
+        }
       }
     }
 
-    // Algorithmic Discovery 2: Fertilizer Co-Application Lift
-    const inputYields = { applied: [], control: [] };
-    responses.forEach((r) => {
-      const y = Number(r.answers?.q_yield_kg);
-      if (isNaN(y) || y <= 0) return;
-      const inputs = r.answers?.q_inputs_used || [];
-      const hasDap = Array.isArray(inputs)
-        ? inputs.some((x) => /dap|fertilizer/i.test(x))
-        : /dap|fertilizer/i.test(String(inputs));
-      if (hasDap) inputYields.applied.push(y);
-      else inputYields.control.push(y);
-    });
-
-    if (inputYields.applied.length >= 1 && inputYields.control.length >= 1) {
-      const meanApp = window.AEStats.mean(inputYields.applied);
-      const meanCtrl = window.AEStats.mean(inputYields.control);
-      const fertLift = meanCtrl > 0 ? Math.round(((meanApp - meanCtrl) / meanCtrl) * 100) : 0;
-      varietyInsights.push({
-        type: 'input_gain',
-        title: 'Input Co-Application: Basal Fertilizer Effect',
-        badge: fertLift > 15 ? '+High Yield Lift' : 'Moderate Lift',
-        badgeClass: 'bg-[#DCFAE5] text-[#04250E]',
-        body: `Plots co-applying basal fertilizer averaged <strong>${Math.round(meanApp).toLocaleString()} kg/acre</strong> vs. ${Math.round(meanCtrl).toLocaleString()} kg/acre without (${fertLift > 0 ? '+' : ''}${fertLift}% harvest differential across ${responses.length} plots).`
-      });
-    }
-
-    // Algorithmic Discovery 3: County Stockout / Sentiment Warning
+    // Algorithmic Discovery 3: Qualitative Verbatim & Risk Sentiment
     const textAnalysis = window.AETeXtEngine.analyzeVerbatims(responses);
-    if (textAnalysis.sentimentSummary.negative > 0) {
-      varietyInsights.push({
+    if (textAnalysis && textAnalysis.sentimentSummary && textAnalysis.sentimentSummary.negative > 0) {
+      insights.push({
         type: 'risk_alert',
-        title: 'Commercial Alert: Retail & Stockout Feedback',
-        badge: `${textAnalysis.sentimentSummary.negative} Agronomic Alerts`,
+        title: 'Verbatim Intelligence: Feedback & Quality Alerts',
+        badge: `${textAnalysis.sentimentSummary.negative} Quality Alerts`,
         badgeClass: 'bg-[#FFEDEA] text-[#831C1E]',
-        body: `Field notes flagged stockout, price, or seed complaints in <strong>${textAnalysis.sentimentSummary.negative} farmer verbatims</strong>. Common phrases include <em>"${(textAnalysis.topTerms[0]?.term || 'stockout').replace(/"/g, '')}"</em> and <em>"${(textAnalysis.topTerms[1]?.term || 'counterfeit').replace(/"/g, '')}"</em>.`
+        body: `Free-text and audio notes flagged potential friction or issues in <strong>${textAnalysis.sentimentSummary.negative} submissions</strong>. Most recurrent keyword tokens include <em>"${(textAnalysis.topTerms[0]?.term || 'delay').replace(/"/g, '')}"</em> and <em>"${(textAnalysis.topTerms[1]?.term || 'issue').replace(/"/g, '')}"</em>.`
       });
     }
 
-    if (varietyInsights.length === 0) return '';
+    if (insights.length === 0) return '';
 
     return `
       <div class="bg-[#F4FAF6] border border-[#247B50]/30 rounded-[8px] p-4 space-y-3">
@@ -1842,13 +1906,13 @@ window.AEAnalytics = {
             <span class="w-2.5 h-2.5 rounded-full bg-[#247B50] flex items-center justify-center">
               <i class="fa-solid fa-sparkles text-[8px] text-white"></i>
             </span>
-            <span class="text-xs font-bold text-[#04250E]">Automated Executive Takeaways (Stats iQ)</span>
+            <span class="text-xs font-bold text-[#04250E]">Automated Executive Insights &amp; Synthesis</span>
           </div>
-          <span class="text-[11px] text-[#525B56]">Synthesized across active slices</span>
+          <span class="text-[11px] text-[#525B56]">Synthesized across active filtered sample</span>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-          ${varietyInsights
+          ${insights
             .map(
               (item) => `
                 <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3 flex flex-col justify-between shadow-xs">
@@ -1881,9 +1945,36 @@ window.AEAnalytics = {
     const avgDuration = durations.length > 0 ? Math.round(window.AEStats.mean(durations)) : 0;
     const medianDuration = durations.length > 0 ? Math.round(window.AEStats.median(durations)) : 0;
 
-    // Yield metrics
-    const yields = filtered.map((r) => Number(r.answers?.q_yield_kg)).filter((y) => !isNaN(y) && y > 0);
-    const meanYield = yields.length > 0 ? Math.round(window.AEStats.mean(yields)) : 0;
+    // Dynamic Primary Continuous Metric
+    const numQs = this.getNumericQuestions(survey);
+    const primaryNumQ = numQs.find((q) => q.id === 'q_yield_kg') || numQs[0];
+    let metric4Title = 'Continuous Output';
+    let metric4Value = '—';
+    let metric4Unit = '';
+
+    if (primaryNumQ) {
+      const vals = filtered.map((r) => this.getContinuousValue(r, primaryNumQ.id)).filter((v) => v !== null && v > 0);
+      if (vals.length > 0) {
+        const meanV = Math.round(window.AEStats.mean(vals));
+        metric4Title = `Mean ${primaryNumQ.title.split(/[:\?(]/)[0].trim()}`;
+        metric4Value = meanV.toLocaleString();
+        metric4Unit = primaryNumQ.unit || 'units';
+      }
+    } else {
+      const npsQ = (survey.pages || []).flatMap((p) => p.questions || []).find((q) => q.type === 'nps');
+      if (npsQ) {
+        const npsVals = filtered.map((r) => Number(r.answers?.[npsQ.id])).filter((v) => !isNaN(v));
+        if (npsVals.length > 0) {
+          metric4Title = 'Average NPS Rating';
+          metric4Value = window.AEStats.mean(npsVals).toFixed(1);
+          metric4Unit = '/ 10';
+        }
+      } else {
+        metric4Title = 'Quality Seal & QA';
+        metric4Value = `${approvedCount}`;
+        metric4Unit = `of ${filtered.length}`;
+      }
+    }
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
@@ -1940,17 +2031,17 @@ window.AEAnalytics = {
             <div class="text-[11px] text-[#646E68] mt-2">Trimmed interquartile speed</div>
           </div>
 
-          <!-- Metric 4: Yield / Data Quality -->
+          <!-- Metric 4: Yield / Continuous Output -->
           <div class="p-4 bg-white">
             <div class="flex items-center justify-between text-xs text-[#525B56]">
-              <span>Mean Maize Yield</span>
+              <span class="truncate">${metric4Title}</span>
               <span class="text-[11px] font-semibold text-[#247B50] tabular-nums">${approvedCount} sign-offs</span>
             </div>
             <div class="mt-2 flex items-baseline gap-2">
-              <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${meanYield}">
-                ${meanYield > 0 ? meanYield.toLocaleString() : '—'}
+              <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${metric4Value}">
+                ${metric4Value}
               </strong>
-              <span class="text-xs text-[#525B56]">kg/acre</span>
+              ${metric4Unit ? `<span class="text-xs text-[#525B56]">${metric4Unit}</span>` : ''}
               ${flaggedCount > 0 ? `<span class="ml-auto text-xs font-semibold px-2 py-0.5 rounded bg-[#FFEDEA] text-[#831C1E] border border-[#F5C2C0]">${flaggedCount} flagged</span>` : ''}
             </div>
             <div class="text-[11px] text-[#646E68] mt-2">Quality assurance seal intact</div>
@@ -1981,7 +2072,7 @@ window.AEAnalytics = {
           { id: 'regression', label: 'OLS Regression', icon: 'fa-chart-line' },
           { id: 'anova', label: 'ANOVA Trials', icon: 'fa-layer-group' },
           { id: 'crosstab', label: 'Cross-Tabs (χ²)', icon: 'fa-table-cells-large' },
-          { id: 'correlations', label: 'Agronomic Matrix', icon: 'fa-arrows-split-up-and-left' }
+          { id: 'correlations', label: 'Correlations & Matrix', icon: 'fa-arrows-split-up-and-left' }
         ]
       },
       {
@@ -1999,7 +2090,7 @@ window.AEAnalytics = {
         <div class="flex items-center justify-between px-1">
           <div class="flex items-center gap-2">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Analytical Views</span>
-            <span class="text-[11px] text-[#A0AAA3]">· 12 Econometric, Agronomic &amp; Forensic Perspectives</span>
+            <span class="text-[11px] text-[#A0AAA3]">· 12 Multi-Dimensional Analytical Perspectives</span>
           </div>
         </div>
         <div class="flex flex-wrap items-start gap-x-3 gap-y-2 pt-2 border-t border-[#F0F2F0]">
@@ -3221,103 +3312,257 @@ window.AEAnalytics = {
   },
 
   // --------------------------------------------------------------------------
-  // TAB 4: BIVARIATE AGRONOMIC CORRELATIONS & INPUT IMPACT MATRIX
+  // --------------------------------------------------------------------------
+  // TAB 4: BIVARIATE CORRELATIONS & FACTOR LIFT MATRIX
   // --------------------------------------------------------------------------
   renderAgronomicCorrelationsTab(survey, responses) {
     if (!responses || responses.length === 0) {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses available.</div>';
     }
 
-    const inputOptions = [
-      'DAP / NPK Planting Fertilizer',
-      'CAN / Urea Top-Dressing',
-      'Certified Hybrid Maize Seed',
-      'Organic Farmyard Manure',
-      'Foliar Feed / Micronutrients'
-    ];
+    const numQs = this.getNumericQuestions(survey);
+    const catQs = this.getCategoricalQuestions(survey);
+    const targetQ = numQs.find((q) => q.id === this.selectedRegressionTarget) || numQs[0];
+    const unitLabel = targetQ ? targetQ.unit || 'units' : 'units';
 
-    const inputStats = [];
-    inputOptions.forEach((optName) => {
-      const gApplied = [];
-      const gControl = [];
-      responses.forEach((r) => {
-        const y = Number(r.answers?.q_yield_kg);
-        if (isNaN(y) || y <= 0) return;
-        const inputs = r.answers?.q_inputs_used || [];
-        const applied = Array.isArray(inputs) ? inputs.includes(optName) : String(inputs).includes(optName);
-        if (applied) gApplied.push(y);
-        else gControl.push(y);
+    // 1. Calculate Pairwise Pearson Correlation Matrix across all numerical metrics
+    let correlationMatrixHtml = '';
+    if (numQs.length >= 2) {
+      // Build vectors for each numeric question
+      const vectors = {};
+      numQs.forEach((q) => {
+        vectors[q.id] = responses.map((r) => this.getContinuousValue(r, q.id) || 0);
       });
 
-      if (gApplied.length >= 1 && gControl.length >= 1) {
-        const meanApp = window.AEStats.mean(gApplied);
-        const meanCtrl = window.AEStats.mean(gControl);
-        const liftPct = meanCtrl > 0 ? ((meanApp - meanCtrl) / meanCtrl) * 100 : 0;
-        const tTest = window.AEStats.welchTTest(gApplied, gControl);
-        const cohenD = window.AEStats.cohensD(gApplied, gControl);
+      const matrixRows = numQs
+        .map((rowQ) => {
+          const cells = numQs
+            .map((colQ) => {
+              if (rowQ.id === colQ.id) {
+                return '<td class="p-2.5 text-center font-mono text-[11px] font-bold text-[#141A17] bg-[#F4F6F4]">1.00</td>';
+              }
+              const r = window.AEStats.pearsonR(vectors[rowQ.id], vectors[colQ.id]);
+              const absR = Math.abs(r);
+              let bgClass = 'bg-white';
+              let textClass = 'text-[#525B56]';
+              if (absR >= 0.6) {
+                bgClass = r > 0 ? 'bg-[#DCFAE5]' : 'bg-[#FEE2E2]';
+                textClass = r > 0 ? 'text-[#04250E] font-bold' : 'text-[#7F1D1D] font-bold';
+              } else if (absR >= 0.3) {
+                bgClass = r > 0 ? 'bg-[#F0FDF4]' : 'bg-[#FEF2F2]';
+                textClass = r > 0 ? 'text-[#166534]' : 'text-[#991B1B]';
+              }
+              return `
+                <td class="p-2.5 text-center font-mono text-[11px] tabular-nums ${bgClass} ${textClass} border border-[#E4E7E4]">
+                  ${r >= 0 ? '+' : ''}${r.toFixed(2)}
+                </td>
+              `;
+            })
+            .join('');
 
-        inputStats.push({
-          name: optName,
-          nApp: gApplied.length,
-          nCtrl: gControl.length,
-          meanApp: Math.round(meanApp),
-          meanCtrl: Math.round(meanCtrl),
-          liftPct: parseFloat(liftPct.toFixed(1)),
-          cohenD: parseFloat(cohenD.toFixed(2)),
-          tStat: tTest.tStat,
-          isSignificant: tTest.isSignificant
+          return `
+            <tr class="hover:bg-[#FAFBF9]">
+              <td class="p-2.5 font-medium text-xs text-[#111613] bg-[#F8F9F8] border border-[#E4E7E4]">
+                ${AEApp.escapeHtml(rowQ.title.split(/[:\?(]/)[0].trim())}
+              </td>
+              ${cells}
+            </tr>
+          `;
+        })
+        .join('');
+
+      correlationMatrixHtml = `
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-[#111613]">Pairwise Pearson Correlation Matrix (r)</h3>
+            <span class="text-[11px] text-[#646E68]">Green = Positive correlation, Red = Inverse correlation</span>
+          </div>
+          <div class="overflow-x-auto border border-[#E4E7E4] rounded-[6px]">
+            <table class="w-full text-xs text-left border-collapse">
+              <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
+                <tr>
+                  <th class="p-2.5 font-semibold border border-[#E4E7E4]">Metric / Dimension</th>
+                  ${numQs.map((q) => `<th class="p-2.5 font-semibold text-center border border-[#E4E7E4]">${AEApp.escapeHtml(q.title.split(/[:\?(]/)[0].trim().substring(0, 20))}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${matrixRows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Dynamic Factor Impact & Lift Analysis against primary continuous metric
+    const factorStats = [];
+    if (targetQ) {
+      const candidateFactors = [];
+
+      // Check for multi-select / checkbox questions
+      const checkboxQs = survey.questions?.filter((q) => q.type === 'checkboxes' || q.type === 'tag_multiselect') || [];
+      checkboxQs.forEach((q) => {
+        (q.options || []).forEach((opt) => {
+          candidateFactors.push({
+            name: `${q.title.split(/[:\?(]/)[0].trim()}: ${opt}`,
+            test: (r) => {
+              const ans = r.answers?.[q.id];
+              return Array.isArray(ans) ? ans.includes(opt) : String(ans || '').includes(opt);
+            }
+          });
+        });
+      });
+
+      // Also check standard categorical dropdown / single-select questions
+      catQs.forEach((q) => {
+        if (q.type !== 'checkboxes' && q.type !== 'tag_multiselect') {
+          (q.options || []).slice(0, 4).forEach((opt) => {
+            candidateFactors.push({
+              name: `${q.title.split(/[:\?(]/)[0].trim()} = ${opt}`,
+              test: (r) => {
+                const ans = r.answers?.[q.id];
+                return Array.isArray(ans) ? ans.includes(opt) : String(ans || '') === String(opt);
+              }
+            });
+          });
+        }
+      });
+
+      // Fallback agricultural inputs if survey has q_inputs_used
+      if (candidateFactors.length === 0) {
+        const inputOptions = [
+          'DAP / NPK Planting Fertilizer',
+          'CAN / Urea Top-Dressing',
+          'Certified Hybrid Maize Seed',
+          'Organic Farmyard Manure',
+          'Foliar Feed / Micronutrients'
+        ];
+        inputOptions.forEach((opt) => {
+          candidateFactors.push({
+            name: opt,
+            test: (r) => {
+              const inp = r.answers?.q_inputs_used || [];
+              return Array.isArray(inp) ? inp.includes(opt) : String(inp).includes(opt);
+            }
+          });
         });
       }
-    });
+
+      // Compute statistics for candidate factors
+      candidateFactors.forEach((factor) => {
+        const gApplied = [];
+        const gControl = [];
+        responses.forEach((r) => {
+          const y = this.getContinuousValue(r, targetQ.id);
+          if (y === null || isNaN(y) || y <= 0) return;
+          if (factor.test(r)) gApplied.push(y);
+          else gControl.push(y);
+        });
+
+        if (gApplied.length >= 1 && gControl.length >= 1) {
+          const meanApp = window.AEStats.mean(gApplied);
+          const meanCtrl = window.AEStats.mean(gControl);
+          const liftPct = meanCtrl > 0 ? ((meanApp - meanCtrl) / meanCtrl) * 100 : 0;
+          const tTest = window.AEStats.welchTTest(gApplied, gControl);
+          const cohenD = window.AEStats.cohensD(gApplied, gControl);
+
+          factorStats.push({
+            name: factor.name,
+            nApp: gApplied.length,
+            nCtrl: gControl.length,
+            meanApp: Math.round(meanApp),
+            meanCtrl: Math.round(meanCtrl),
+            liftPct: parseFloat(liftPct.toFixed(1)),
+            cohenD: parseFloat(cohenD.toFixed(2)),
+            tStat: tTest.tStat,
+            isSignificant: tTest.isSignificant
+          });
+        }
+      });
+    }
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
-        <div class="border-b border-[#EFEFEF] pb-3">
-          <h2 class="text-base font-semibold text-[#111613]">Bivariate Agronomic Correlations: Input Co-Application vs. Harvest Yield</h2>
-          <p class="text-xs text-[#525B56] mt-0.5">
-            Evaluating yield differential (kg/acre), standardized Cohen's d effect sizes, and Welch's t-test hypothesis significance.
-          </p>
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold text-[#111613]">Bivariate Correlations &amp; Factor Impact Matrix</h2>
+            <p class="text-xs text-[#525B56] mt-0.5">
+              Evaluating linear correlations (Pearson r), treatment lifts, standardized effect sizes (Cohen's d), and Welch's t-test hypothesis significance.
+            </p>
+          </div>
+          ${
+            targetQ
+              ? `
+            <div class="flex items-center gap-1.5 self-start sm:self-auto text-xs">
+              <span class="font-semibold text-[#111613]">Benchmark Metric (Y):</span>
+              <span class="px-2 py-0.5 rounded-[4px] bg-[#FAFBF9] border border-[#CFD5D0] font-semibold text-[#247B50]">
+                ${AEApp.escapeHtml(targetQ.title.substring(0, 32))} (${unitLabel})
+              </span>
+            </div>
+          `
+              : ''
+          }
         </div>
 
-        <div class="overflow-x-auto border border-[#E4E7E4] rounded-[6px]">
-          <table class="w-full text-xs text-left">
-            <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
-              <tr>
-                <th class="p-3 font-semibold">Agronomic Input / Management Practice</th>
-                <th class="p-3 font-semibold text-right">Applied (n)</th>
-                <th class="p-3 font-semibold text-right">Control (n)</th>
-                <th class="p-3 font-semibold text-right">Mean Applied</th>
-                <th class="p-3 font-semibold text-right">Mean Control</th>
-                <th class="p-3 font-semibold text-right">Yield Lift (%)</th>
-                <th class="p-3 font-semibold text-right">Cohen's d</th>
-                <th class="p-3 font-semibold text-center">Inference</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-[#EFEFEF]">
-              ${inputStats
-                .map(
-                  (item) => `
-                    <tr class="hover:bg-[#FAFBF9]">
-                      <td class="p-3 font-medium text-[#111613]">${AEApp.escapeHtml(item.name)}</td>
-                      <td class="p-3 text-right font-mono tabular-nums">${item.nApp}</td>
-                      <td class="p-3 text-right font-mono tabular-nums text-[#646E68]">${item.nCtrl}</td>
-                      <td class="p-3 text-right font-mono font-semibold text-[#247B50]">${item.meanApp.toLocaleString()} kg</td>
-                      <td class="p-3 text-right font-mono tabular-nums text-[#646E68]">${item.meanCtrl.toLocaleString()} kg</td>
-                      <td class="p-3 text-right font-mono font-bold tabular-nums ${item.liftPct > 0 ? 'text-[#247B50]' : 'text-[#831C1E]'}">
-                        ${item.liftPct > 0 ? '+' : ''}${item.liftPct}%
-                      </td>
-                      <td class="p-3 text-right font-mono tabular-nums">${item.cohenD}</td>
-                      <td class="p-3 text-center">
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${item.isSignificant ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'}">
-                          ${item.isSignificant ? 'p < 0.05' : 'Directional'}
-                        </span>
-                      </td>
-                    </tr>
-                  `
-                )
-                .join('')}
-            </tbody>
-          </table>
+        ${correlationMatrixHtml}
+
+        <!-- Factor Lift Table -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-[#111613]">Treatment Factor Lift vs. Control Benchmark</h3>
+            <span class="text-[11px] text-[#646E68]">Benchmarked against outcome: ${targetQ ? AEApp.escapeHtml(targetQ.title.substring(0, 40)) : 'Outcome'}</span>
+          </div>
+
+          ${
+            factorStats.length === 0
+              ? `
+            <div class="p-6 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px]">
+              No categorical treatments detected with sufficient sample split to evaluate effect size.
+            </div>
+          `
+              : `
+            <div class="overflow-x-auto border border-[#E4E7E4] rounded-[6px]">
+              <table class="w-full text-xs text-left">
+                <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
+                  <tr>
+                    <th class="p-3 font-semibold">Treatment Condition / Factor</th>
+                    <th class="p-3 font-semibold text-right">Applied (n)</th>
+                    <th class="p-3 font-semibold text-right">Control (n)</th>
+                    <th class="p-3 font-semibold text-right">Mean Applied</th>
+                    <th class="p-3 font-semibold text-right">Mean Control</th>
+                    <th class="p-3 font-semibold text-right">Relative Lift (%)</th>
+                    <th class="p-3 font-semibold text-right">Cohen's d</th>
+                    <th class="p-3 font-semibold text-center">Inference</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#EFEFEF]">
+                  ${factorStats
+                    .map(
+                      (item) => `
+                        <tr class="hover:bg-[#FAFBF9]">
+                          <td class="p-3 font-medium text-[#111613]">${AEApp.escapeHtml(item.name)}</td>
+                          <td class="p-3 text-right font-mono tabular-nums">${item.nApp}</td>
+                          <td class="p-3 text-right font-mono tabular-nums text-[#646E68]">${item.nCtrl}</td>
+                          <td class="p-3 text-right font-mono font-semibold text-[#247B50]">${item.meanApp.toLocaleString()} ${unitLabel}</td>
+                          <td class="p-3 text-right font-mono tabular-nums text-[#646E68]">${item.meanCtrl.toLocaleString()} ${unitLabel}</td>
+                          <td class="p-3 text-right font-mono font-bold tabular-nums ${item.liftPct > 0 ? 'text-[#247B50]' : 'text-[#831C1E]'}">
+                            ${item.liftPct > 0 ? '+' : ''}${item.liftPct}%
+                          </td>
+                          <td class="p-3 text-right font-mono tabular-nums">${item.cohenD}</td>
+                          <td class="p-3 text-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${item.isSignificant ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'}">
+                              ${item.isSignificant ? 'p < 0.05' : 'Directional'}
+                            </span>
+                          </td>
+                        </tr>
+                      `
+                    )
+                    .join('')}
+                </tbody>
+              </table>
+            </div>
+          `
+          }
         </div>
       </div>
     `;
@@ -3685,78 +3930,119 @@ window.AEAnalytics = {
   },
 
   // --------------------------------------------------------------------------
-  // TAB: MULTIVARIATE OLS LINEAR REGRESSION & WHAT-IF YIELD SIMULATOR
+  // TAB: MULTIVARIATE OLS LINEAR REGRESSION & WHAT-IF SCENARIO SIMULATOR
   // --------------------------------------------------------------------------
   renderRegressionTab(survey, responses) {
     if (!responses || responses.length === 0) {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
     }
 
+    const numQs = this.getNumericQuestions(survey);
+    if (!numQs || numQs.length === 0) {
+      return `
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Continuous Outcome Variable Required</div>
+          <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
+            Ordinary Least Squares (OLS) multivariate regression models a continuous numerical outcome variable (e.g. Yield, Output, Revenue, Duration, Rating) against predictor factors.
+            To run regression modeling on this instrument, add a numerical question in the Survey Builder.
+          </p>
+        </div>
+      `;
+    }
+
+    const targetQ = numQs.find((q) => q.id === this.selectedRegressionTarget) || numQs.find((q) => q.id === 'q_yield_kg') || numQs[0];
     const targetGetter = (r) => {
-      const y = Number(r.answers?.q_yield_kg);
-      return !isNaN(y) && y > 0 ? y : null;
+      const y = this.getContinuousValue(r, targetQ.id);
+      return y !== null && y > 0 ? y : null;
     };
 
     const validRecords = responses.filter((r) => targetGetter(r) !== null);
 
     if (validRecords.length < 3) {
       return `
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-3">
+          <div class="flex items-center justify-center gap-2 text-xs">
+            <span class="font-semibold text-[#111613]">Outcome Target Variable (Y):</span>
+            <select onchange="window.AEAnalytics.selectedRegressionTarget = this.value; window.AEApp.render();"
+              class="h-7 px-2 text-xs font-semibold text-[#247B50] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none">
+              ${numQs.map((q) => `<option value="${q.id}" ${q.id === targetQ.id ? 'selected' : ''}>${AEApp.escapeHtml(q.title.substring(0, 48))} (${q.unit || 'units'})</option>`).join('')}
+            </select>
+          </div>
           <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Continuous Outcome Data</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
-            Multivariate OLS econometric regression requires at least 3 completed survey submissions with recorded numerical yield (kg/acre). Currently ${validRecords.length} records available.
+            Multivariate OLS econometric regression requires at least 3 completed submissions with valid recorded values for <strong>${AEApp.escapeHtml(targetQ.title)}</strong>. Currently ${validRecords.length} records available.
           </p>
         </div>
       `;
     }
 
-    // Select predictors dynamically to preserve degrees of freedom (n > p + 1)
-    const predictorDefs = [
-      {
-        name: 'Basal DAP Fertilizer',
-        key: 'dap',
+    // Select predictors dynamically across remaining numerical and categorical questions
+    const otherNumQs = numQs.filter((q) => q.id !== targetQ.id);
+    const catQs = this.getCategoricalQuestions(survey);
+    const predictorDefs = [];
+
+    // 1. Numerical predictors
+    otherNumQs.forEach((q) => {
+      predictorDefs.push({
+        name: q.title.split(/[:\?(]/)[0].trim(),
+        key: q.id,
         type: 'numeric',
+        unit: q.unit || '',
         get: (r) => {
-          const inp = r.answers?.q_inputs_used || [];
-          return (Array.isArray(inp) ? inp.some((x) => /dap|fertilizer/i.test(x)) : /dap|fertilizer/i.test(String(inp))) ? 1 : 0;
+          const v = this.getContinuousValue(r, q.id);
+          return v !== null ? v : 0;
         }
-      },
-      {
-        name: 'Certified Hybrid Variety',
-        key: 'hybrid',
-        type: 'numeric',
-        get: (r) => {
-          const v = String(r.answers?.q_seed_variety || r.answers?.q_variety || '');
-          return /dh04|duma|hybrid|certified/i.test(v) ? 1 : 0;
-        }
+      });
+    });
+
+    // 2. Binary indicator predictors from top categorical options
+    catQs.forEach((q) => {
+      if (q.options && q.options.length > 0 && predictorDefs.length < validRecords.length - 2) {
+        const topOpt = q.options[0];
+        predictorDefs.push({
+          name: `${q.title.split(/[:\?(]/)[0].trim()}: ${topOpt}`,
+          key: `${q.id}_${topOpt.slice(0, 6)}`,
+          type: 'binary',
+          unit: 'indicator',
+          get: (r) => {
+            const val = r.answers?.[q.id];
+            return (Array.isArray(val) ? val.includes(topOpt) : String(val || '').includes(topOpt)) ? 1 : 0;
+          }
+        });
       }
-    ];
+    });
 
-    if (validRecords.length >= 6) {
-      predictorDefs.push({
-        name: 'CAN Top-Dressing',
-        key: 'can',
-        type: 'numeric',
-        get: (r) => {
-          const inp = r.answers?.q_inputs_used || [];
-          return (Array.isArray(inp) ? inp.some((x) => /can|top-dress/i.test(x)) : /can|top-dress/i.test(String(inp))) ? 1 : 0;
+    // Fallback agricultural defaults if specific survey has them
+    if (targetQ.id === 'q_yield_kg' && predictorDefs.length < 2) {
+      predictorDefs.push(
+        {
+          name: 'Basal DAP Fertilizer',
+          key: 'dap',
+          type: 'binary',
+          unit: 'indicator',
+          get: (r) => {
+            const inp = r.answers?.q_inputs_used || [];
+            return (Array.isArray(inp) ? inp.some((x) => /dap|fertilizer/i.test(x)) : /dap|fertilizer/i.test(String(inp))) ? 1 : 0;
+          }
+        },
+        {
+          name: 'Certified Hybrid Variety',
+          key: 'hybrid',
+          type: 'binary',
+          unit: 'indicator',
+          get: (r) => {
+            const v = String(r.answers?.q_seed_variety || r.answers?.q_variety || '');
+            return /dh04|duma|hybrid|certified/i.test(v) ? 1 : 0;
+          }
         }
-      });
+      );
     }
 
-    if (validRecords.length >= 8) {
-      predictorDefs.push({
-        name: 'Agro-Dealer Service Rating',
-        key: 'dealer',
-        type: 'numeric',
-        get: (r) => {
-          const stars = Number(r.answers?.q_dealer_rating);
-          return !isNaN(stars) && stars > 0 ? stars : 3.5;
-        }
-      });
-    }
+    // Always preserve degrees of freedom (n > p + 1)
+    const maxPredictors = Math.max(1, validRecords.length - 2);
+    const activePredictors = predictorDefs.slice(0, maxPredictors);
 
-    const model = window.AEStats.multivariateOLS(validRecords, targetGetter, predictorDefs);
+    const model = window.AEStats.multivariateOLS(validRecords, targetGetter, activePredictors);
     if (model.error) {
       return `
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
@@ -3768,21 +4054,26 @@ window.AEAnalytics = {
       `;
     }
 
-    this._currentRegressionModel = { model, predictorDefs, baselineYield: 1150 };
+    const baselineVal = Math.round(window.AEStats.mean(validRecords.map(targetGetter)));
+    this._currentRegressionModel = { model, predictorDefs: activePredictors, baselineVal, targetQ };
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
-        <!-- Header -->
+        <!-- Header & Target Selector -->
         <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">Econometric OLS Regression &amp; Yield Scenario Simulator</h2>
+            <h2 class="text-base font-semibold text-[#111613]">Econometric OLS Regression &amp; Scenario Simulator</h2>
             <p class="text-xs text-[#525B56] mt-0.5">
-              Ordinary Least Squares multivariate model isolating marginal harvest gains per input and seed technology.
+              Ordinary Least Squares multivariate model isolating marginal gains per predictor variable for <strong>${AEApp.escapeHtml(targetQ.title)}</strong>.
             </p>
           </div>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] bg-[#DCFAE5] text-[#04250E] border border-[#247B50]/30 self-start sm:self-auto">
-            <i class="fa-solid fa-check mr-1 text-[10px]"></i> Gauss-Markov OLS Engine
-          </span>
+          <div class="flex items-center gap-2 self-start sm:self-auto">
+            <span class="text-xs font-medium text-[#525B56]">Target (Y):</span>
+            <select onchange="window.AEAnalytics.selectedRegressionTarget = this.value; window.AEApp.render();"
+              class="h-8 px-2.5 text-xs font-semibold text-[#247B50] bg-[#F8F9F8] border border-[#CFD5D0] rounded-[6px] focus:outline-none focus:border-[#247B50]">
+              ${numQs.map((q) => `<option value="${q.id}" ${q.id === targetQ.id ? 'selected' : ''}>${AEApp.escapeHtml(q.title.substring(0, 36))} (${q.unit || 'units'})</option>`).join('')}
+            </select>
+          </div>
         </div>
 
         <!-- Model Summary KPI Strip -->
@@ -3801,7 +4092,7 @@ window.AEAnalytics = {
           </div>
           <div>
             <span class="text-[#525B56] block">Std Error (se)</span>
-            <strong class="text-base text-[#111613] font-mono tabular-nums mt-0.5 block">±${Math.round(Number(model.stdErrorEstimate ?? model.standardErrorOfEstimate ?? 0))} kg</strong>
+            <strong class="text-base text-[#111613] font-mono tabular-nums mt-0.5 block">±${Math.round(Number(model.stdErrorEstimate ?? model.standardErrorOfEstimate ?? 0))} ${targetQ.unit || ''}</strong>
           </div>
           <div>
             <span class="text-[#525B56] block">ANOVA F-Test</span>
@@ -3832,7 +4123,7 @@ window.AEAnalytics = {
                       <tr class="hover:bg-[#FAFBF9]">
                         <td class="p-3 font-medium text-[#111613]">${AEApp.escapeHtml(c.name)}</td>
                         <td class="p-3 text-right font-mono tabular-nums ${c.beta > 0 ? 'text-[#247B50] font-semibold' : 'text-[#111613]'}">
-                          ${c.beta >= 0 ? '+' : ''}${Math.round(c.beta).toLocaleString()} kg
+                          ${c.beta >= 0 ? '+' : ''}${Math.round(c.beta).toLocaleString()} ${targetQ.unit || ''}
                         </td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">±${Math.round(c.se)}</td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">${c.standardizedBeta.toFixed(2)}</td>
@@ -3856,77 +4147,48 @@ window.AEAnalytics = {
           </div>
         </div>
 
-        <!-- Interactive What-If Agronomic Yield Scenario Simulator -->
-        <div class="border border-[#CFD5D0] rounded-[8px] bg-[#FAFBF9] p-4 sm:p-5 space-y-4">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E4E7E4] pb-3">
+        <!-- Interactive What-If Scenario Simulator -->
+        <div class="bg-[#FAFBF9] border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
+          <div class="flex items-center justify-between pb-2 border-b border-[#EFEFEF]">
             <div>
-              <h3 class="text-sm font-semibold text-[#111613] flex items-center gap-2">
-                <i class="fa-solid fa-sliders text-[#247B50]"></i>
-                Interactive "What-If" Yield Simulator
-              </h3>
-              <p class="text-xs text-[#525B56] mt-0.5">Simulate harvest output per acre under varying farm management choices.</p>
+              <div class="text-xs font-bold text-[#111613]">Interactive What-If Scenario Simulator</div>
+              <div class="text-[11px] text-[#525B56]">Simulate expected outcome when adjusting predictor parameters.</div>
             </div>
-            <span class="text-[11px] text-[#525B56]">Real-time model projection</span>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] tabular-nums">
+              Baseline: ${baselineVal.toLocaleString()} ${targetQ.unit || 'units'}
+            </span>
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            <!-- Controls -->
-            <div class="lg:col-span-7 space-y-3.5 text-xs">
-              <div>
-                <label for="ae_sim_var" class="block font-medium text-[#111613] mb-1">Target Seed Variety</label>
-                <select id="ae_sim_var" onchange="AEAnalytics.updateYieldSimulator()"
-                  class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613]">
-                  <option value="dh04" selected>DH04 (Drought-Tolerant Commercial Hybrid)</option>
-                  <option value="scduma">SC Duma 43 (Early Maturing Hybrid)</option>
-                  <option value="local">Local Recycled Seed (Farm-Saved Baseline)</option>
-                </select>
-              </div>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <label class="flex items-center gap-2 p-2.5 rounded-[6px] border border-[#CFD5D0] bg-white cursor-pointer hover:bg-[#F4F6F4]">
-                  <input type="checkbox" id="ae_sim_dap" checked onchange="AEAnalytics.updateYieldSimulator()" class="rounded text-[#247B50] focus:ring-[#247B50]">
-                  <span class="font-medium text-[#111613]">Apply Basal DAP at Planting</span>
-                </label>
-                <label class="flex items-center gap-2 p-2.5 rounded-[6px] border border-[#CFD5D0] bg-white cursor-pointer hover:bg-[#F4F6F4]">
-                  <input type="checkbox" id="ae_sim_can" checked onchange="AEAnalytics.updateYieldSimulator()" class="rounded text-[#247B50] focus:ring-[#247B50]">
-                  <span class="font-medium text-[#111613]">Apply CAN Top-Dressing at Knee-High</span>
-                </label>
-              </div>
-
-              <div class="pt-1">
-                <div class="flex justify-between items-center mb-1">
-                  <label for="ae_sim_dealer" class="font-medium text-[#111613]">Agro-Dealer Technical Advisory Quality</label>
-                  <span id="ae_sim_dealer_val" class="font-semibold text-[#247B50] tabular-nums font-mono">4.0 / 5.0 Stars</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+            ${activePredictors
+              .map(
+                (p, idx) => `
+                <div class="p-3 rounded-[6px] bg-white border border-[#E4E7E4] space-y-1.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-[#111613] truncate">${AEApp.escapeHtml(p.name)}</span>
+                    <span class="font-mono tabular-nums text-[#247B50]" id="ae_pred_val_${p.key}">1</span>
+                  </div>
+                  <input type="range" min="0" max="${p.type === 'binary' ? '1' : '100'}" step="1" value="1"
+                    id="ae_slider_${p.key}"
+                    oninput="document.getElementById('ae_pred_val_${p.key}').textContent = this.value; AEAnalytics.simulateScenario();"
+                    class="w-full accent-[#247B50] h-1.5 bg-[#E4E7E4] rounded-lg cursor-pointer" />
                 </div>
-                <input type="range" id="ae_sim_dealer" min="1" max="5" step="0.5" value="4.0"
-                  oninput="document.getElementById('ae_sim_dealer_val').textContent = Number(this.value).toFixed(1) + ' / 5.0 Stars'; AEAnalytics.updateYieldSimulator()"
-                  class="w-full accent-[#247B50]">
+              `
+              )
+              .join('')}
+          </div>
+
+          <div class="p-3.5 rounded-[6px] bg-[#141A17] text-white flex flex-wrap items-center justify-between gap-3">
+            <div class="space-y-0.5">
+              <span class="text-[11px] text-[#A0AAA3] uppercase tracking-wider font-semibold">Simulated Model Output</span>
+              <div class="text-xl font-bold font-mono tabular-nums text-white flex items-baseline gap-2">
+                <span id="ae_sim_yield">${baselineVal.toLocaleString()}</span>
+                <span class="text-xs font-normal text-[#CFD5D0]">${targetQ.unit || 'units'}</span>
               </div>
             </div>
-
-            <!-- Simulation Forecast Card -->
-            <div class="lg:col-span-5 bg-white border border-[#E4E7E4] rounded-[6px] p-4 flex flex-col justify-between space-y-3">
-              <div>
-                <span class="text-[11px] font-semibold text-[#525B56] uppercase tracking-wider block">Projected Acre Yield</span>
-                <div class="flex items-baseline gap-2 mt-1">
-                  <strong id="ae_sim_yield" class="text-2xl sm:text-3xl font-bold text-[#247B50] font-mono tabular-nums">1,780</strong>
-                  <span class="text-xs text-[#525B56]">kg / acre</span>
-                </div>
-                <div class="text-xs text-[#525B56] mt-0.5">
-                  Equivalent to <strong id="ae_sim_bags" class="text-[#111613] font-mono tabular-nums">19.8</strong> bags (90kg standard gunny)
-                </div>
-              </div>
-
-              <div class="border-t border-[#EFEFEF] pt-2.5 space-y-1.5 text-xs">
-                <div class="flex justify-between items-center text-[#525B56]">
-                  <span>95% Confidence Interval:</span>
-                  <strong id="ae_sim_ci" class="text-[#111613] font-mono tabular-nums">[1,650 - 1,910] kg</strong>
-                </div>
-                <div class="flex justify-between items-center text-[#525B56]">
-                  <span>Standardized Marginal Lift:</span>
-                  <strong id="ae_sim_lift" class="text-[#247B50] font-mono tabular-nums font-semibold">+54.8% vs. Baseline</strong>
-                </div>
-              </div>
+            <div class="text-right">
+              <span class="text-[11px] text-[#A0AAA3] block">Simulated Lift</span>
+              <span id="ae_sim_lift" class="text-sm font-bold font-mono text-[#3FC07A] tabular-nums">+0% vs Baseline</span>
             </div>
           </div>
         </div>
@@ -3934,95 +4196,141 @@ window.AEAnalytics = {
     `;
   },
 
-  updateYieldSimulator() {
+  simulateScenario() {
     if (!this._currentRegressionModel) return;
-    const { model, baselineYield } = this._currentRegressionModel;
+    const { model, predictorDefs, baselineVal } = this._currentRegressionModel;
 
-    const varSel = document.getElementById('ae_sim_var')?.value || 'dh04';
-    const hasDap = document.getElementById('ae_sim_dap')?.checked ? 1 : 0;
-    const hasCan = document.getElementById('ae_sim_can')?.checked ? 1 : 0;
-    const dealerRating = Number(document.getElementById('ae_sim_dealer')?.value || 4.0);
+    let pred = model.intercept || 0;
+    predictorDefs.forEach((p, idx) => {
+      const sliderEl = document.getElementById(`ae_slider_${p.key}`);
+      const val = sliderEl ? Number(sliderEl.value) : 1;
+      const coeff = model.coefficients?.[idx];
+      if (coeff) {
+        pred += coeff.beta * val;
+      }
+    });
 
-    let pred = model.coefficients[0]?.beta || baselineYield;
-
-    const dapCoeff = model.coefficients.find((c) => /dap/i.test(c.name));
-    if (dapCoeff && hasDap) pred += dapCoeff.beta;
-
-    const canCoeff = model.coefficients.find((c) => /can/i.test(c.name));
-    if (canCoeff && hasCan) pred += canCoeff.beta;
-
-    if (varSel === 'dh04') {
-      const v = model.coefficients.find((c) => /dh04/i.test(c.name));
-      if (v) pred += v.beta;
-    } else if (varSel === 'scduma') {
-      const v = model.coefficients.find((c) => /duma/i.test(c.name));
-      if (v) pred += v.beta;
-    }
-
-    const dealerCoeff = model.coefficients.find((c) => /dealer/i.test(c.name));
-    if (dealerCoeff) pred += dealerCoeff.beta * (dealerRating - 3.0);
-
-    const roundedYield = Math.max(400, Math.round(pred));
-    const bags = (roundedYield / 90).toFixed(1);
-    const se = model.stdErrorEstimate || 120;
-    const ciLow = Math.max(300, Math.round(roundedYield - 1.96 * se));
-    const ciHigh = Math.round(roundedYield + 1.96 * se);
-    const liftPct = Math.round(((roundedYield - baselineYield) / baselineYield) * 100);
+    const roundedPred = Math.max(0, Math.round(pred));
+    const liftPct = baselineVal > 0 ? Math.round(((roundedPred - baselineVal) / baselineVal) * 100) : 0;
 
     const yEl = document.getElementById('ae_sim_yield');
-    if (yEl) yEl.textContent = roundedYield.toLocaleString();
-    const bEl = document.getElementById('ae_sim_bags');
-    if (bEl) bEl.textContent = bags;
-    const ciEl = document.getElementById('ae_sim_ci');
-    if (ciEl) ciEl.textContent = `[${ciLow.toLocaleString()} - ${ciHigh.toLocaleString()}] kg`;
+    if (yEl) yEl.textContent = roundedPred.toLocaleString();
     const liftEl = document.getElementById('ae_sim_lift');
     if (liftEl) {
-      liftEl.textContent = `${liftPct >= 0 ? '+' : ''}${liftPct}% vs. Baseline`;
-      liftEl.className = liftPct >= 0 ? 'text-[#247B50] font-mono tabular-nums font-semibold' : 'text-[#C4242A] font-mono tabular-nums font-semibold';
+      liftEl.textContent = `${liftPct >= 0 ? '+' : ''}${liftPct}% vs Baseline`;
+      liftEl.className =
+        liftPct >= 0
+          ? 'text-sm font-bold font-mono text-[#3FC07A] tabular-nums'
+          : 'text-sm font-bold font-mono text-[#F87171] tabular-nums';
     }
   },
 
   // --------------------------------------------------------------------------
-  // TAB: ONE-WAY FACTORIAL ANOVA & VARIETY PERFORMANCE TRIALS
+  // TAB: ONE-WAY FACTORIAL ANOVA & TREATMENT HYPOTHESIS TESTING
   // --------------------------------------------------------------------------
   renderAnovaTab(survey, responses) {
     if (!responses || responses.length === 0) {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
     }
 
-    const groups = {};
-    responses.forEach((r) => {
-      const v = r.answers?.q_seed_variety || r.answers?.q_variety;
-      const y = Number(r.answers?.q_yield_kg);
-      if (v && !isNaN(y) && y > 0) {
-        const vKey = Array.isArray(v) ? v[0] : String(v);
-        if (!groups[vKey]) groups[vKey] = [];
-        groups[vKey].push(y);
-      }
-    });
+    const numQs = this.getNumericQuestions(survey);
+    const catQs = this.getCategoricalQuestions(survey);
 
-    const groupKeys = Object.keys(groups);
-    if (groupKeys.length < 2) {
+    if (numQs.length === 0) {
       return `
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
-          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Group Treatments for ANOVA</div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Continuous Metric Required for ANOVA</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
-            Factorial ANOVA requires at least two distinct seed variety treatments with recorded yield data. Currently detected ${groupKeys.length} group.
+            One-way Factorial ANOVA tests variance across groups against a continuous numerical metric (e.g., metric yield, rating, score, hours, or test result).
           </p>
         </div>
       `;
     }
 
+    const outcomeQ = numQs.find((q) => q.id === this.selectedAnovaOutcome) || numQs[0];
+    this.selectedAnovaOutcome = outcomeQ.id;
+
+    // Available categorical factors (including system fields like enumerator)
+    const factorOptions = [
+      ...catQs.map((q) => ({ id: q.id, label: q.title.split(/[:\?(]/)[0].trim() })),
+      { id: '__enumerator', label: 'Field Enumerator' }
+    ];
+
+    let groupQId = this.selectedAnovaGroup || factorOptions[0].id;
+    if (!factorOptions.some((f) => f.id === groupQId)) {
+      groupQId = factorOptions[0].id;
+    }
+    this.selectedAnovaGroup = groupQId;
+    const currentFactor = factorOptions.find((f) => f.id === groupQId);
+
+    const groups = {};
+    responses.forEach((r) => {
+      let gKey = null;
+      if (groupQId === '__enumerator') {
+        gKey = r.enumerator;
+      } else {
+        const raw = r.answers?.[groupQId];
+        if (raw !== undefined && raw !== null && raw !== '') {
+          gKey = Array.isArray(raw) ? raw[0] : String(raw);
+        }
+      }
+
+      const y = this.getContinuousValue(r, outcomeQ.id);
+      if (gKey && y !== null && !isNaN(y) && y > 0) {
+        const cleanKey = String(gKey).trim();
+        if (cleanKey) {
+          if (!groups[cleanKey]) groups[cleanKey] = [];
+          groups[cleanKey].push(y);
+        }
+      }
+    });
+
+    const groupKeys = Object.keys(groups);
+    const selectorControls = `
+      <div class="flex flex-wrap items-center gap-3 bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px] p-2.5 text-xs">
+        <div class="flex items-center gap-1.5">
+          <span class="font-semibold text-[#111613]">Outcome Metric (Y):</span>
+          <select onchange="window.AEAnalytics.selectedAnovaOutcome = this.value; window.AEApp.render();"
+            class="h-7 px-2 text-xs font-semibold text-[#247B50] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none">
+            ${numQs.map((q) => `<option value="${q.id}" ${q.id === outcomeQ.id ? 'selected' : ''}>${AEApp.escapeHtml(q.title.substring(0, 40))} (${q.unit || 'units'})</option>`).join('')}
+          </select>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="font-semibold text-[#111613]">Grouping Factor (X):</span>
+          <select onchange="window.AEAnalytics.selectedAnovaGroup = this.value; window.AEApp.render();"
+            class="h-7 px-2 text-xs font-semibold text-[#141A17] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none">
+            ${factorOptions.map((f) => `<option value="${f.id}" ${f.id === groupQId ? 'selected' : ''}>${AEApp.escapeHtml(f.label)}</option>`).join('')}
+          </select>
+        </div>
+        <span class="text-[11px] text-[#646E68] ml-auto">Detected <strong>${groupKeys.length}</strong> treatment levels</span>
+      </div>
+    `;
+
+    if (groupKeys.length < 2) {
+      return `
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
+          ${selectorControls}
+          <div class="p-6 text-center space-y-2 border border-dashed border-[#CFD5D0] rounded-[6px]">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Factor Levels for ANOVA</div>
+            <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
+              Factorial ANOVA requires at least two distinct levels in <strong>${AEApp.escapeHtml(currentFactor.label)}</strong> with recorded values for <strong>${AEApp.escapeHtml(outcomeQ.title)}</strong>. Currently found ${groupKeys.length} level.
+            </p>
+          </div>
+        </div>
+      `;
+    }
+
     const anova = window.AEStats.oneWayAnova(groups);
+    const unitLabel = outcomeQ.unit || 'units';
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
         <!-- Header -->
         <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">One-Way Factorial ANOVA &amp; Variety Trials</h2>
+            <h2 class="text-base font-semibold text-[#111613]">One-Way Factorial ANOVA &amp; Hypothesis Trials</h2>
             <p class="text-xs text-[#525B56] mt-0.5">
-              Testing for statistically significant yield variance between certified hybrid cultivars and recycled seed.
+              Evaluating variance of <strong>${AEApp.escapeHtml(outcomeQ.title)}</strong> grouped by <strong>${AEApp.escapeHtml(currentFactor.label)}</strong>.
             </p>
           </div>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
@@ -4031,6 +4339,8 @@ window.AEAnalytics = {
             ${anova.pValue < 0.05 ? 'p < 0.05 Significant Treatment Effect' : 'Directional / Non-Significant (p ≥ 0.05)'}
           </span>
         </div>
+
+        ${selectorControls}
 
         <!-- Omnibus Model Summary Cards -->
         <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF] bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px] p-3 text-xs">
@@ -4071,7 +4381,7 @@ window.AEAnalytics = {
               </thead>
               <tbody class="divide-y divide-[#EFEFEF]">
                 <tr class="hover:bg-[#FAFBF9]">
-                  <td class="p-3 font-medium text-[#111613]">Between Varieties (Treatment)</td>
+                  <td class="p-3 font-medium text-[#111613]">Between Groups (${AEApp.escapeHtml(currentFactor.label)})</td>
                   <td class="p-3 text-right font-mono tabular-nums text-[#111613]">${Math.round(anova.ssb).toLocaleString()}</td>
                   <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">${anova.dfb}</td>
                   <td class="p-3 text-right font-mono tabular-nums text-[#111613]">${Math.round(anova.msb).toLocaleString()}</td>
@@ -4079,7 +4389,7 @@ window.AEAnalytics = {
                   <td class="p-3 text-right font-mono tabular-nums font-semibold text-[#247B50]">${anova.pValue < 0.001 ? '< 0.001' : anova.pValue.toFixed(4)}</td>
                 </tr>
                 <tr class="hover:bg-[#FAFBF9]">
-                  <td class="p-3 font-medium text-[#111613]">Within Varieties (Error / Residual)</td>
+                  <td class="p-3 font-medium text-[#111613]">Within Groups (Residual / Error)</td>
                   <td class="p-3 text-right font-mono tabular-nums text-[#111613]">${Math.round(anova.ssw).toLocaleString()}</td>
                   <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">${anova.dfw}</td>
                   <td class="p-3 text-right font-mono tabular-nums text-[#111613]">${Math.round(anova.msw).toLocaleString()}</td>
@@ -4102,16 +4412,16 @@ window.AEAnalytics = {
         <!-- Variety Group Rankings with Compact Letter Display (CLD) -->
         <div class="space-y-2">
           <div class="flex items-center justify-between">
-            <div class="text-xs font-semibold text-[#111613]">Variety Means &amp; Homogeneous Subsets (Compact Letter Display)</div>
+            <div class="text-xs font-semibold text-[#111613]">Factor Means &amp; Homogeneous Subsets (Compact Letter Display)</div>
             <span class="text-[11px] text-[#525B56]">Groups sharing a letter are not significantly different at α = 0.05</span>
           </div>
           <div class="overflow-x-auto border border-[#E4E7E4] rounded-[6px]">
             <table class="w-full text-xs text-left">
               <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
                 <tr>
-                  <th class="p-3 font-semibold">Seed Variety Cultivar</th>
+                  <th class="p-3 font-semibold">Factor Level (${AEApp.escapeHtml(currentFactor.label)})</th>
                   <th class="p-3 font-semibold text-right">Sample N</th>
-                  <th class="p-3 font-semibold text-right">Mean Harvest (kg/acre)</th>
+                  <th class="p-3 font-semibold text-right">Mean (${unitLabel})</th>
                   <th class="p-3 font-semibold text-right">Std Dev (σ)</th>
                   <th class="p-3 font-semibold text-right">Std Error</th>
                   <th class="p-3 font-semibold text-right">95% Confidence Interval</th>
@@ -4125,7 +4435,7 @@ window.AEAnalytics = {
                       <tr class="hover:bg-[#FAFBF9]">
                         <td class="p-3 font-medium text-[#111613]">${AEApp.escapeHtml(g.name)}</td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">${g.n}</td>
-                        <td class="p-3 text-right font-mono tabular-nums font-semibold text-[#247B50]">${Math.round(g.mean).toLocaleString()} kg</td>
+                        <td class="p-3 text-right font-mono tabular-nums font-semibold text-[#247B50]">${Math.round(g.mean).toLocaleString()} ${unitLabel}</td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">±${Math.round(g.sd)}</td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">±${Math.round(g.se)}</td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">[${Math.round(g.ci95[0])}, ${Math.round(g.ci95[1])}]</td>
@@ -4165,7 +4475,7 @@ window.AEAnalytics = {
                       <tr class="hover:bg-[#FAFBF9]">
                         <td class="p-3 font-medium text-[#111613]">${AEApp.escapeHtml(p.pair)}</td>
                         <td class="p-3 text-right font-mono tabular-nums font-semibold ${p.diff > 0 ? 'text-[#247B50]' : 'text-[#C4242A]'}">
-                          ${p.diff >= 0 ? '+' : ''}${Math.round(p.diff).toLocaleString()} kg
+                          ${p.diff >= 0 ? '+' : ''}${Math.round(p.diff).toLocaleString()} ${unitLabel}
                         </td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#525B56]">±${Math.round(p.se)}</td>
                         <td class="p-3 text-right font-mono tabular-nums text-[#111613]">${p.qStat.toFixed(2)}</td>
@@ -4199,18 +4509,28 @@ window.AEAnalytics = {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
     }
 
+    const numQs = this.getNumericQuestions(survey);
+    const metricQ = numQs.find((q) => q.id === this.selectedSpatialMetric) || numQs[0];
+    if (metricQ) this.selectedSpatialMetric = metricQ.id;
+
     const points = responses
       .map((r, i) => {
-        const lat = Number(r.gps?.lat || r.answers?.q_gps_plot?.lat);
-        const lng = Number(r.gps?.lng || r.answers?.q_gps_plot?.lng);
-        const val = Number(r.answers?.q_yield_kg) || Number(r.durationSec) || 1000;
+        const lat = Number(r.gps?.lat || r.answers?.q_gps_plot?.lat || r.answers?.gps?.lat);
+        const lng = Number(r.gps?.lng || r.answers?.q_gps_plot?.lng || r.answers?.gps?.lng);
+        let val = 1000;
+        if (metricQ) {
+          const v = this.getContinuousValue(r, metricQ.id);
+          if (v !== null && !isNaN(v) && v > 0) val = v;
+        } else {
+          val = Number(r.durationSec) || 1000;
+        }
         if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
           return {
             id: r.id || `Plot-${i + 1}`,
             lat,
             lng,
             value: val,
-            label: r.gps?.label || `Plot ${i + 1}`,
+            label: r.gps?.label || r.answers?.q_farmer_name || `Point ${i + 1}`,
             enumerator: r.enumerator
           };
         }
@@ -4221,9 +4541,9 @@ window.AEAnalytics = {
     if (points.length < 3) {
       return `
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
-          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Geotagged Plots</div>
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Geotagged Records</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
-            Spatial autocorrelation and Anselin Local LISA analysis require at least 3 georeferenced farm plots with recorded coordinates. Currently ${points.length} plots geotagged.
+            Spatial autocorrelation and Anselin Local LISA analysis require at least 3 georeferenced records with recorded coordinates. Currently ${points.length} records geotagged.
           </p>
         </div>
       `;
@@ -4265,14 +4585,29 @@ window.AEAnalytics = {
           <div>
             <h2 class="text-base font-semibold text-[#111613]">Spatial Autocorrelation (Global Moran's I &amp; Anselin LISA)</h2>
             <p class="text-xs text-[#525B56] mt-0.5">
-              Geostatistical analysis detecting regional yield hotspots, coldspots, and geographic clusters across surveyed farm plots.
+              Geostatistical analysis detecting regional clusters across surveyed spatial points.
             </p>
           </div>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
-            spatial.isSignificant ? 'bg-[#DCFAE5] text-[#04250E] border border-[#247B50]/30' : 'bg-[#F4F6F4] text-[#525B56] border border-[#CFD5D0]'
-          } self-start sm:self-auto">
-            ${spatial.spatialPattern}
-          </span>
+          <div class="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            ${
+              numQs.length > 0
+                ? `
+              <div class="flex items-center gap-1.5 text-xs">
+                <span class="font-semibold text-[#111613]">Spatial Metric:</span>
+                <select onchange="window.AEAnalytics.selectedSpatialMetric = this.value; window.AEApp.render();"
+                  class="h-7 px-2 text-xs font-semibold text-[#247B50] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none">
+                  ${numQs.map((q) => `<option value="${q.id}" ${q.id === metricQ?.id ? 'selected' : ''}>${AEApp.escapeHtml(q.title.substring(0, 36))} (${q.unit || 'units'})</option>`).join('')}
+                </select>
+              </div>
+            `
+                : ''
+            }
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
+              spatial.isSignificant ? 'bg-[#DCFAE5] text-[#04250E] border border-[#247B50]/30' : 'bg-[#F4F6F4] text-[#525B56] border border-[#CFD5D0]'
+            }">
+              ${spatial.spatialPattern}
+            </span>
+          </div>
         </div>
 
         <!-- Moran's I Metric Cards -->

@@ -1347,6 +1347,339 @@ const SURVEY_TEMPLATES = [
         }
       ]
     })
+  },
+  {
+    id: 'tpl_patient_intake',
+    name: 'Healthcare & Community Patient Intake',
+    category: 'Public Health & Clinical',
+    icon: 'fa-heart-pulse',
+    badge: 'Clinical Assessment',
+    description: 'Patient demographic record, triage urgency rating, symptom checklist, vital metrics (temperature, BP), consent signature, and clinic GPS.',
+    build: () => ({
+      id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      title: 'Community Health & Clinical Patient Intake',
+      description: 'Standard clinical triage protocol recording symptoms, vital measurements, triage severity, and patient informed consent.',
+      category: 'Public Health & Clinical',
+      status: 'Active',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      theme: {
+        accentColor: '#0F766E',
+        headerStyle: 'canopy',
+        showProgressBar: true,
+        showQuestionNumbers: true
+      },
+      pages: [
+        {
+          id: 'p_health_1',
+          title: 'Section 1: Patient Demographics & Triage Severity',
+          description: 'Record patient primary information and clinical triage status.',
+          questions: [
+            {
+              id: 'q_patient_name',
+              type: 'short_text',
+              title: 'Patient Full Name or Medical Record Number (MRN)',
+              helpText: 'Enter formal identifier.',
+              required: true,
+              placeholder: 'e.g. John Doe / MRN-88421'
+            },
+            {
+              id: 'q_patient_age',
+              type: 'number_yield',
+              title: 'Patient Age',
+              helpText: 'Enter completed years.',
+              unit: 'years',
+              min: 0,
+              max: 120,
+              required: true
+            },
+            {
+              id: 'q_triage_urgency',
+              type: 'multiple_choice',
+              title: 'Clinical Triage Severity Classification',
+              helpText: 'Select urgency tier according to emergency triage guidelines.',
+              required: true,
+              options: ['Priority 1 — Resuscitation / Immediate', 'Priority 2 — Urgent (Within 30 mins)', 'Priority 3 — Semi-Urgent', 'Priority 4 — Routine / Non-Urgent']
+            },
+            {
+              id: 'q_symptoms_list',
+              type: 'checkboxes',
+              title: 'Presenting Symptoms & Clinical Complaints',
+              helpText: 'Check all clinical symptoms reported by patient.',
+              required: true,
+              options: ['Acute High Fever', 'Respiratory Cough / Shortness of Breath', 'Gastrointestinal Distress', 'Severe Headache / Malaise', 'Injury / Trauma']
+            }
+          ]
+        },
+        {
+          id: 'p_health_2',
+          title: 'Section 2: Vitals, Clinic Location & Consent',
+          description: 'Document diagnostic vitals, record GPS, and obtain sign-off.',
+          questions: [
+            {
+              id: 'q_patient_temp',
+              type: 'number_yield',
+              title: 'Body Temperature (°C)',
+              helpText: 'Measured using digital thermometer.',
+              unit: '°C',
+              min: 30,
+              max: 45,
+              required: true
+            },
+            {
+              id: 'q_clinic_gps',
+              type: 'gps_location',
+              title: 'Community Health Clinic GPS Location',
+              helpText: 'Lock coordinate fix for spatial epidemiology tracking.',
+              required: false
+            },
+            {
+              id: 'q_patient_signature',
+              type: 'signature',
+              title: 'Patient / Guardian Informed Consent Signature',
+              helpText: 'Confirm voluntary participation in clinical intake.',
+              required: true
+            }
+          ]
+        }
+      ]
+    })
+  },
+  {
+    id: 'tpl_employee_pulse',
+    name: 'Employee Engagement & Culture Pulse (eNPS)',
+    category: 'Human Resources & People',
+    icon: 'fa-users',
+    badge: 'Enterprise HR',
+    description: 'Measure Employee Net Promoter Score, team collaboration Likert grid, manager leadership ratings, and open workplace feedback.',
+    build: () => ({
+      id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      title: 'Quarterly Employee Engagement & Culture Pulse',
+      description: 'Confidential organizational survey assessing team culture, psychological safety, leadership alignment, and employee retention.',
+      category: 'Human Resources & People',
+      status: 'Active',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      theme: {
+        accentColor: '#1E293B',
+        headerStyle: 'canopy',
+        showProgressBar: true,
+        showQuestionNumbers: true
+      },
+      pages: [
+        {
+          id: 'p_hr_1',
+          title: 'Section 1: Department & Employee NPS',
+          description: 'Provide confidential feedback on your team experience.',
+          questions: [
+            {
+              id: 'q_hr_dept',
+              type: 'dropdown',
+              title: 'Primary Functional Department / Team',
+              helpText: 'Select your organizational division.',
+              required: true,
+              options: ['Engineering & Product', 'Operations & Field Teams', 'Commercial & Marketing', 'Finance & Administration', 'People & HR']
+            },
+            {
+              id: 'q_hr_enps',
+              type: 'nps',
+              title: 'How likely are you to recommend our organization as a great place to work?',
+              helpText: '0 = Not at all likely, 10 = Extremely likely (eNPS standard)',
+              required: true
+            },
+            {
+              id: 'q_hr_tenure',
+              type: 'number_yield',
+              title: 'Tenure with Organization (Months)',
+              helpText: 'Total completed months of service.',
+              unit: 'months',
+              min: 1,
+              max: 240,
+              required: true
+            }
+          ]
+        },
+        {
+          id: 'p_hr_2',
+          title: 'Section 2: Culture Dimensions & Open Feedback',
+          description: 'Evaluate leadership support, teamwork, and growth opportunities.',
+          questions: [
+            {
+              id: 'q_hr_matrix',
+              type: 'matrix',
+              title: 'Rate your level of agreement with each workplace statement:',
+              helpText: 'Select one rating per statement.',
+              required: true,
+              rows: ['I feel valued and recognized for my contributions', 'Leadership communicates clear priorities', 'I have opportunities to learn and develop skills', 'My team collaborates effectively without silos'],
+              columns: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']
+            },
+            {
+              id: 'q_hr_verbatim',
+              type: 'long_text',
+              title: 'What is the single most impactful thing the organization can do to support your success?',
+              helpText: 'All comments are reviewed by leadership for continuous improvement.',
+              required: false,
+              placeholder: 'Share your perspective…'
+            }
+          ]
+        }
+      ]
+    })
+  },
+  {
+    id: 'tpl_humanitarian_needs',
+    name: 'Community & Humanitarian Needs Assessment',
+    category: 'Humanitarian & Social Relief',
+    icon: 'fa-hand-holding-heart',
+    badge: 'UN / NGO Standard',
+    description: 'Household size, clean water (WASH) sources, food security index, urgent aid priorities, satellite GPS, and audio testimony.',
+    build: () => ({
+      id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      title: 'Community Vulnerability & Humanitarian Needs Assessment',
+      description: 'Rapid multi-sector assessment benchmarked against UNHCR/WFP standards covering WASH, food security, shelter, and emergency relief.',
+      category: 'Humanitarian & Social Relief',
+      status: 'Active',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      theme: {
+        accentColor: '#92400E',
+        headerStyle: 'canopy',
+        showProgressBar: true,
+        showQuestionNumbers: true
+      },
+      pages: [
+        {
+          id: 'p_aid_1',
+          title: 'Section 1: Household Structure & Water Access',
+          description: 'Record household composition and basic living conditions.',
+          questions: [
+            {
+              id: 'q_hh_members',
+              type: 'number_yield',
+              title: 'Total Number of People in Household',
+              helpText: 'Include adults, elders, and children living under one roof.',
+              unit: 'members',
+              min: 1,
+              max: 30,
+              required: true
+            },
+            {
+              id: 'q_wash_source',
+              type: 'multiple_choice',
+              title: 'Primary Drinking Water Source (WASH)',
+              helpText: 'Select primary daily water supply.',
+              required: true,
+              options: ['Piped Tap Water / Borehole', 'Protected Community Well', 'Water Trucking / Kiosk', 'Unprotected River / Pond']
+            },
+            {
+              id: 'q_food_security',
+              type: 'multiple_choice',
+              title: 'Household Food Consumption & Security Status',
+              helpText: 'Based on food availability over the past 7 days.',
+              required: true,
+              options: ['Acceptable — 3 adequate meals daily', 'Borderline — Reduced portion sizes / 2 meals', 'Poor — Missed full days / severe deficit']
+            }
+          ]
+        },
+        {
+          id: 'p_aid_2',
+          title: 'Section 2: Urgent Assistance Priorities & Geotag',
+          description: 'Identify immediate relief requirements and record shelter coordinates.',
+          questions: [
+            {
+              id: 'q_aid_priorities',
+              type: 'checkboxes',
+              title: 'Most Urgent Emergency Assistance Needs',
+              helpText: 'Select up to 3 highest priority items.',
+              required: true,
+              options: ['Emergency Food Rations', 'Clean Drinking Water / Purification Kits', 'Shelter & Non-Food Items (Tarpaulins, Blankets)', 'Healthcare & Medicine', 'Child Nutrition Support']
+            },
+            {
+              id: 'q_shelter_gps',
+              type: 'gps_location',
+              title: 'Household / Settlement GPS Coordinate Fix',
+              helpText: 'Acquire high-precision satellite coordinates at household entrance.',
+              required: true
+            },
+            {
+              id: 'q_beneficiary_audio',
+              type: 'audio_note',
+              title: 'Qualitative Household Audio Testimony',
+              helpText: 'Record a spoken narrative regarding community needs.',
+              required: false,
+              maxDurationSec: 300
+            }
+          ]
+        }
+      ]
+    })
+  },
+  {
+    id: 'tpl_training_eval',
+    name: 'Professional Training & Workshop Evaluation',
+    category: 'Education & Capacity Building',
+    icon: 'fa-graduation-cap',
+    badge: 'Education Standard',
+    description: 'Post-event evaluation with module selection, instructor clarity stars, practical applicability NPS, key learnings, and photo proof.',
+    build: () => ({
+      id: 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5),
+      title: 'Workshop & Capacity Building Evaluation',
+      description: 'Post-training evaluation measuring pedagogical clarity, relevance to job tasks, materials quality, and participant satisfaction.',
+      category: 'Education & Capacity Building',
+      status: 'Active',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      theme: {
+        accentColor: '#247B50',
+        headerStyle: 'canopy',
+        showProgressBar: true,
+        showQuestionNumbers: true
+      },
+      pages: [
+        {
+          id: 'p_edu_1',
+          title: 'Section 1: Course Feedback & Instructor Rating',
+          description: 'Share your assessment of the training session.',
+          questions: [
+            {
+              id: 'q_course_module',
+              type: 'dropdown',
+              title: 'Training Module / Track Attended',
+              helpText: 'Select the primary workshop track.',
+              required: true,
+              options: ['Module 1: Foundations & Core Concepts', 'Module 2: Advanced Practical Execution', 'Module 3: Leadership & Operations', 'Module 4: Quality & Compliance']
+            },
+            {
+              id: 'q_trainer_stars',
+              type: 'star_rating',
+              title: 'Overall Trainer Knowledge & Communication Clarity',
+              helpText: '1 star = Poor, 5 stars = Exceptional',
+              maxStars: 5,
+              required: true
+            },
+            {
+              id: 'q_course_nps',
+              type: 'nps',
+              title: 'How likely are you to recommend this training to a fellow professional?',
+              helpText: '0 = Not at all likely, 10 = Extremely likely',
+              required: true
+            },
+            {
+              id: 'q_key_takeaways',
+              type: 'long_text',
+              title: 'What was the most actionable takeaway or skill you learned?',
+              helpText: 'Describe how you will apply this in your daily work.',
+              required: false,
+              placeholder: 'Type your reflection…'
+            }
+          ]
+        }
+      ]
+    })
   }
 ];
 

@@ -7,23 +7,30 @@
  */
 
 const QUESTION_TYPES_CATALOG = [
-  { type: 'multiple_choice', label: 'Multiple Choice', icon: 'fa-circle-dot', group: 'Choice questions' },
-  { type: 'checkboxes', label: 'Checkboxes', icon: 'fa-square-check', group: 'Choice questions' },
-  { type: 'dropdown', label: 'Dropdown Menu', icon: 'fa-caret-down', group: 'Choice questions' },
-  { type: 'cascading_dropdown', label: 'Cascading / Dependent Select', icon: 'fa-sitemap', group: 'Choice questions' },
-  { type: 'star_rating', label: 'Star Rating (1–5)', icon: 'fa-star', group: 'Ratings & scales' },
-  { type: 'nps', label: 'Net Promoter Score (0–10)', icon: 'fa-gauge-high', group: 'Ratings & scales' },
-  { type: 'matrix', label: 'Matrix / Likert Grid', icon: 'fa-table-cells', group: 'Ratings & scales' },
-  { type: 'number_yield', label: 'Numerical / Yield Metric', icon: 'fa-scale-balanced', group: 'Agri & field telemetry' },
-  { type: 'gps_location', label: 'GPS Plot Coordinates', icon: 'fa-location-crosshairs', group: 'Agri & field telemetry' },
-  { type: 'barcode_scanner', label: 'Optical Barcode / KEPHIS QR', icon: 'fa-barcode', group: 'Agri & field telemetry' },
-  { type: 'signature', label: 'Farmer / Dealer Signature', icon: 'fa-signature', group: 'Agri & field telemetry' },
-  { type: 'photo_proof', label: 'Photo Proof / Field Camera', icon: 'fa-camera', group: 'Agri & field telemetry' },
-  { type: 'audio_note', label: 'Audio Note / Voice Testimony', icon: 'fa-microphone', group: 'Agri & field telemetry' },
-  { type: 'repeat_group', label: 'Repeat Roster (Multi-variety/plot)', icon: 'fa-layer-group', group: 'Agri & field telemetry' },
-  { type: 'date_time', label: 'Date / Season Picker', icon: 'fa-calendar-day', group: 'Agri & field telemetry' },
-  { type: 'short_text', label: 'Single-Line Text', icon: 'fa-font', group: 'Open text' },
-  { type: 'long_text', label: 'Multi-Line Field Notes', icon: 'fa-align-left', group: 'Open text' }
+  // 1. Choice & Categorical Selection
+  { type: 'multiple_choice', label: 'Single Choice (Radio)', icon: 'fa-circle-dot', group: 'Choice & Selection' },
+  { type: 'checkboxes', label: 'Multiple Choice (Checkboxes)', icon: 'fa-square-check', group: 'Choice & Selection' },
+  { type: 'dropdown', label: 'Dropdown Menu', icon: 'fa-caret-down', group: 'Choice & Selection' },
+  { type: 'cascading_dropdown', label: 'Cascading / Hierarchical Select', icon: 'fa-sitemap', group: 'Choice & Selection' },
+
+  // 2. Evaluative Scales & Matrices
+  { type: 'star_rating', label: 'Star Rating (1–5)', icon: 'fa-star', group: 'Ratings & Scales' },
+  { type: 'nps', label: 'Net Promoter Score (0–10 NPS)', icon: 'fa-gauge-high', group: 'Ratings & Scales' },
+  { type: 'matrix', label: 'Matrix / Likert Rating Grid', icon: 'fa-table-cells', group: 'Ratings & Scales' },
+
+  // 3. Text & Numerical Data
+  { type: 'short_text', label: 'Single-Line Text', icon: 'fa-font', group: 'Text & Numeric' },
+  { type: 'long_text', label: 'Multi-Line Notes / Verbatim', icon: 'fa-align-left', group: 'Text & Numeric' },
+  { type: 'number_yield', label: 'Continuous Numeric / Metric', icon: 'fa-calculator', group: 'Text & Numeric' },
+  { type: 'date_time', label: 'Date / Time Picker', icon: 'fa-calendar-day', group: 'Text & Numeric' },
+
+  // 4. Media, Verification & Advanced Telemetry
+  { type: 'gps_location', label: 'Geographic GPS Plot Lock', icon: 'fa-location-crosshairs', group: 'Media & Field Telemetry' },
+  { type: 'barcode_scanner', label: 'Barcode / QR / Serial Scanner', icon: 'fa-barcode', group: 'Media & Field Telemetry' },
+  { type: 'signature', label: 'Digital Sign-off / Signature', icon: 'fa-signature', group: 'Media & Field Telemetry' },
+  { type: 'photo_proof', label: 'Photo Verification / Camera', icon: 'fa-camera', group: 'Media & Field Telemetry' },
+  { type: 'audio_note', label: 'Voice Testimony / Audio Memo', icon: 'fa-microphone', group: 'Media & Field Telemetry' },
+  { type: 'repeat_group', label: 'Repeat Table / Multi-Item Roster', icon: 'fa-layer-group', group: 'Media & Field Telemetry' }
 ];
 
 window.QUESTION_TYPES_CATALOG = QUESTION_TYPES_CATALOG;
@@ -33,6 +40,8 @@ window.AEBuilder = {
   selectedQuestionId: null,
   leftTab: 'questions', // 'questions' | 'translations' | 'theme'
   targetLang: 'sw', // 'sw' | 'fr'
+  previewMode: false, // false = editor, true = interactive simulator
+  previewDevice: 'desktop', // 'desktop' | 'mobile'
 
   createDefaultQuestion(type) {
     const id = 'q_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5);
@@ -49,89 +58,87 @@ window.AEBuilder = {
       case 'multiple_choice':
         return {
           ...base,
-          title: 'Which primary crop or seed variety did you plant this season?',
+          title: 'Please select your primary preference or classification:',
           helpText: 'Select one option.',
-          options: ['Certified Hybrid Seed', 'Improved Open-Pollinated Variety (OPV)', 'Local Farm-Saved Seed']
+          options: ['Primary Option A', 'Secondary Option B', 'Alternative Option C', 'Other / None of the above']
         };
       case 'checkboxes':
         return {
           ...base,
-          title: 'Which agronomic practices or inputs were applied on this plot?',
-          helpText: 'Select all that apply.',
-          options: ['Basal Planting Fertilizer (DAP/NPK)', 'Top-Dressing Fertilizer (CAN/Urea)', 'Organic Manure / Compost', 'Crop Rotation with Legumes']
+          title: 'Which of the following factors or criteria apply to this record?',
+          helpText: 'Select all applicable options.',
+          options: ['Condition / Practice 1', 'Condition / Practice 2', 'Condition / Practice 3', 'Verified Standard Compliant']
         };
       case 'dropdown':
         return {
           ...base,
-          title: 'Select County / Administrative Ward',
-          helpText: 'Choose from the list.',
-          options: ['Nakuru County', 'Machakos County', 'Kakamega County', 'Meru County', 'Uasin Gishu County']
+          title: 'Select Region / Administrative Jurisdiction:',
+          helpText: 'Choose from the dropdown list.',
+          options: ['Region / County A', 'Region / County B', 'Region / County C', 'Region / County D']
         };
       case 'cascading_dropdown':
         return {
           ...base,
-          title: 'Administrative Location (County -> Sub-County -> Ward)',
+          title: 'Hierarchical Classification (Primary -> Secondary -> Detailed Unit):',
           helpText: 'Select levels sequentially. Child choices update dynamically.',
-          levels: ['County', 'Sub-County', 'Ward'],
+          levels: ['Primary Tier', 'Secondary Tier', 'Specific Unit'],
           hierarchyData: [
-            { parent: 'Nakuru', child: 'Rongai', subchild: 'Menengai West' },
-            { parent: 'Nakuru', child: 'Rongai', subchild: 'Soin' },
-            { parent: 'Nakuru', child: 'Njoro', subchild: 'Mau Narok' },
-            { parent: 'Machakos', child: 'Mwala', subchild: 'Masii' },
-            { parent: 'Machakos', child: 'Mwala', subchild: 'Kibauni' },
-            { parent: 'Kakamega', child: 'Lugari', subchild: 'Chekalini' },
-            { parent: 'Uasin Gishu', child: 'Moiben', subchild: 'Tembelio' }
+            { parent: 'Sector Alpha', child: 'District 1', subchild: 'Unit 101' },
+            { parent: 'Sector Alpha', child: 'District 1', subchild: 'Unit 102' },
+            { parent: 'Sector Alpha', child: 'District 2', subchild: 'Unit 201' },
+            { parent: 'Sector Beta', child: 'District 3', subchild: 'Unit 301' },
+            { parent: 'Sector Beta', child: 'District 3', subchild: 'Unit 302' }
           ]
         };
       case 'star_rating':
         return {
           ...base,
-          title: 'How satisfied are you with the germination rate of this seed lot?',
-          helpText: '1 star = Very Dissatisfied, 5 stars = Very Satisfied',
+          title: 'How would you rate the overall quality or effectiveness?',
+          helpText: '1 star = Unsatisfactory, 5 stars = Outstanding',
           maxStars: 5
         };
       case 'nps':
         return {
           ...base,
-          title: 'On a scale of 0 to 10, how likely are you to recommend this seed variety to another farmer?',
+          title: 'On a scale of 0 to 10, how likely are you to recommend this program or product to a colleague?',
           helpText: '0 = Not at all likely, 10 = Extremely likely'
         };
       case 'matrix':
         return {
           ...base,
-          title: 'Rate the seed variety on each agronomic characteristic:',
-          helpText: 'Select one rating per row.',
-          rows: ['Early germination vigor', 'Drought & dry-spell resilience', 'Marketability of harvested grain'],
+          title: 'Please evaluate each dimension on the performance scale:',
+          helpText: 'Select one rating per evaluation row.',
+          rows: ['Operational Reliability', 'Response Speed & Timeliness', 'Quality of Execution', 'Overall Value & Impact'],
           columns: ['Poor', 'Fair', 'Good', 'Excellent']
         };
       case 'number_yield':
         return {
           ...base,
-          title: 'Total Harvested Yield per Acre',
-          helpText: 'Enter numeric value.',
-          unit: 'kg/acre',
+          title: 'Recorded Numerical Metric / Quantitative Output',
+          helpText: 'Enter positive numeric figure.',
+          unit: 'units',
           min: 0,
-          max: 10000
+          max: 100000
         };
       case 'gps_location':
         return {
           ...base,
-          title: 'Capture Farm Plot GPS Coordinates',
-          helpText: 'Tap "Capture GPS" while standing at the plot boundary.',
+          title: 'Record Geographic Coordinates (GPS Plot Fix)',
+          helpText: 'Tap "Capture GPS" to acquire a satellite-verified coordinate lock.',
           required: false
         };
       case 'signature':
         return {
           ...base,
-          title: 'Farmer / Respondent Signature or Mark',
-          helpText: 'Sign with finger or stylus to confirm survey consent and seed receipt.',
+          title: 'Respondent / Auditor Verification Signature',
+          helpText: 'Sign with finger or stylus on the canvas to authenticate this submission.',
           required: false
         };
       case 'photo_proof':
         return {
           ...base,
-          title: 'Photo Proof of Crop Trial / Agro-Dealer Stock',
-          helpText: 'Snap a clear photo of the trial plot, seed packet, or agro-dealer shelf. Compressed automatically.',
+          title: 'Photo Verification / Visual Field Documentation',
+          helpText: 'Snap or upload a clear photo proof. Images are compressed automatically for offline storage.',
           required: false,
           maxDimension: 1024,
           maxKb: 150
@@ -139,55 +146,55 @@ window.AEBuilder = {
       case 'barcode_scanner':
         return {
           ...base,
-          title: 'Scan Certified Seed Pack Barcode or KEPHIS QR Code',
-          helpText: 'Position camera over the seed label barcode or type the serial number.',
-          verificationPattern: '^(KEPHIS|[0-9]{8,14}|[A-Z0-9-]{6,20})$',
+          title: 'Scan Barcode, QR Code, or Serial Identifier',
+          helpText: 'Position camera viewfinder over the code or enter serial number manually.',
+          verificationPattern: '^[A-Z0-9-]{4,32}$',
           allowManualEntry: true
         };
       case 'audio_note':
         return {
           ...base,
-          title: 'Farmer Voice Testimony / Qualitative Field Memo',
-          helpText: 'Record a verbal statement or field observation using the microphone.',
+          title: 'Voice Testimony / Audio Qualitative Memo',
+          helpText: 'Record a spoken testimonial or qualitative field observation using the microphone.',
           required: false,
-          maxDurationSec: 120
+          maxDurationSec: 300
         };
       case 'repeat_group':
         return {
           ...base,
-          title: 'Seed Variety Inventory & Pricing Roster',
-          helpText: 'Add a record for each distinct seed variety lot in stock.',
-          required: true,
-          addButtonLabel: '+ Add Another Seed Variety Lot',
+          title: 'Multi-Item Roster / Tabular Records',
+          helpText: 'Add a sub-record for each individual item, lot, or person.',
+          required: false,
+          addButtonLabel: '+ Add Sub-Record Row',
           fields: [
-            { id: 'variety_name', label: 'Variety Name / Code', type: 'text', placeholder: 'e.g. DH04' },
-            { id: 'stock_bags', label: 'Stock On-Hand (2kg Packs)', type: 'number', placeholder: 'e.g. 50' },
-            { id: 'lot_number', label: 'Lot / Batch No.', type: 'text', placeholder: 'e.g. LOT-2026' },
-            { id: 'price_kes', label: 'Retail Price (KES)', type: 'number', placeholder: 'e.g. 600' }
+            { id: 'item_name', label: 'Item Name / Description', type: 'text', placeholder: 'e.g. Item Code or Name' },
+            { id: 'item_qty', label: 'Quantity / Units', type: 'number', placeholder: 'e.g. 10' },
+            { id: 'item_cost', label: 'Unit Cost / Rate', type: 'number', placeholder: 'e.g. 50' },
+            { id: 'item_notes', label: 'Status / Notes', type: 'text', placeholder: 'e.g. Verified In-Stock' }
           ]
         };
       case 'date_time':
         return {
           ...base,
-          title: 'Date of Planting / Field Inspection',
+          title: 'Date of Activity / Inspection Event',
           helpText: 'Select calendar date.',
           required: false
         };
       case 'short_text':
         return {
           ...base,
-          title: 'Farmer / Respondent Full Name or Household ID',
-          helpText: '',
+          title: 'Respondent Name, Identifier, or Short Field',
+          helpText: 'Enter brief text response.',
           required: false,
-          placeholder: 'Enter respondent name or ID…'
+          placeholder: 'Enter text here…'
         };
       case 'long_text':
         return {
           ...base,
-          title: 'Additional Enumerator Observations & Qualitative Feedback',
-          helpText: 'Record any pest pressure, weather anomalies, or supply issues.',
+          title: 'Detailed Observations, Comments, or Open Feedback',
+          helpText: 'Record extended observations, explanations, or qualitative insights.',
           required: false,
-          placeholder: 'Write detailed field notes…'
+          placeholder: 'Type detailed observations or feedback here…'
         };
       default:
         return base;
@@ -255,6 +262,15 @@ window.AEBuilder = {
               <i class="fa-solid fa-users-gear text-[#247B50]"></i> Assign Team
             </button>
 
+            <!-- Live Device Simulator Toggle -->
+            <button onclick="window.AEBuilder.previewMode = !window.AEBuilder.previewMode; window.AEApp.render();"
+              class="h-8 px-3 rounded-[6px] border ${
+                this.previewMode ? 'bg-[#141A17] text-white border-[#141A17]' : 'border-[#CFD5D0] bg-white text-[#111613]'
+              } text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid ${this.previewMode ? 'fa-pen-to-square text-[#3FC07A]' : 'fa-mobile-screen text-[#247B50]'}"></i>
+              ${this.previewMode ? 'Editor Canvas' : 'Live Simulator'}
+            </button>
+
             <!-- Preview & Kiosk -->
             <button onclick="AEApp.switchStage('collect', '${survey.id}')"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
@@ -269,6 +285,10 @@ window.AEBuilder = {
           </div>
         </div>
 
+        ${
+          this.previewMode
+            ? this.renderLiveSimulator(survey)
+            : `
         <!-- 2. Divided 4-Cell Metadata Strip (Matching Overview KPI Architecture) -->
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
           <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF]">
@@ -457,15 +477,209 @@ window.AEBuilder = {
           </div>
         </section>
       </div>
+      `
+        }
+      </div>
+    `;
+  },
+
+  renderLiveSimulator(survey) {
+    const device = this.previewDevice || 'mobile';
+    const widthClass = device === 'mobile' ? 'max-w-[420px]' : device === 'tablet' ? 'max-w-[768px]' : 'max-w-4xl';
+    const questions = window.aeStore.getQuestionsForSurvey(survey);
+
+    return `
+      <div class="space-y-4">
+        <!-- Device Controls -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-[#111613]">Device Viewport:</span>
+            <div class="inline-flex rounded-[6px] border border-[#CFD5D0] p-0.5 bg-[#FAFBF9]">
+              <button onclick="window.AEBuilder.previewDevice = 'mobile'; window.AEApp.render();"
+                class="px-2.5 py-1 text-xs rounded-[4px] font-medium transition-colors ${device === 'mobile' ? 'bg-[#141A17] text-white' : 'text-[#525B56] hover:text-[#111613]'}">
+                <i class="fa-solid fa-mobile-screen mr-1"></i> Mobile (390px)
+              </button>
+              <button onclick="window.AEBuilder.previewDevice = 'tablet'; window.AEApp.render();"
+                class="px-2.5 py-1 text-xs rounded-[4px] font-medium transition-colors ${device === 'tablet' ? 'bg-[#141A17] text-white' : 'text-[#525B56] hover:text-[#111613]'}">
+                <i class="fa-solid fa-tablet-screen-button mr-1"></i> Tablet (768px)
+              </button>
+              <button onclick="window.AEBuilder.previewDevice = 'desktop'; window.AEApp.render();"
+                class="px-2.5 py-1 text-xs rounded-[4px] font-medium transition-colors ${device === 'desktop' ? 'bg-[#141A17] text-white' : 'text-[#525B56] hover:text-[#111613]'}">
+                <i class="fa-solid fa-desktop mr-1"></i> Desktop (Full)
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-[#646E68]">Simulating live field entry · IndexedDB active</span>
+            <button onclick="window.AEBuilder.previewMode = false; window.AEApp.render();"
+              class="h-7 px-2.5 rounded-[4px] text-xs font-medium border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613]">
+              Exit Preview
+            </button>
+          </div>
+        </div>
+
+        <!-- Frame -->
+        <div class="flex justify-center p-4 sm:p-8 bg-[#F4F6F4] rounded-[12px] border border-[#E4E7E4] overflow-hidden">
+          <div class="${widthClass} w-full bg-white rounded-[16px] shadow-sm border border-[#CFD5D0] overflow-hidden">
+            <!-- Simulated Device Header Bar -->
+            <div class="bg-[#141A17] text-white px-4 py-2 flex items-center justify-between text-[11px] font-mono">
+              <span>09:41</span>
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-signal"></i>
+                <i class="fa-solid fa-wifi"></i>
+                <i class="fa-solid fa-battery-full"></i>
+              </div>
+            </div>
+
+            <!-- Survey Content Inside Simulator -->
+            <div class="p-5 sm:p-6 space-y-6">
+              <div class="border-b border-[#EFEFEF] pb-4">
+                <div class="flex items-center gap-2 text-xs text-[#247B50] font-semibold">
+                  <span class="w-2 h-2 rounded-full bg-[#247B50]"></span>
+                  ${AEApp.escapeHtml(survey.category || 'Universal Field Survey')}
+                </div>
+                <h2 class="text-lg font-bold text-[#111613] mt-1">${AEApp.escapeHtml(survey.title)}</h2>
+                ${survey.description ? `<p class="text-xs text-[#525B56] mt-1">${AEApp.escapeHtml(survey.description)}</p>` : ''}
+              </div>
+
+              <!-- Question List -->
+              <div class="space-y-4">
+                ${questions.length === 0 ? '<div class="p-6 text-center text-xs text-[#646E68]">No questions in this survey yet. Add questions from the editor.</div>' : ''}
+                ${questions
+                  .map(
+                    (q, idx) => `
+                  <div class="p-4 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <label class="text-xs font-semibold text-[#111613]">
+                        <span class="text-[#247B50] font-mono mr-1">${idx + 1}.</span>
+                        ${AEApp.escapeHtml(q.title)}
+                        ${q.required ? '<span class="text-[#C4242A] ml-0.5">*</span>' : ''}
+                      </label>
+                      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[#646E68]">
+                        ${q.type}
+                      </span>
+                    </div>
+                    ${q.subtitle ? `<p class="text-[11px] text-[#525B56]">${AEApp.escapeHtml(q.subtitle)}</p>` : ''}
+
+                    <div class="pt-1">
+                      ${this.renderSimulatedQuestionInput(q)}
+                    </div>
+                  </div>
+                `
+                  )
+                  .join('')}
+              </div>
+
+              <!-- Submit Simulation -->
+              <div class="pt-4 border-t border-[#EFEFEF]">
+                <button onclick="window.AEApp.showToast('Simulator: Validation Passed! Form input is valid and ready for submission.', 'success')"
+                  class="w-full h-10 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white font-semibold text-xs flex items-center justify-center gap-2 ae-press">
+                  <i class="fa-solid fa-paper-plane text-xs"></i> Test Form Submission
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderSimulatedQuestionInput(q) {
+    if (q.type === 'multiple_choice' || q.type === 'dropdown') {
+      return `
+        <select class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[4px] px-2 text-[#111613]">
+          <option value="">-- Select an option --</option>
+          ${(q.options || []).map((opt) => `<option value="${AEApp.escapeAttr(opt)}">${AEApp.escapeHtml(opt)}</option>`).join('')}
+        </select>
+      `;
+    }
+    if (q.type === 'checkboxes') {
+      return `
+        <div class="space-y-1.5 pt-1">
+          ${(q.options || []).map((opt) => `
+            <label class="flex items-center gap-2 text-xs text-[#111613] cursor-pointer">
+              <input type="checkbox" class="rounded text-[#247B50] focus:ring-[#247B50]" />
+              <span>${AEApp.escapeHtml(opt)}</span>
+            </label>
+          `).join('')}
+        </div>
+      `;
+    }
+    if (q.type === 'star_rating') {
+      return `
+        <div class="flex items-center gap-1.5 text-base text-[#D97706]">
+          <i class="fa-solid fa-star cursor-pointer"></i>
+          <i class="fa-solid fa-star cursor-pointer"></i>
+          <i class="fa-solid fa-star cursor-pointer"></i>
+          <i class="fa-solid fa-star cursor-pointer"></i>
+          <i class="fa-regular fa-star cursor-pointer text-[#CFD5D0]"></i>
+          <span class="text-xs text-[#525B56] ml-2 font-mono">4.0 / 5.0</span>
+        </div>
+      `;
+    }
+    if (q.type === 'nps') {
+      return `
+        <div class="flex items-center gap-1 overflow-x-auto py-1">
+          ${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+            .map(
+              (n) => `
+            <button type="button" class="w-7 h-7 rounded-[4px] border border-[#CFD5D0] bg-white text-xs font-mono font-medium hover:bg-[#247B50] hover:text-white transition-colors">
+              ${n}
+            </button>
+          `
+            )
+            .join('')}
+        </div>
+      `;
+    }
+    if (q.type === 'number_yield') {
+      return `
+        <div class="flex items-center gap-2">
+          <input type="number" placeholder="0" class="h-8 w-32 px-2 text-xs border border-[#CFD5D0] rounded-[4px] bg-white font-mono" />
+          <span class="text-xs text-[#525B56] font-medium">${AEApp.escapeHtml(q.unit || 'units')}</span>
+        </div>
+      `;
+    }
+    if (q.type === 'gps' || q.type === 'gps_location') {
+      return `
+        <div class="flex items-center gap-2 p-2 rounded-[4px] bg-white border border-[#CFD5D0] text-xs">
+          <i class="fa-solid fa-location-dot text-[#247B50]"></i>
+          <span class="text-[#111613] font-mono">-1.2921, 36.8219</span>
+          <span class="text-[11px] text-[#646E68] ml-auto">±4m accuracy</span>
+        </div>
+      `;
+    }
+    if (q.type === 'signature') {
+      return `
+        <div class="h-16 border border-dashed border-[#CFD5D0] rounded-[4px] bg-white flex items-center justify-center text-xs text-[#A0AAA3]">
+          <i class="fa-solid fa-signature mr-1.5"></i> Touch or click to sign
+        </div>
+      `;
+    }
+    if (q.type === 'photo_camera' || q.type === 'photo_proof') {
+      return `
+        <div class="h-20 border border-dashed border-[#CFD5D0] rounded-[4px] bg-white flex flex-col items-center justify-center text-xs text-[#525B56] gap-1 cursor-pointer hover:bg-[#F4F6F4]">
+          <i class="fa-solid fa-camera text-base text-[#247B50]"></i>
+          <span>Click to capture photo or upload</span>
+        </div>
+      `;
+    }
+    return `
+      <input type="text" placeholder="${AEApp.escapeAttr(q.placeholder || 'Type your response...')}"
+        class="w-full h-8 px-2.5 text-xs border border-[#CFD5D0] rounded-[4px] bg-white focus:outline-none focus:border-[#247B50]" />
     `;
   },
 
   renderQuestionBankSidebar(survey) {
-    const groups = ['Choice questions', 'Ratings & scales', 'Agri & field telemetry', 'Open text'];
+    const groups = Array.from(new Set(QUESTION_TYPES_CATALOG.map((item) => item.group)));
     return `
       <div class="p-4 space-y-4 lg:max-h-[calc(100dvh-160px)] lg:overflow-y-auto">
+        <div class="flex items-center justify-between pb-1 border-b border-[#EFEFEF]">
+          <span class="text-xs font-semibold text-[#111613]">Question Catalog</span>
+          <span class="text-[10px] text-[#525B56] tabular-nums">Page ${this.activePageIndex + 1}</span>
+        </div>
         <p class="text-xs text-[#525B56] leading-relaxed">
-          Select a question type to append to <strong class="text-[#111613]">Page ${this.activePageIndex + 1}</strong>. All controls run offline.
+          Select a question type to append to <strong class="text-[#111613]">Page ${this.activePageIndex + 1}</strong>. Universal across commercial, public health, NGO, and agricultural domains.
         </p>
 
         ${groups
@@ -968,19 +1182,28 @@ window.AEBuilder = {
       return `
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label for="ae_q_unit_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Measurement unit</label>
-            <input id="ae_q_unit_${q.id}" type="text" maxlength="32" value="${AEApp.escapeAttr(q.unit || 'kg/acre')}"
+            <label for="ae_q_unit_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Measurement Unit</label>
+            <input id="ae_q_unit_${q.id}" type="text" maxlength="32" value="${AEApp.escapeAttr(q.unit || 'units')}"
               onchange="AEApp.updateQuestionField('${q.id}', 'unit', this.value)"
+              placeholder="e.g. units, USD, KES, kg, %, hours"
               class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613]" />
+            <div class="flex flex-wrap gap-1 mt-1.5">
+              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'units')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">units</button>
+              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'USD ($)')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">USD</button>
+              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'KES')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">KES</button>
+              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', '%')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">%</button>
+              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'hours')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">hours</button>
+              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'kg/acre')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">kg/acre</button>
+            </div>
           </div>
           <div>
-            <label for="ae_q_min_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Minimum value</label>
+            <label for="ae_q_min_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Minimum Value</label>
             <input id="ae_q_min_${q.id}" type="number" value="${q.min ?? 0}"
               onchange="AEApp.updateQuestionField('${q.id}', 'min', Number(this.value))"
               class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 tabular-nums text-[#111613]" />
           </div>
           <div>
-            <label for="ae_q_max_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Maximum value</label>
+            <label for="ae_q_max_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Maximum Value</label>
             <input id="ae_q_max_${q.id}" type="number" value="${q.max ?? 10000}"
               onchange="AEApp.updateQuestionField('${q.id}', 'max', Number(this.value))"
               class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 tabular-nums text-[#111613]" />

@@ -638,7 +638,7 @@ window.AEFieldApp = {
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-3 border-t-4" style="border-top-color: ${accent};">
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0">
-              <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+              <img src="./icons/agri_experience_logo.png"
                 alt="Agri Experience Logo"
                 class="h-8 w-auto max-w-[130px] object-contain shrink-0"
                 loading="eager"
@@ -2704,7 +2704,7 @@ window.AEFieldApp = {
 <body class="min-h-screen flex flex-col p-4 sm:p-6 max-w-2xl mx-auto">
   <header class="bg-[#141A17] text-white p-4 rounded-[10px] mb-4 flex items-center justify-between gap-3">
     <div class="flex items-center gap-3 min-w-0">
-      <img src="https://drive.google.com/thumbnail?id=1FG3ihsPb06rIDp7DcxtZQsmi9XydO9y4&sz=w1000"
+      <img src="./icons/agri_experience_logo.png"
         alt="Agri Experience Logo"
         class="h-8 w-auto max-w-[120px] object-contain rounded shrink-0"
         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />

@@ -3,7 +3,7 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.45';
+const CACHE_NAME = 'ae-survey-prod-v3.46';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -11,6 +11,7 @@ const APP_SHELL_ASSETS = [
   './field.html',
   './manifest.json',
   './manifest-collector.json',
+  './icons/agri_experience_logo.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
