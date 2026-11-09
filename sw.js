@@ -3,7 +3,7 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.57';
+const CACHE_NAME = 'ae-survey-prod-v3.58';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -12,6 +12,7 @@ const APP_SHELL_ASSETS = [
   './robots.txt',
   './sitemap.xml',
   './llms.txt',
+  './.well-known/ard.json',
   './css/tailwind.min.css',
   './manifest.json',
   './manifest-collector.json',

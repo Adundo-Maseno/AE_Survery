@@ -483,7 +483,8 @@ window.AEApp = {
                   alt="Agri Experience Limited"
                   width="95" height="40"
                   fetchpriority="high"
-                  class="h-10 w-auto object-contain"
+                  style="width: 95px; height: 40px; aspect-ratio: 95/40;"
+                  class="h-10 w-[95px] object-contain"
                   onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
               </picture>
               <div class="hidden w-10 h-10 rounded-[8px] bg-[#247B50] text-white items-center justify-center text-lg font-bold">
@@ -772,7 +773,8 @@ window.AEApp = {
               <img src="./icons/agri_experience_logo.png"
                 alt="Agri Experience Limited"
                 width="66" height="28"
-                class="h-7 w-auto max-w-[120px] object-contain shrink-0"
+                style="width: 66px; height: 28px; aspect-ratio: 66/28;"
+                class="h-7 w-[66px] object-contain shrink-0"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
             </picture>
             <span class="hidden w-6 h-6 rounded-[5px] bg-[#247B50] text-white items-center justify-center text-xs font-semibold">
@@ -829,7 +831,8 @@ window.AEApp = {
               <img src="./icons/agri_experience_logo.png"
                 alt="Agri Experience Limited"
                 width="66" height="28"
-                class="h-7 w-auto max-w-[100px] sm:max-w-[120px] object-contain shrink-0"
+                style="width: 66px; height: 28px; aspect-ratio: 66/28;"
+                class="h-7 w-[66px] object-contain shrink-0"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
             </picture>
             <span class="hidden w-6 h-6 rounded-[5px] bg-[#247B50] text-white items-center justify-center text-xs font-semibold">

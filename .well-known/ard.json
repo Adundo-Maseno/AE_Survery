@@ -1,0 +1,12 @@
+{
+  "version": "0.91",
+  "entries": [
+    {
+      "identifier": "urn:air:ae-survey.pages.dev:agent:ae-survey-field-app",
+      "displayName": "AE Survey Platform",
+      "description": "Offline-First Field & Cloud Survey Platform for Agri Experience Limited, backed by Google Sheets and Google Apps Script.",
+      "type": "text/markdown",
+      "url": "https://ae-survey.pages.dev/llms.txt"
+    }
+  ]
+}

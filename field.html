@@ -9,6 +9,7 @@
   <title>AE Field App · Agri Experience Limited</title>
 
   <link rel="manifest" href="./manifest-collector.json" />
+  <link rel="ard" href="./.well-known/ard.json" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -40,6 +41,15 @@
   </noscript>
 
   <style>
+    @font-face {
+      font-family: 'Font Awesome 6 Free';
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Font Awesome 6 Brands';
+      font-display: swap;
+    }
+
     :root {
       --ground: #F4F6F4;
       --surface: #FFFFFF;
@@ -270,10 +280,15 @@
     <!-- Left Section: Compact Brand Emblem & Active Survey Selector -->
     <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
       <div class="flex items-center shrink-0">
-        <img src="./icons/agri_experience_logo.png"
-          alt="Agri Experience Limited"
-          class="h-7 sm:h-8 w-auto max-w-[80px] sm:max-w-[120px] object-contain rounded-[4px] bg-white px-1 py-0.5 shrink-0"
-          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+        <picture>
+          <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+          <img src="./icons/agri_experience_logo.png"
+            alt="Agri Experience Limited"
+            width="66" height="28"
+            style="width: 66px; height: 28px; aspect-ratio: 66/28;"
+            class="h-7 w-[66px] object-contain rounded-[4px] bg-white px-1 py-0.5 shrink-0"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+        </picture>
         <div class="hidden w-7 h-7 sm:w-8 sm:h-8 rounded-[6px] bg-[#247B50] items-center justify-center shrink-0">
           <i class="fa-solid fa-clipboard-check text-white text-xs sm:text-sm"></i>
         </div>

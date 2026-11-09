@@ -11,6 +11,7 @@
   <title>AE Survey · Agri Experience Field Operations</title>
 
   <link rel="manifest" href="./manifest.json" />
+  <link rel="ard" href="./.well-known/ard.json" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -51,6 +52,15 @@
   </noscript>
 
   <style>
+    @font-face {
+      font-family: 'Font Awesome 6 Free';
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Font Awesome 6 Brands';
+      font-display: swap;
+    }
+
     :root {
       --ground: #F4F6F4;
       --surface: #FFFFFF;
@@ -518,7 +528,9 @@
           <picture>
             <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
             <img src="./icons/agri_experience_logo.png"
-              alt="Agri Experience Limited" width="57" height="24" loading="lazy" class="h-6 w-auto object-contain shrink-0"
+              alt="Agri Experience Limited" width="57" height="24" loading="lazy"
+              style="width: 57px; height: 24px; aspect-ratio: 57/24;"
+              class="h-6 w-[57px] object-contain shrink-0"
               onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';" />
           </picture>
           <span class="hidden w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
