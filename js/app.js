@@ -275,6 +275,12 @@ window.AEApp = {
     }
   },
 
+  getCurrentUser() {
+    return (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+  },
+
   switchStage(stage, surveyId = null) {
     this.showStudioMobileMenu = false;
     const user = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
