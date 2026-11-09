@@ -519,7 +519,84 @@
   <div id="ae_sheet_shell"
     class="flex-1 bg-white sm:mx-2 sm:mb-2 sm:rounded-[16px] border-t sm:border border-[#E4E7E4] flex flex-col justify-between">
     <main id="ae_main_viewport" tabindex="-1"
-      class="flex-1 max-w-[1320px] w-full mx-auto px-4 sm:px-6 py-6 focus:outline-none"></main>
+      class="flex-1 max-w-[1320px] w-full mx-auto px-4 sm:px-6 py-6 focus:outline-none">
+      <div class="py-8 px-4 flex flex-col items-center justify-center min-h-[70vh]">
+        <div class="max-w-md w-full bg-white border border-[#E4E7E4] rounded-[16px] p-6 sm:p-8 space-y-6">
+          <!-- Logo & Brand Header -->
+          <div class="text-center space-y-3">
+            <div class="flex items-center justify-center">
+              <picture>
+                <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+                <img src="./icons/agri_experience_logo.png"
+                  alt="Agri Experience Limited"
+                  width="95" height="40"
+                  fetchpriority="high"
+                  style="width: 95px; height: 40px; aspect-ratio: 95/40;"
+                  class="h-10 w-[95px] object-contain"
+                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+              </picture>
+              <div class="hidden w-10 h-10 rounded-[8px] bg-[#247B50] text-white items-center justify-center text-lg font-bold">
+                <i class="fa-solid fa-seedling"></i>
+              </div>
+            </div>
+            <div>
+              <h2 class="text-xl font-bold text-[#111613] tracking-tight">Operations Portal Login</h2>
+              <p class="text-xs text-[#525B56] mt-1">Sign in with your staff account and 4-digit security PIN</p>
+            </div>
+          </div>
+
+          <!-- Login Form -->
+          <form onsubmit="event.preventDefault(); AEApp.handleLoginSubmit();" class="space-y-4">
+            <div>
+              <label for="ae_login_person_select" class="block text-xs font-semibold text-[#111613] mb-1.5">
+                Staff Identity / Account
+              </label>
+              <select id="ae_login_person_select"
+                class="w-full h-10 px-3 text-xs text-[#111613] bg-white rounded-[6px] border border-[#CFD5D0] focus:border-[#247B50] focus:outline-none font-medium">
+                <optgroup label="HQ Operations Administrators">
+                  <option value="ADM-01" selected>Moses Adundo (ADM-01) · Admin</option>
+                  <option value="ADM-02">Aline Ochieng (ADM-02) · Admin</option>
+                </optgroup>
+                <optgroup label="Regional Supervisors">
+                  <option value="SUP-01">Peter Kamau (SUP-01) · Nakuru Hub</option>
+                  <option value="SUP-02">Brenda Achieng (SUP-02) · Uasin Gishu Hub</option>
+                </optgroup>
+                <optgroup label="Field Enumerators">
+                  <option value="ENUM-01">Faith Chebet (ENUM-01) · Nakuru</option>
+                  <option value="ENUM-02">Grace Wanjiku (ENUM-02) · Nyandarua</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label for="ae_login_pin" class="text-xs font-semibold text-[#111613]">
+                  Security PIN
+                </label>
+                <span class="text-[11px] text-[#525B56]">4 Digits (Demo: 1234)</span>
+              </div>
+              <input type="password" id="ae_login_pin" maxlength="4" pattern="[0-9]*" inputmode="numeric"
+                autocomplete="current-password" placeholder="••••" required
+                class="w-full h-11 px-3 text-center text-lg tracking-[0.5em] text-[#111613] bg-white rounded-[6px] border border-[#CFD5D0] focus:border-[#247B50] focus:outline-none font-bold" />
+            </div>
+
+            <button type="submit"
+              class="w-full h-11 rounded-[6px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2 ae-press shadow-xs">
+              <span>Sign In to Workspace</span>
+              <i class="fa-solid fa-arrow-right text-xs"></i>
+            </button>
+          </form>
+
+          <div class="pt-2 border-t border-[#EFEFEF] flex items-center justify-between text-xs text-[#525B56]">
+            <a href="./field.html" class="font-medium text-[#247B50] hover:underline flex items-center gap-1.5">
+              <i class="fa-solid fa-mobile-screen"></i>
+              <span>Launch Field Collector App</span>
+            </a>
+            <span class="text-[11px] text-[#A3ACA6]">Air-Gapped Offline Ready</span>
+          </div>
+        </div>
+      </div>
+    </main>
 
     <!-- Quiet Sheet Footer -->
     <footer class="border-t border-[#EFEFEF] px-4 sm:px-6 py-3.5 mt-10">
@@ -553,16 +630,16 @@
     class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
 
   <!-- Application Scripts (Deferred for instant paint and non-blocking execution) -->
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script defer src="./js/qrcode.js"></script>
   <script defer src="./js/db.js"></script>
   <script defer src="./js/i18n.js"></script>
+  <script defer src="./js/app.js"></script>
+  <script defer src="./js/qrcode.js"></script>
   <script defer src="./js/builder.js"></script>
   <script defer src="./js/collector.js"></script>
   <script defer src="./js/chart.umd.min.js"></script>
   <script defer src="./js/analytics.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script defer src="./js/app.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 </body>
 
 </html>

@@ -2,5 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://ae-survey.pages.dev/sitemap.xml
-Agentmap: https://ae-survey.pages.dev/.well-known/ard.json
 
