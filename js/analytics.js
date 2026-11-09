@@ -1939,6 +1939,24 @@ window.AEAnalytics = {
     const avgDuration = durations.length > 0 ? Math.round(window.AEStats.mean(durations)) : 0;
     const medianDuration = durations.length > 0 ? Math.round(window.AEStats.median(durations)) : 0;
 
+    // Dynamic Interview Velocity & Pacing Targets (Cutoff: <2.5s/q, Target: ~30s/q)
+    const totalQ = Math.max(1, (survey?.pages || []).flatMap((p) => p.questions || []).length || survey?.questions?.length || 10);
+    const minSpeederSec = Math.max(15, Math.round(totalQ * 2.5));
+    const targetDurationSec = Math.max(60, Math.round(totalQ * 30));
+    const targetLabel = targetDurationSec >= 60
+      ? (targetDurationSec % 60 === 0 ? `${Math.floor(targetDurationSec / 60)}m` : `${Math.floor(targetDurationSec / 60)}m ${targetDurationSec % 60}s`)
+      : `${targetDurationSec}s`;
+
+    let paceBadgeText = `Target Pace (≤${targetLabel})`;
+    let paceBadgeClass = 'bg-[#DCFAE5] text-[#04250E]';
+    if (medianDuration > 0 && medianDuration < minSpeederSec) {
+      paceBadgeText = `Speeder Alert (<${minSpeederSec}s)`;
+      paceBadgeClass = 'bg-[#FFEDEA] text-[#831C1E] border border-[#F5C2C0]';
+    } else if (medianDuration > targetDurationSec) {
+      paceBadgeText = `Pacing Alert (>${targetLabel})`;
+      paceBadgeClass = 'bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]';
+    }
+
     // Dynamic Primary Continuous Metric
     const numQs = this.getNumericQuestions(survey);
     const primaryNumQ = numQs.find((q) => q.id === 'q_yield_kg') || numQs[0];
@@ -2012,17 +2030,20 @@ window.AEAnalytics = {
           <div class="p-4 bg-white">
             <div class="flex items-center justify-between text-xs text-[#525B56]">
               <span>Median Duration</span>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${medianDuration <= 720 ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'}">
-                ${medianDuration <= 720 ? 'Target Pace (≤12m)' : 'Pacing Alert'}
+              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${paceBadgeClass}">
+                ${paceBadgeText}
               </span>
             </div>
             <div class="mt-2 flex items-baseline gap-2">
               <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${medianDuration}" data-suffix="s">
                 ${Math.floor(medianDuration / 60)}m ${medianDuration % 60}s
               </strong>
-              <span class="text-xs text-[#525B56]">mean ${Math.floor(avgDuration / 60)}m</span>
+              <span class="text-xs text-[#525B56]">mean ${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s</span>
             </div>
-            <div class="text-[11px] text-[#646E68] mt-2">Trimmed interquartile speed</div>
+            <div class="text-[11px] text-[#646E68] mt-2 flex items-center justify-between">
+              <span>Target: ~30s/q (${targetLabel})</span>
+              <span class="text-[10px] text-[#8C9590]">Min: 2.5s/q (${minSpeederSec}s)</span>
+            </div>
           </div>
 
           <!-- Metric 4: Yield / Continuous Output -->
@@ -4920,14 +4941,35 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   // TAB: DATA QUALITY, SPEEDER & FRAUD FORENSICS AUDIT
   // --------------------------------------------------------------------------
-  auditDataQuality(responses) {
+  auditDataQuality(responses, survey) {
     if (!responses || responses.length === 0) {
-      return { score: 100, speeders: [], straightLiners: [], collisions: [], enumAudit: {}, durations: [] };
+      return {
+        healthScore: 100,
+        totalQuestions: 10,
+        speederThreshold: 25,
+        targetDurationSec: 300,
+        medianDur: 0,
+        speeders: [],
+        straightLiners: [],
+        gpsCollisions: [],
+        flaggedCount: 0,
+        enumAudit: {},
+        durations: []
+      };
     }
 
-    const durations = responses.map((r) => r.durationSec || 600).filter((d) => d > 0);
-    const medianDur = window.AEStats.median(durations);
-    const speederThreshold = Math.max(120, medianDur / 3);
+    const totalQuestions = Math.max(
+      1,
+      (survey?.pages || []).flatMap((p) => p.questions || []).length ||
+      survey?.questions?.length ||
+      (this.currentSurvey?.pages || []).flatMap((p) => p.questions || []).length ||
+      10
+    );
+    const speederThreshold = Math.max(15, Math.round(totalQuestions * 2.5));
+    const targetDurationSec = Math.max(60, Math.round(totalQuestions * 30));
+
+    const durations = responses.map((r) => Number(r.durationSec) || 0).filter((d) => d > 0);
+    const medianDur = durations.length > 0 ? Math.round(window.AEStats.median(durations)) : targetDurationSec;
 
     const speeders = [];
     const straightLiners = [];
@@ -4942,13 +4984,14 @@ window.AEAnalytics = {
         enumAudit[e] = { total: 0, speeders: 0, straightLining: 0, collisions: 0, durations: [] };
       }
       enumAudit[e].total++;
-      enumAudit[e].durations.push(r.durationSec || 600);
+      const dur = Number(r.durationSec) || 0;
+      if (dur > 0) enumAudit[e].durations.push(dur);
 
-      if ((r.durationSec || 600) < speederThreshold) {
+      if (dur > 0 && dur < speederThreshold) {
         speeders.push({
           id: r.id || r.clientResponseId,
           enumerator: e,
-          durationSec: r.durationSec || 600,
+          durationSec: dur,
           submittedAt: r.submittedAt
         });
         enumAudit[e].speeders++;
@@ -4991,8 +5034,10 @@ window.AEAnalytics = {
 
     return {
       healthScore,
+      totalQuestions,
+      targetDurationSec,
       medianDur,
-      speederThreshold: Math.round(speederThreshold),
+      speederThreshold,
       speeders,
       straightLiners,
       gpsCollisions,
@@ -5007,11 +5052,11 @@ window.AEAnalytics = {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
     }
 
-    const audit = this.auditDataQuality(responses);
+    const audit = this.auditDataQuality(responses, survey);
 
     const enumRows = Object.entries(audit.enumAudit)
       .map(([name, d]) => {
-        const median = window.AEStats.median(d.durations);
+        const median = d.durations.length > 0 ? window.AEStats.median(d.durations) : 0;
         const issues = d.speeders + d.straightLining + d.collisions;
         const grade = issues === 0 ? 'A+' : issues === 1 ? 'A' : issues <= 3 ? 'B' : 'Needs Review';
         const gradeClass =
@@ -5024,6 +5069,10 @@ window.AEAnalytics = {
       })
       .sort((a, b) => b.total - a.total);
 
+    const targetMin = Math.floor(audit.targetDurationSec / 60);
+    const targetSec = audit.targetDurationSec % 60;
+    const targetLabel = targetMin > 0 ? (targetSec > 0 ? `${targetMin}m ${targetSec}s` : `${targetMin}m`) : `${targetSec}s`;
+
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
         <!-- Header -->
@@ -5031,7 +5080,7 @@ window.AEAnalytics = {
           <div>
             <h2 class="text-base font-semibold text-[#111613]">Data Quality, Speeder Detection &amp; Interview Integrity Forensics</h2>
             <p class="text-xs text-[#525B56] mt-0.5">
-              Automated fraud screening: log-normal duration speeder detection, straight-lining variance analysis, and GPS collision audits.
+              Automated fraud screening: dynamic duration velocity cutoff (&lt;2.5s/q = ${audit.speederThreshold}s for ${audit.totalQuestions} questions; target ~30s/q = ${targetLabel}), straight-lining variance analysis, and GPS collision audits.
             </p>
           </div>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
@@ -5048,8 +5097,14 @@ window.AEAnalytics = {
             <strong class="text-base text-[#247B50] font-mono tabular-nums mt-0.5 block">${audit.healthScore} / 100</strong>
           </div>
           <div>
-            <span class="text-[#525B56] block">Speeder Cutoff</span>
-            <strong class="text-base text-[#111613] font-mono tabular-nums mt-0.5 block">&lt; ${Math.round(audit.speederThreshold / 60)}m (${audit.speeders.length} flagged)</strong>
+            <span class="text-[#525B56] block">Speeder Cutoff (&lt;2.5s/q)</span>
+            <strong class="text-base ${audit.speeders.length > 0 ? 'text-[#C4242A]' : 'text-[#111613]'} font-mono tabular-nums mt-0.5 block">&lt; ${audit.speederThreshold}s (${audit.speeders.length} flagged)</strong>
+            <span class="text-[10px] text-[#646E68]">${audit.totalQuestions} questions × 2.5s</span>
+          </div>
+          <div>
+            <span class="text-[#525B56] block">Target Interview Pace</span>
+            <strong class="text-base text-[#111613] font-mono tabular-nums mt-0.5 block">${targetLabel}</strong>
+            <span class="text-[10px] text-[#646E68]">~30s/q standard</span>
           </div>
           <div>
             <span class="text-[#525B56] block">Straight-Lining Flags</span>
@@ -5059,17 +5114,13 @@ window.AEAnalytics = {
             <span class="text-[#525B56] block">GPS Geotag Collisions</span>
             <strong class="text-base text-[#111613] font-mono tabular-nums mt-0.5 block">${audit.gpsCollisions.length} duplicates</strong>
           </div>
-          <div>
-            <span class="text-[#525B56] block">Clean Pass Rate</span>
-            <strong class="text-base text-[#247B50] font-mono tabular-nums mt-0.5 block">${Math.round(((responses.length - audit.flaggedCount) / responses.length) * 100)}%</strong>
-          </div>
         </div>
 
         <!-- Duration Distribution Histogram Canvas -->
         <div class="space-y-2">
           <div class="flex items-center justify-between">
-            <div class="text-xs font-semibold text-[#111613]">Interview Duration Distribution &amp; Speeder Cutoff Threshold</div>
-            <span class="text-[11px] text-[#525B56]">Median: ${Math.round(audit.medianDur / 60)}m · Speeder threshold &lt; ${Math.round(audit.speederThreshold / 60)}m</span>
+            <div class="text-xs font-semibold text-[#111613]">Interview Duration Distribution &amp; Velocity Speeder Cutoff</div>
+            <span class="text-[11px] text-[#525B56]">Median: ${Math.floor(audit.medianDur / 60)}m ${audit.medianDur % 60}s · Speeder cutoff: &lt; ${audit.speederThreshold}s · Target: ≤ ${targetLabel}</span>
           </div>
           <div class="h-56 w-full p-2 border border-[#E4E7E4] rounded-[6px] bg-white">
             <canvas id="ae_forensics_chart"></canvas>
@@ -5390,24 +5441,27 @@ window.AEAnalytics = {
     });
   },
 
-  mountForensicsChart(responses) {
+  mountForensicsChart(responses, survey) {
     const canvas = document.getElementById('ae_forensics_chart');
     if (!canvas || typeof window.Chart === 'undefined') return;
 
-    const audit = this.auditDataQuality(responses);
+    const audit = this.auditDataQuality(responses, survey);
     const dpr = this.getOptimalDevicePixelRatio();
 
-    const binSize = 180;
+    const maxDur = Math.max(...(audit.durations.length > 0 ? audit.durations : [audit.targetDurationSec]), audit.targetDurationSec * 1.5, 300);
+    const binSize = maxDur > 1200 ? 120 : (maxDur > 600 ? 60 : 30);
+    const maxBin = Math.min(3600, Math.ceil(maxDur / binSize) * binSize);
+
     const bins = {};
-    for (let b = 0; b <= 1800; b += binSize) {
-      const lbl = `${Math.floor(b / 60)}–${Math.floor((b + binSize) / 60)}m`;
+    for (let b = 0; b <= maxBin; b += binSize) {
+      const lbl = binSize < 60 ? `${b}–${b + binSize}s` : `${Math.floor(b / 60)}–${Math.floor((b + binSize) / 60)}m`;
       bins[lbl] = 0;
     }
 
     audit.durations.forEach((d) => {
       const bucketIdx = Math.floor(d / binSize) * binSize;
-      const bKey = Math.min(1800, bucketIdx);
-      const lbl = `${Math.floor(bKey / 60)}–${Math.floor((bKey + binSize) / 60)}m`;
+      const bKey = Math.min(maxBin, bucketIdx);
+      const lbl = binSize < 60 ? `${bKey}–${bKey + binSize}s` : `${Math.floor(bKey / 60)}–${Math.floor((bKey + binSize) / 60)}m`;
       if (bins[lbl] !== undefined) bins[lbl]++;
     });
 
@@ -5426,9 +5480,9 @@ window.AEAnalytics = {
           {
             label: 'Interview Frequency',
             data,
-            backgroundColor: labels.map((l) => {
-              const startMin = parseInt(l, 10);
-              return startMin < audit.speederThreshold / 60 ? '#DC2626' : '#247B50';
+            backgroundColor: labels.map((l, idx) => {
+              const startSec = idx * binSize;
+              return startSec < audit.speederThreshold ? '#DC2626' : '#247B50';
             }),
             borderRadius: 4,
             maxBarThickness: 32
@@ -5444,8 +5498,8 @@ window.AEAnalytics = {
           tooltip: {
             callbacks: {
               afterLabel(ctx) {
-                const startMin = parseInt(ctx.label, 10);
-                return startMin < audit.speederThreshold / 60 ? 'Speeder risk zone' : 'Normal pacing';
+                const startSec = ctx.dataIndex * binSize;
+                return startSec < audit.speederThreshold ? `Speeder cutoff (<${audit.speederThreshold}s)` : 'Normal interview velocity';
               }
             }
           }
@@ -5825,7 +5879,7 @@ window.AEAnalytics = {
 
     // Mount Forensics Duration Histogram if container is present
     if (this.activeTab === 'forensics') {
-      this.mountForensicsChart(responses);
+      this.mountForensicsChart(responses, survey);
     }
   },
 

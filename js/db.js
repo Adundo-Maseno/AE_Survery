@@ -2976,13 +2976,13 @@ class AESurveyStore {
     const duration = Math.max(0, Number(response.durationSec) || 0);
     const questions = this.getQuestionsForSurvey(survey);
 
-    // 1. Speeder Pacing Check (<45s total or <2.5s per question)
-    const minExpectedDuration = Math.max(45, Math.round(questions.length * 2.5));
+    // 1. Speeder Pacing Check (<2.5s per question velocity cutoff, min 15s)
+    const minExpectedDuration = Math.max(15, Math.round(questions.length * 2.5));
     if (duration > 0 && duration < minExpectedDuration) {
       flags.push({
         code: 'SPEEDER',
         severity: 'warning',
-        label: `Speeder interview (${duration}s vs expected min ${minExpectedDuration}s)`
+        label: `Speeder interview (${duration}s vs expected min ${minExpectedDuration}s based on <2.5s/q)`
       });
     }
 
@@ -3549,7 +3549,7 @@ class AESurveyStore {
     }
 
     // Compute automated data quality flags & calculated metrics
-    const durationSec = Math.max(0, Number(responsePayload.durationSec) || 45);
+    const durationSec = Math.max(0, Number(responsePayload.durationSec) >= 0 ? Number(responsePayload.durationSec) : 0);
     const rawFlags = Array.isArray(responsePayload.qaFlags) ? responsePayload.qaFlags : [];
     const automatedFlags = this.evaluateDataQuality(survey, {
       ...responsePayload,

@@ -1413,7 +1413,8 @@ window.AEFieldApp = {
 
       const allQ = window.aeStore.getQuestionsForSurvey(survey);
       const durationSec = Math.max(1, Math.round((Date.now() - (this.startedAtMs || Date.now())) / 1000));
-      const minPlausibleSec = Math.max(12, Math.round(allQ.length * 1.5));
+      const minPlausibleSec = Math.max(15, Math.round(allQ.length * 2.5));
+      const targetDurationSec = Math.max(60, Math.round(allQ.length * 30));
       const isSpeeder = durationSec < minPlausibleSec;
       const qaFlags = isSpeeder ? ['SPEEDER_INTERVIEW'] : ['VERIFIED_PACING'];
 
