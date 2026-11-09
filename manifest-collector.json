@@ -2,10 +2,11 @@
   "name": "AE Field Collector · Agri Experience Limited",
   "short_name": "AE Collector",
   "description": "Dedicated offline field data collection application for Agri Experience enumerators, featuring satellite GPS, agronomic converters, and Google Sheets cloud sync.",
-  "id": "/field",
+  "id": "./field",
   "start_url": "./field",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#F4F6F4",
   "theme_color": "#141A17",
   "orientation": "any",
@@ -36,12 +37,36 @@
       "purpose": "maskable"
     }
   ],
+  "screenshots": [
+    {
+      "src": "./assets/screenshots/field-wide.png",
+      "sizes": "1440x900",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "AE Field Collector Questionnaire & Map View"
+    },
+    {
+      "src": "./assets/screenshots/field-narrow.png",
+      "sizes": "375x812",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Offline Field Data Collection & GPS Plot Capture"
+    }
+  ],
   "shortcuts": [
     {
       "name": "Start New Survey",
       "short_name": "New Survey",
       "description": "Open field collector directly to questionnaire",
-      "url": "./field#new"
+      "url": "./field#new",
+      "icons": [{ "src": "./icons/field-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Sync Offline Outbox",
+      "short_name": "Sync Data",
+      "description": "Trigger instant cloud sync with Google Sheets",
+      "url": "./field#sync",
+      "icons": [{ "src": "./icons/field-192.png", "sizes": "192x192" }]
     }
   ]
 }

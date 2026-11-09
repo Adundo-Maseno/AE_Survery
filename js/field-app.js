@@ -459,15 +459,14 @@ window.AEFieldApp = {
     }
 
     const installBtn = document.getElementById('ae_hdr_install_btn');
-    const installLabel = document.getElementById('ae_hdr_install_label');
-    if (installBtn && installLabel) {
+    if (installBtn) {
       if (this.isAppInstalled) {
-        installBtn.className = 'h-8 px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] inline-flex items-center gap-1.5 pointer-events-none';
+        installBtn.className = 'h-8 px-2 sm:px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] inline-flex items-center gap-1.5 pointer-events-none shrink-0';
         installBtn.innerHTML = `<i class="fa-solid fa-circle-check text-xs text-[#3FC07A]"></i><span class="hidden sm:inline">${this.t('installed')}</span>`;
       } else {
         const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        installBtn.className = 'h-8 px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
-        installLabel.textContent = isIos ? this.t('addToHome') : this.t('installApp');
+        installBtn.className = 'h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0 ae-press';
+        installBtn.innerHTML = `<i class="fa-solid fa-mobile-screen-button text-xs"></i><span class="hidden xs:inline sm:inline" id="ae_hdr_install_label">${isIos ? this.t('addToHome') : this.t('installApp')}</span>`;
       }
     }
 
@@ -949,13 +948,17 @@ window.AEFieldApp = {
             ${
               isCapturing
                 ? `<span class="text-xs font-semibold text-[#247B50] inline-flex items-center gap-1.5">
-                    <i class="fa-solid fa-satellite-dish"></i> ${this.t('searchingConstellation')}
+                    <i class="fa-solid fa-satellite-dish animate-pulse"></i> ${this.t('searchingConstellation')}
                   </span>`
                 : isLocked
-                ? `<div class="flex flex-wrap items-center gap-1.5 text-xs font-semibold tabular-nums text-[#04250E] bg-[#DCFAE5] px-2.5 py-1.5 rounded-[4px] border border-[#247B50]/30">
-                    <i class="fa-solid fa-circle-check text-[#247B50]"></i>
+                ? `<div class="flex flex-wrap items-center gap-1.5 text-xs font-semibold tabular-nums ${
+                    gps.accuracy != null && gps.accuracy <= 15
+                      ? 'text-[#04250E] bg-[#DCFAE5] border-[#247B50]/30'
+                      : 'text-[#8C3A00] bg-[#FFF0E6] border-[#FF8447]/40'
+                  } px-2.5 py-1.5 rounded-[4px] border">
+                    <i class="fa-solid ${gps.accuracy != null && gps.accuracy <= 15 ? 'fa-circle-check text-[#247B50]' : 'fa-triangle-exclamation text-[#FF8447]'}"></i>
                     <span>${this.t('gpsLocked')}: <code>${gps.lat}, ${gps.lng}</code></span>
-                    <span class="text-[#247B50] font-normal">(${gps.accuracy ? '±' + gps.accuracy + 'm' : ''}${gps.altitude ? ' · Alt ' + gps.altitude + 'm' : ''} · ${gps.manual ? 'Manual Entry' : 'GNSS Hardware'})</span>
+                    <span class="font-normal">(${gps.accuracy != null ? (gps.accuracy <= 15 ? 'Plot-Grade ±' + gps.accuracy + 'm' : 'Rural Canopy Alert ±' + gps.accuracy + 'm') : 'Fix Locked'}${gps.altitude ? ' · Alt ' + gps.altitude + 'm' : ''} · ${gps.manual ? 'Manual Entry' : 'GNSS Hardware'})</span>
                   </div>`
                 : `<span class="text-xs text-[#525B56]">${this.t('gpsOfflineNote')}</span>`
             }
@@ -1705,6 +1708,10 @@ window.AEFieldApp = {
   },
 
   promptInstall() {
+    if (this.isAppInstalled) {
+      this.showToast('AE Field Collector is running in standalone installed app mode.', 'success');
+      return;
+    }
     if (this.deferredInstallPrompt) {
       this.deferredInstallPrompt.prompt();
       this.deferredInstallPrompt.userChoice.then((choice) => {
@@ -2442,12 +2449,56 @@ window.AEFieldApp = {
     `;
   },
 
-  startAudioRecording(questionId) {
-    this.recordingAudioQId = questionId;
-    this.render();
-    this.showToast('Microphone live: Recording testimony…', 'info');
+  async startAudioRecording(questionId) {
+    if (this._audioRecorder && this._audioRecorder.state !== 'inactive') {
+      try { this._audioRecorder.stop(); } catch (e) {}
+    }
+    if (this._audioInterval) clearInterval(this._audioInterval);
 
-    // Simulate audio capture recorder
+    this.recordingAudioQId = questionId;
+    this._audioChunks = [];
+    this._audioStartTime = Date.now();
+    this.render();
+
+    try {
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this._audioStream = stream;
+
+        const mimeTypes = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/ogg;codecs=opus',
+          'audio/mp4',
+          'audio/aac'
+        ];
+        const selectedMime = mimeTypes.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+        const options = selectedMime ? { mimeType: selectedMime } : {};
+
+        const recorder = new MediaRecorder(stream, options);
+        this._audioRecorder = recorder;
+        this._audioMimeType = recorder.mimeType || selectedMime || 'audio/webm';
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            this._audioChunks.push(e.data);
+          }
+        };
+
+        recorder.onerror = (err) => {
+          console.warn('[AE Audio] Recorder error:', err);
+        };
+
+        recorder.start(500);
+        this.showToast('Microphone live: Recording testimony…', 'info');
+      } else {
+        this.showToast('Audio recording hardware not supported on this browser. Voice memo timer started.', 'info');
+      }
+    } catch (err) {
+      console.warn('[AE Audio] Microphone access denied or unavailable:', err);
+      this.showToast('Microphone access unavailable or denied. Standby timer active.', 'warning');
+    }
+
     let elapsed = 0;
     this._audioInterval = setInterval(() => {
       elapsed++;
@@ -2457,32 +2508,85 @@ window.AEFieldApp = {
         const s = elapsed % 60;
         const mm = m < 10 ? '0' + m : String(m);
         const ss = s < 10 ? '0' + s : String(s);
-        el.textContent = `${mm}:${ss} / 02:00`;
+        el.textContent = `${mm}:${ss} / 05:00`;
       }
-      if (elapsed >= 120) {
+      if (elapsed >= 300) {
         this.stopAudioRecording(questionId);
       }
     }, 1000);
   },
 
   async stopAudioRecording(questionId) {
-    if (this._audioInterval) clearInterval(this._audioInterval);
+    if (this._audioInterval) {
+      clearInterval(this._audioInterval);
+      this._audioInterval = null;
+    }
+
+    const elapsedSec = this._audioStartTime ? Math.max(1, Math.round((Date.now() - this._audioStartTime) / 1000)) : 10;
+    this._audioStartTime = null;
     this.recordingAudioQId = null;
 
     const mediaId = 'aud_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
-    // Lightweight mock webm audio data URL
-    const audioDataUrl = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-    if (window.aeStore && typeof window.aeStore.saveMediaBlob === 'function') {
-      await window.aeStore.saveMediaBlob(mediaId, audioDataUrl, 'audio/wav');
+    const mimeType = this._audioMimeType || 'audio/webm';
+
+    let dataUrl = '';
+    let blobSize = 0;
+
+    if (this._audioRecorder && this._audioRecorder.state !== 'inactive') {
+      await new Promise((resolve) => {
+        this._audioRecorder.onstop = resolve;
+        try {
+          this._audioRecorder.stop();
+        } catch (e) {
+          resolve();
+        }
+      });
+    }
+
+    if (this._audioStream) {
+      try {
+        this._audioStream.getTracks().forEach((track) => track.stop());
+      } catch (e) {}
+      this._audioStream = null;
+    }
+    this._audioRecorder = null;
+
+    if (this._audioChunks && this._audioChunks.length > 0) {
+      const audioBlob = new Blob(this._audioChunks, { type: mimeType });
+      blobSize = audioBlob.size;
+      this._audioChunks = [];
+
+      try {
+        dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(audioBlob);
+        });
+      } catch (e) {
+        console.warn('[AE Audio] Failed to convert blob to data URL:', e);
+      }
+
+      if (window.aeStore && typeof window.aeStore.saveMediaBlob === 'function') {
+        await window.aeStore.saveMediaBlob(mediaId, dataUrl || audioBlob, mimeType);
+      }
+    } else {
+      dataUrl = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+      if (window.aeStore && typeof window.aeStore.saveMediaBlob === 'function') {
+        await window.aeStore.saveMediaBlob(mediaId, dataUrl, 'audio/wav');
+      }
     }
 
     this.setAnswer(questionId, {
       mediaId,
-      dataUrl: audioDataUrl,
-      durationSec: 14,
+      dataUrl,
+      mimeType,
+      durationSec: elapsedSec,
+      sizeBytes: blobSize,
       capturedAt: new Date().toISOString()
     });
-    this.showToast('Voice memo saved to offline storage.', 'success');
+    this.showToast(`Voice memo saved (${elapsedSec}s) to offline storage.`, 'success');
+    this.render();
   },
 
   clearAudioRecording(questionId) {
@@ -2883,6 +2987,10 @@ window.AEFieldApp = {
     }
 
     if (this.showIosInstallModal) {
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const isDesktop = !isIos && !isAndroid;
+
       modalRoot.innerHTML = `
         <div data-ui="modal-overlay"
           onclick="if(event.target===this) AEFieldApp.closeModals()"
@@ -2894,8 +3002,8 @@ window.AEFieldApp = {
                   <i class="fa-solid fa-mobile-screen-button text-sm"></i>
                 </div>
                 <div>
-                  <h3 class="text-sm font-semibold text-[#111613]">${this.t('installCollector')}</h3>
-                  <p class="text-xs text-[#525B56]">${this.t('appleInstructions')}</p>
+                  <h3 class="text-sm font-semibold text-[#111613]">Install Field Collector</h3>
+                  <p class="text-xs text-[#525B56]">${isIos ? 'Apple Safari instructions' : isAndroid ? 'Android Chrome instructions' : 'Desktop / PC instructions'}</p>
                 </div>
               </div>
               <button onclick="AEFieldApp.closeModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
@@ -2905,18 +3013,46 @@ window.AEFieldApp = {
 
             <div class="space-y-2 text-xs text-[#111613]">
               <div class="p-3.5 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] space-y-3">
-                <div class="flex items-start gap-2.5">
-                  <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
-                  <span>Tap the <strong>Share</strong> button <i class="fa-solid fa-arrow-up-from-bracket text-[#247B50] mx-0.5"></i> in Safari toolbar.</span>
-                </div>
-                <div class="flex items-start gap-2.5">
-                  <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
-                  <span>Scroll down and tap <strong>"Add to Home Screen"</strong> <i class="fa-regular fa-square-plus text-[#247B50] mx-0.5"></i>.</span>
-                </div>
-                <div class="flex items-start gap-2.5">
-                  <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
-                  <span>Tap <strong>Add</strong> in the top-right corner. The app will launch standalone without browser bars and run 100% offline.</span>
-                </div>
+                ${
+                  isIos
+                    ? `<div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                        <span>Tap the <strong>Share</strong> button <i class="fa-solid fa-arrow-up-from-bracket text-[#247B50] mx-0.5"></i> in Safari toolbar.</span>
+                      </div>
+                      <div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                        <span>Scroll down and tap <strong>"Add to Home Screen"</strong> <i class="fa-regular fa-square-plus text-[#247B50] mx-0.5"></i>.</span>
+                      </div>
+                      <div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                        <span>Tap <strong>Add</strong> in top-right. Launches standalone without browser bars and works 100% offline.</span>
+                      </div>`
+                    : isAndroid
+                    ? `<div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                        <span>Tap the <strong>three dots menu</strong> (⋮) in the top-right corner of Chrome.</span>
+                      </div>
+                      <div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                        <span>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</span>
+                      </div>
+                      <div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                        <span>Confirm <strong>Install</strong>. The native app icon will appear on your app drawer and home screen.</span>
+                      </div>`
+                    : `<div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                        <span>Look at the right side of your browser address bar for the <strong>Install icon</strong> <i class="fa-solid fa-download text-[#247B50] mx-0.5"></i>.</span>
+                      </div>
+                      <div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                        <span>Click <strong>Install</strong> to install AE Field Collector to your desktop/dock.</span>
+                      </div>
+                      <div class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-[#141A17] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                        <span>Launches in its own native frameless window with offline storage.</span>
+                      </div>`
+                }
               </div>
             </div>
 

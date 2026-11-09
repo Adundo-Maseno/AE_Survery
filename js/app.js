@@ -34,6 +34,8 @@ window.AEApp = {
   showResetPinPersonnel: null,
   showAssignTeamSurveyId: null,
   showStudioMobileMenu: false,
+  deferredInstallPrompt: null,
+  isAppInstalled: false,
   loginSelectedPersonId: 'ADM-01',
   loginError: '',
 
@@ -59,6 +61,26 @@ window.AEApp = {
     // Register Service Worker for offline PWA capability
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+
+    // PWA Install prompt lifecycle
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredInstallPrompt = e;
+      const currentUser = this.getCurrentUser();
+      if (currentUser) this.renderHeaderBar(currentUser);
+    });
+
+    window.addEventListener('appinstalled', () => {
+      this.deferredInstallPrompt = null;
+      this.isAppInstalled = true;
+      this.showToast('Agri Experience Studio installed to your device.', 'success');
+      const currentUser = this.getCurrentUser();
+      if (currentUser) this.renderHeaderBar(currentUser);
+    });
+
+    if ((typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true) {
+      this.isAppInstalled = true;
     }
 
     // Listen for browser online/offline transitions
@@ -222,6 +244,35 @@ window.AEApp = {
   toggleStudioMobileMenu() {
     this.showStudioMobileMenu = !this.showStudioMobileMenu;
     this.renderModals();
+  },
+
+  promptInstall() {
+    if (this.isAppInstalled) {
+      this.showToast('Agri Experience Studio is running as an installed desktop app.', 'success');
+      return;
+    }
+    if (this.deferredInstallPrompt) {
+      this.deferredInstallPrompt.prompt();
+      this.deferredInstallPrompt.userChoice.then((choice) => {
+        if (choice && choice.outcome === 'accepted') {
+          this.isAppInstalled = true;
+          this.deferredInstallPrompt = null;
+          const user = this.getCurrentUser();
+          if (user) this.renderHeaderBar(user);
+          this.showToast('AE Survey Studio installed.', 'success');
+        }
+      });
+    } else {
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      if (isIos) {
+        alert('To install Agri Experience Studio on iOS:\n1. Tap the Share button in Safari\n2. Tap "Add to Home Screen"');
+      } else if (isMac) {
+        alert('To install Agri Experience Studio on macOS:\n1. In Safari: File > Add to Dock\n2. In Chrome: click the Install icon in the address bar');
+      } else {
+        alert('To install Agri Experience Studio:\nClick the Install icon in the right corner of your browser address bar or select "Install Agri Experience" from the browser menu (⋮).');
+      }
+    }
   },
 
   switchStage(stage, surveyId = null) {
@@ -784,6 +835,17 @@ window.AEApp = {
 
           <!-- Desktop-Only Action Cluster (hidden on sm: and below) -->
           <div class="hidden sm:flex items-center gap-1.5 lg:gap-2 shrink-0">
+            ${
+              !this.isAppInstalled
+                ? `<button onclick="AEApp.promptInstall()"
+                    title="Install Agri Experience Operations Studio as a native app"
+                    class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-white border border-[#CFD5D0] hover:bg-[#F4F6F4] text-[#111613] shrink-0 ae-press">
+                    <i class="fa-solid fa-download text-[11px] text-[#247B50]"></i>
+                    <span class="hidden xl:inline">Install Studio</span>
+                  </button>`
+                : ''
+            }
+
             <a href="./field.html${activeSurvey ? '?survey=' + encodeURIComponent(activeSurvey.id) : ''}"
               title="Launch Mobile Field App (PWA) for data collection and field audit"
               class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-[#247B50] hover:bg-[#1F6A45] text-white shrink-0 ae-press">
@@ -3060,6 +3122,19 @@ window.AEApp = {
 
             <!-- Action List -->
             <div class="space-y-2">
+              ${
+                !this.isAppInstalled
+                  ? `<button onclick="AEApp.promptInstall(); AEApp.toggleStudioMobileMenu();"
+                      class="w-full h-11 px-4 rounded-[8px] border border-[#247B50] bg-white hover:bg-[#F4F6F4] text-[#247B50] text-xs font-semibold inline-flex items-center justify-between ae-press">
+                      <span class="inline-flex items-center gap-2">
+                        <i class="fa-solid fa-download text-sm"></i>
+                        <span>Install Operations Studio (PWA)</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-right text-xs"></i>
+                    </button>`
+                  : ''
+              }
+
               <a href="./field.html${activeSurvey ? '?survey=' + encodeURIComponent(activeSurvey.id) : ''}"
                 class="w-full h-11 px-4 rounded-[8px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-between ae-press shadow-xs">
                 <span class="inline-flex items-center gap-2">
@@ -3185,6 +3260,19 @@ window.AEApp = {
 
             <!-- Action List -->
             <div class="space-y-2">
+              ${
+                !this.isAppInstalled
+                  ? `<button onclick="AEApp.promptInstall(); AEApp.toggleStudioMobileMenu();"
+                      class="w-full h-11 px-4 rounded-[8px] border border-[#247B50] bg-white hover:bg-[#F4F6F4] text-[#247B50] text-xs font-semibold inline-flex items-center justify-between ae-press">
+                      <span class="inline-flex items-center gap-2">
+                        <i class="fa-solid fa-download text-sm"></i>
+                        <span>Install Operations Studio (PWA)</span>
+                      </span>
+                      <i class="fa-solid fa-chevron-right text-xs"></i>
+                    </button>`
+                  : ''
+              }
+
               <a href="./field.html${activeSurvey ? '?survey=' + encodeURIComponent(activeSurvey.id) : ''}"
                 class="w-full h-11 px-4 rounded-[8px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-between ae-press shadow-xs">
                 <span class="inline-flex items-center gap-2">

@@ -1,11 +1,12 @@
 {
   "name": "AE Survey — Agri Experience Operations & Field Platform",
   "short_name": "AE Survey",
-  "description": "Offline-capable enterprise survey and field enumeration platform for Agri Experience Limited, backed by Google Sheets and Google Apps Script.",
-  "id": "/",
+  "description": "Enterprise offline-first survey, agronomic analytics, and field enumeration platform for Agri Experience Limited, backed by IndexedDB and Google Sheets.",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "background_color": "#F4F6F4",
   "theme_color": "#141A17",
   "orientation": "any",
@@ -36,12 +37,36 @@
       "purpose": "maskable"
     }
   ],
+  "screenshots": [
+    {
+      "src": "./assets/screenshots/admin-wide.png",
+      "sizes": "1440x900",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Agri Experience Analytics & Operations Studio"
+    },
+    {
+      "src": "./assets/screenshots/admin-narrow.png",
+      "sizes": "375x812",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile Operations & Personnel Management"
+    }
+  ],
   "shortcuts": [
     {
-      "name": "Mobile Field Collector",
+      "name": "Launch Field App",
       "short_name": "Field App",
       "description": "Launch dedicated offline enumerator application",
-      "url": "./field"
+      "url": "./field",
+      "icons": [{ "src": "./icons/field-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Analytics Studio",
+      "short_name": "Analytics",
+      "description": "Open econometric analytics & survey insights",
+      "url": "./#analyze",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

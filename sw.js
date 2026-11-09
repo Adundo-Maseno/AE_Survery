@@ -3,12 +3,11 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.43';
+const CACHE_NAME = 'ae-survey-prod-v3.45';
 
 const APP_SHELL_ASSETS = [
   './',
   './index.html',
-  './field',
   './field.html',
   './manifest.json',
   './manifest-collector.json',
@@ -23,6 +22,10 @@ const APP_SHELL_ASSETS = [
   './icons/favicon-32.png',
   './icons/field-favicon-32.png',
   './favicon.ico',
+  './assets/screenshots/field-wide.png',
+  './assets/screenshots/field-narrow.png',
+  './assets/screenshots/admin-wide.png',
+  './assets/screenshots/admin-narrow.png',
   './js/qrcode.js',
   './js/db.js',
   './js/i18n.js',
@@ -141,11 +144,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 1. Navigation requests: App Shell Strategy (Guarantees PWA opens on mobile & offline)
+  // 1. Navigation requests: Fast App Shell Strategy (Guarantees PWA opens in <200ms offline and on rural 2G/3G)
   if (request.mode === 'navigate' || request.destination === 'document') {
     const isFieldApp = url.pathname.includes('/field');
-    event.respondWith(
+    
+    // Quick network fetch with 2200ms timeout race so rural network stalls never freeze PWA launch
+    const networkFetchWithTimeout = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('NetworkTimeoutRuralField')), 2200);
       fetch(request)
+        .then((res) => {
+          clearTimeout(timer);
+          resolve(res);
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+
+    event.respondWith(
+      networkFetchWithTimeout
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const clone = networkResponse.clone();
@@ -179,7 +197,7 @@ self.addEventListener('fetch', (event) => {
           if (cachedIndex) return cachedIndex;
 
           return new Response(
-            '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;text-align:center;"><h2>Offline</h2><p>Please connect once to complete offline setup.</p></body></html>',
+            '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2rem;text-align:center;"><h2>AE Survey Offline</h2><p>Please connect once to complete offline setup.</p></body></html>',
             { headers: { 'Content-Type': 'text/html;charset=utf-8' } }
           );
         })

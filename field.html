@@ -299,19 +299,19 @@
         <span id="ae_hdr_sync_text" class="tabular-nums font-medium hidden sm:inline">Synced</span>
       </button>
 
+      <!-- Install PWA Button (Always visible on mobile & desktop until installed) -->
+      <button type="button" onclick="AEFieldApp.promptInstall()"
+        id="ae_hdr_install_btn"
+        title="Install AE Field App PWA on device home screen"
+        class="h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+        <i class="fa-solid fa-mobile-screen-button text-xs"></i>
+        <span class="hidden xs:inline sm:inline" id="ae_hdr_install_label">Install</span>
+      </button>
+
       <!-- Desktop Action Bar (Visible on xl: and larger) -->
       <div class="hidden xl:flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Language Selector (EN · SW · FR) -->
         <div id="ae_hdr_lang_picker" class="shrink-0"></div>
-
-        <!-- Install PWA Button -->
-        <button type="button" onclick="AEFieldApp.promptInstall()"
-          id="ae_hdr_install_btn"
-          title="Install AE Field App PWA on device home screen"
-          class="h-8 px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
-          <i class="fa-solid fa-mobile-screen-button text-xs"></i>
-          <span class="hidden 2xl:inline" id="ae_hdr_install_label">Install</span>
-        </button>
 
         <!-- Focus / Conversational Runner Mode Toggle -->
         <button type="button" onclick="AEFieldApp.toggleFocusMode()"
