@@ -29,6 +29,7 @@ window.AEFieldApp = {
 
   // Modals & Navigation
   showMobileMenu: false,
+  showPacingModal: false,
   showAdminPinModal: false,
   adminPinError: '',
   failedPinAttempts: 0,
@@ -461,11 +462,11 @@ window.AEFieldApp = {
     const installBtn = document.getElementById('ae_hdr_install_btn');
     if (installBtn) {
       if (this.isAppInstalled) {
-        installBtn.className = 'h-8 px-2 sm:px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] inline-flex items-center gap-1.5 pointer-events-none shrink-0';
+        installBtn.className = 'hidden sm:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-white/10 text-xs font-semibold text-[#3FC07A] items-center gap-1.5 pointer-events-none shrink-0';
         installBtn.innerHTML = `<i class="fa-solid fa-circle-check text-xs text-[#3FC07A]"></i><span class="hidden sm:inline">${this.t('installed')}</span>`;
       } else {
         const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        installBtn.className = 'h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0 ae-press';
+        installBtn.className = 'hidden sm:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 shrink-0 ae-press';
         installBtn.innerHTML = `<i class="fa-solid fa-mobile-screen-button text-xs"></i><span class="hidden xs:inline sm:inline" id="ae_hdr_install_label">${isIos ? this.t('addToHome') : this.t('installApp')}</span>`;
       }
     }
@@ -502,7 +503,7 @@ window.AEFieldApp = {
     const adminBtn = document.getElementById('ae_hdr_admin_btn');
     if (adminBtn) {
       if (currentUser && currentUser.role === 'admin') {
-        adminBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
+        adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 ae-press';
         adminBtn.title = `${this.t('returnToOperations')} (${currentUser.fullName})`;
         if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToOperations'));
         adminBtn.innerHTML = `
@@ -510,7 +511,7 @@ window.AEFieldApp = {
           <span class="hidden md:inline">${this.t('operationsStudio')}</span>
         `;
       } else if (currentUser && currentUser.role === 'supervisor') {
-        adminBtn.className = 'h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#1E40AF] hover:bg-[#172554] text-xs font-semibold text-white inline-flex items-center gap-1.5 ae-press';
+        adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#1E40AF] hover:bg-[#172554] text-xs font-semibold text-white items-center gap-1.5 ae-press';
         adminBtn.title = `${this.t('returnToSupervisor')} (${currentUser.fullName})`;
         if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToSupervisor'));
         adminBtn.innerHTML = `
@@ -518,7 +519,7 @@ window.AEFieldApp = {
           <span class="hidden md:inline">${this.t('supervisorPortal')}</span>
         `;
       } else {
-        adminBtn.className = 'h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white inline-flex items-center gap-1.5 ae-press';
+        adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white items-center gap-1.5 ae-press';
         adminBtn.title = this.t('adminRequiresPin');
         if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('adminRequiresPin'));
         adminBtn.innerHTML = `
@@ -568,6 +569,7 @@ window.AEFieldApp = {
       viewport.innerHTML = this.renderSurveyRunner(survey);
     }
     this.renderModals();
+    this.renderBottomNav();
     this.attachCanvasSignatureListeners();
   },
 
@@ -682,7 +684,7 @@ window.AEFieldApp = {
         </div>
 
         <!-- Section Bottom Navigation & Submission Bar (Floating Card Dock) -->
-        <div data-ui="sticky-bar" class="sticky bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[10px] p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
+        <div data-ui="sticky-bar" class="sticky bottom-[4.25rem] md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[10px] p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
           <div>
             ${
               this.currentPageIndex > 0
@@ -1525,6 +1527,7 @@ window.AEFieldApp = {
     }
     this.isSyncing = true;
     this.renderHeader();
+    this.renderBottomNav();
     try {
       const res = await window.aeStore.syncWithGoogleSheets();
       if (showToast) {
@@ -1537,6 +1540,7 @@ window.AEFieldApp = {
     } finally {
       this.isSyncing = false;
       this.renderHeader();
+      this.renderBottomNav();
     }
   },
 
@@ -1700,12 +1704,124 @@ window.AEFieldApp = {
     this.pendingEnumPinPerson = null;
     this.showIosInstallModal = false;
     this.showMobileMenu = false;
+    this.showPacingModal = false;
     this.renderModals();
+    this.renderBottomNav();
+  },
+
+  navToRunner() {
+    this.closeModals();
+    const viewport = document.getElementById('ae_field_viewport');
+    if (viewport) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  },
+
+  openPacingModal() {
+    this.closeModals();
+    this.showPacingModal = true;
+    this.renderModals();
+    this.renderBottomNav();
   },
 
   toggleMobileMenu() {
-    this.showMobileMenu = !this.showMobileMenu;
+    const nextState = !this.showMobileMenu;
+    this.closeModals();
+    this.showMobileMenu = nextState;
     this.renderModals();
+    this.renderBottomNav();
+  },
+
+  renderBottomNav() {
+    const bottomNav = document.getElementById('ae_field_bottom_nav');
+    if (!bottomNav) return;
+
+    // 1. Localized Labels
+    const runnerLbl = document.getElementById('ae_bnav_runner_lbl');
+    const pacingLbl = document.getElementById('ae_bnav_pacing_lbl');
+    const syncLbl = document.getElementById('ae_bnav_sync_lbl');
+    const menuLbl = document.getElementById('ae_bnav_menu_lbl');
+
+    if (runnerLbl) runnerLbl.textContent = this.t('bnavSurvey');
+    if (pacingLbl) pacingLbl.textContent = this.t('bnavPacing');
+    if (syncLbl) syncLbl.textContent = this.t('bnavSync');
+    if (menuLbl) menuLbl.textContent = this.t('bnavMenu');
+
+    // 2. Sync Icon and Outbox Badge
+    const isOnline = window.aeStore.isEffectivelyOnline();
+    const queuedCount = window.aeStore.responses.filter((r) => r.syncStatus !== 'synced').length;
+    const isSyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
+    const syncIcon = document.getElementById('ae_bnav_sync_icon');
+    const syncBadge = document.getElementById('ae_bnav_sync_badge');
+
+    if (syncIcon) {
+      if (isSyncing) {
+        syncIcon.className = 'fa-solid fa-arrows-rotate text-base mb-1 text-[#247B50] fa-spin';
+      } else if (!isOnline) {
+        syncIcon.className = 'fa-solid fa-cloud text-base mb-1 text-[#D97706]';
+      } else if (queuedCount > 0) {
+        syncIcon.className = 'fa-solid fa-cloud-arrow-up text-base mb-1 text-[#3FC07A]';
+      } else {
+        syncIcon.className = 'fa-solid fa-cloud-check text-base mb-1 text-[#3FC07A]';
+      }
+    }
+
+    if (syncBadge) {
+      if (queuedCount > 0) {
+        syncBadge.className = 'absolute -top-1.5 -right-3 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-[#D97706] text-white tabular-nums leading-tight';
+        syncBadge.textContent = String(queuedCount);
+      } else {
+        syncBadge.className = 'hidden';
+      }
+    }
+
+    // 3. Pacing Badge
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const myResponses = window.aeStore.responses.filter(
+      (r) => r.enumerator === this.enumeratorName && (r.submittedAt || '').startsWith(todayStr)
+    );
+    const activePerson = (window.aeStore.personnel || []).find(
+      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+    );
+    const taskProgress =
+      activePerson && typeof window.aeStore.getPersonnelTaskProgress === 'function'
+        ? window.aeStore.getPersonnelTaskProgress(activePerson.id, this.activeSurveyId)
+        : null;
+    const shiftTarget = taskProgress && taskProgress.target ? taskProgress.target : 10;
+    const completed = myResponses.length;
+
+    const pacingBadge = document.getElementById('ae_bnav_pacing_badge');
+    if (pacingBadge) {
+      pacingBadge.className = 'absolute -top-1.5 -right-3 text-[9px] font-bold px-1 py-0.2 rounded-full bg-[#247B50] text-white tabular-nums leading-tight';
+      pacingBadge.textContent = `${completed}/${shiftTarget}`;
+    }
+
+    // 4. Supervisor / Admin Menu Indicator
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    const menuDot = document.getElementById('ae_bnav_menu_dot');
+    if (menuDot) {
+      if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'supervisor')) {
+        menuDot.className = 'absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#3FC07A] ring-2 ring-[#141A17]';
+      } else {
+        menuDot.className = 'hidden';
+      }
+    }
+
+    // 5. Active Tab Highlighting
+    const isPacingOpen = Boolean(this.showPacingModal);
+    const isMenuOpen = Boolean(this.showMobileMenu);
+    const btnRunner = document.getElementById('ae_bnav_runner');
+    const btnPacing = document.getElementById('ae_bnav_pacing');
+    const btnMenu = document.getElementById('ae_bnav_menu');
+
+    const activeClass = 'flex flex-col items-center justify-center py-1 px-1 rounded-[8px] text-white bg-white/10 transition-colors ae-press relative';
+    const inactiveClass = 'flex flex-col items-center justify-center py-1 px-1 rounded-[8px] text-[#CFD5D0] hover:text-white hover:bg-white/5 transition-colors ae-press relative';
+
+    if (btnRunner) btnRunner.className = !isPacingOpen && !isMenuOpen ? activeClass : inactiveClass;
+    if (btnPacing) btnPacing.className = isPacingOpen ? activeClass : inactiveClass;
+    if (btnMenu) btnMenu.className = isMenuOpen ? activeClass : inactiveClass;
   },
 
   promptInstall() {
@@ -1880,7 +1996,7 @@ window.AEFieldApp = {
         </div>
 
         <!-- Focus Navigation Footer -->
-        <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center justify-between pt-2 pb-16 md:pb-0">
           <button type="button" onclick="AEFieldApp.prevFocusQuestion()"
             ${this.focusQuestionIndex === 0 ? 'disabled class="opacity-40 cursor-not-allowed"' : ''}
             class="h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-2 ae-press">
@@ -2749,8 +2865,183 @@ window.AEFieldApp = {
     const modalRoot = document.getElementById('ae_field_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showAdminPinModal && !this.showSurveyPickerModal && !this.showEnumPickerModal && !this.showEnumPinModal && !this.showIosInstallModal && !this.showMobileMenu) {
+    if (!this.showAdminPinModal && !this.showSurveyPickerModal && !this.showEnumPickerModal && !this.showEnumPinModal && !this.showIosInstallModal && !this.showMobileMenu && !this.showPacingModal) {
       modalRoot.innerHTML = '';
+      this.renderBottomNav();
+      return;
+    }
+
+    if (this.showPacingModal) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const myResponses = window.aeStore.responses.filter(
+        (r) => r.enumerator === this.enumeratorName && (r.submittedAt || '').startsWith(todayStr)
+      );
+      const activePerson = (window.aeStore.personnel || []).find(
+        (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+      );
+      const taskProgress =
+        activePerson && typeof window.aeStore.getPersonnelTaskProgress === 'function'
+          ? window.aeStore.getPersonnelTaskProgress(activePerson.id, this.activeSurveyId)
+          : null;
+      const shiftTarget = taskProgress && taskProgress.target ? taskProgress.target : 10;
+      const completed = myResponses.length;
+      const synced = myResponses.filter((r) => r.syncStatus === 'synced').length;
+      const queued = completed - synced;
+      const pct = Math.min(100, Math.round((completed / shiftTarget) * 100));
+
+      const durations = myResponses.map((r) => Number(r.durationSec) || 0).filter((d) => d > 0);
+      const avgDur = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+
+      const rawSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
+      const allQ = rawSurvey ? window.aeStore.getQuestionsForSurvey(rawSurvey) : [];
+      const minSpeederSec = Math.max(15, Math.round(allQ.length * 2.5));
+      const targetDurationSec = Math.max(60, Math.round(allQ.length * 30));
+
+      // Hourly Distribution for today's shift (08:00 to 17:00)
+      const hourlyData = [];
+      const currentHour = new Date().getHours();
+      let maxHourly = 1;
+      for (let h = 8; h <= 17; h++) {
+        const hhStr = String(h).padStart(2, '0') + ':00';
+        const count = myResponses.filter((r) => {
+          if (!r.submittedAt) return false;
+          return new Date(r.submittedAt).getHours() === h;
+        }).length;
+        if (count > maxHourly) maxHourly = count;
+        hourlyData.push({ hour: hhStr, count, isCurrent: h === currentHour });
+      }
+
+      // SVG Donut Calculations
+      const radius = 34;
+      const circumference = 2 * Math.PI * radius;
+      const strokeDashoffset = circumference - (pct / 100) * circumference;
+
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEFieldApp.closeModals()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true"
+            class="ae-glass-modal rounded-t-[20px] sm:rounded-[12px] max-w-md w-full p-5 space-y-4 ae-dialog-animate max-h-[90vh] overflow-y-auto">
+            
+            <!-- Mobile Sheet Grab Bar -->
+            <div class="w-10 h-1 bg-[#CFD5D0] rounded-full mx-auto sm:hidden -mt-1 mb-1"></div>
+
+            <!-- Header -->
+            <div class="flex items-center justify-between pb-3 border-b border-[#EFEFEF]">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-[6px] bg-[#247B50]/15 text-[#247B50] flex items-center justify-center text-sm font-bold">
+                  <i class="fa-solid fa-bullseye"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm font-semibold text-[#111613]">${this.t('shiftProductivity')}</h3>
+                  <p class="text-[11px] text-[#525B56]">${this.escapeHtml(this.enumeratorName)}</p>
+                </div>
+              </div>
+              <button onclick="AEFieldApp.closeModals()" aria-label="Close"
+                class="w-8 h-8 rounded-[6px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center ae-press">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+
+            <!-- Visual Donut Chart Card -->
+            <div class="p-4 rounded-[10px] bg-[#F8F9F8] border border-[#E4E7E4] flex items-center justify-between gap-4">
+              <div class="space-y-1">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-[#525B56]">Shift Progress</span>
+                <div class="text-2xl font-bold text-[#111613] tabular-nums tracking-tight">
+                  ${completed} <span class="text-sm text-[#525B56] font-normal">/ ${shiftTarget} ${this.t('plots')}</span>
+                </div>
+                <div class="text-[11px] font-medium ${completed >= shiftTarget ? 'text-[#247B50]' : 'text-[#D97706]'} flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full ${completed >= shiftTarget ? 'bg-[#247B50]' : 'bg-[#D97706]'}"></span>
+                  <span>${completed >= shiftTarget ? this.t('shiftTargetMet') : `${shiftTarget - completed} ${this.t('plotsToTarget')}`}</span>
+                </div>
+              </div>
+
+              <!-- SVG Progress Circle -->
+              <div class="relative w-20 h-20 shrink-0 flex items-center justify-center">
+                <svg class="w-20 h-20 transform -rotate-90" viewBox="0 0 80 80">
+                  <circle cx="40" cy="40" r="${radius}" stroke="#EAECE9" stroke-width="7" fill="transparent"></circle>
+                  <circle cx="40" cy="40" r="${radius}" stroke="${completed >= shiftTarget ? '#247B50' : '#3FC07A'}" stroke-width="7"
+                    stroke-dasharray="${circumference.toFixed(1)}"
+                    stroke-dashoffset="${strokeDashoffset.toFixed(1)}"
+                    stroke-linecap="round" fill="transparent" class="transition-[stroke-dashoffset] duration-700"></circle>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span class="text-sm font-bold text-[#111613] tabular-nums">${pct}%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Key Metric Strips -->
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div class="p-3 rounded-[8px] bg-white border border-[#E4E7E4] space-y-1">
+                <div class="text-[#525B56] text-[11px] flex items-center gap-1">
+                  <i class="fa-solid fa-cloud-arrow-up text-[#247B50]"></i>
+                  <span>Sync Health</span>
+                </div>
+                <div class="text-base font-bold text-[#111613] tabular-nums">
+                  ${synced} <span class="text-xs font-normal text-[#525B56]">synced</span>
+                </div>
+                <div class="text-[10px] ${queued > 0 ? 'text-[#D97706] font-semibold' : 'text-[#525B56]'}">
+                  ${queued > 0 ? `${queued} queued offline` : '100% cloud backed'}
+                </div>
+              </div>
+
+              <div class="p-3 rounded-[8px] bg-white border border-[#E4E7E4] space-y-1">
+                <div class="text-[#525B56] text-[11px] flex items-center gap-1">
+                  <i class="fa-regular fa-clock text-[#247B50]"></i>
+                  <span>${this.t('avgDurationShort')}</span>
+                </div>
+                <div class="text-base font-bold text-[#111613] tabular-nums">
+                  ${avgDur > 0 ? `${Math.floor(avgDur / 60)}m ${avgDur % 60}s` : '—'}
+                </div>
+                <div class="text-[10px] ${avgDur > 0 && avgDur < minSpeederSec ? 'text-[#C4242A] font-semibold' : 'text-[#525B56]'}">
+                  ${avgDur > 0 && avgDur < minSpeederSec ? `Speeder (<${minSpeederSec}s)` : `Target: ~30s/q`}
+                </div>
+              </div>
+            </div>
+
+            <!-- Hourly Activity Output Chart -->
+            <div class="p-3.5 rounded-[10px] bg-white border border-[#E4E7E4] space-y-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-semibold text-[#111613]">${this.t('todayHourlyPacing')}</span>
+                <span class="text-[10px] text-[#525B56]">Plots submitted</span>
+              </div>
+              <div class="h-16 flex items-end justify-between gap-1 pt-2 px-1 border-b border-[#EFEFEF]">
+                ${hourlyData.map(h => {
+                  const barH = h.count > 0 ? Math.max(12, Math.round((h.count / maxHourly) * 44)) : 4;
+                  return `
+                    <div class="flex-1 flex flex-col items-center gap-1">
+                      <div class="w-full max-w-[18px] rounded-t-[3px] transition-[height] duration-300 ${h.count > 0 ? (h.isCurrent ? 'bg-[#247B50]' : 'bg-[#3FC07A]') : 'bg-[#EAECE9]'}"
+                        style="height: ${barH}px;" title="${h.hour}: ${h.count} plots"></div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+              <div class="flex items-center justify-between text-[9px] text-[#646E68] font-mono tabular-nums px-0.5">
+                <span>08:00</span>
+                <span>12:00</span>
+                <span>17:00</span>
+              </div>
+            </div>
+
+            <!-- Primary Actions -->
+            <div class="pt-2 flex items-center gap-2">
+              ${queued > 0 ? `
+                <button type="button" onclick="AEFieldApp.triggerCloudSync()"
+                  class="flex-1 h-10 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+                  <i class="fa-solid fa-cloud-arrow-up text-xs"></i>
+                  <span>Sync Outbox (${queued})</span>
+                </button>
+              ` : ''}
+              <button type="button" onclick="AEFieldApp.closeModals()"
+                class="flex-1 h-10 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+                <span>${this.t('returnToSurvey')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      this.renderBottomNav();
       return;
     }
 

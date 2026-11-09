@@ -251,6 +251,19 @@
       color: #000000 !important;
       font-weight: 600 !important;
     }
+    body.ae-sunlight #ae_field_bottom_nav {
+      background-color: #FFFFFF !important;
+      border-top: 2px solid #000000 !important;
+      color: #000000 !important;
+    }
+    body.ae-sunlight #ae_field_bottom_nav button {
+      color: #000000 !important;
+    }
+    body.ae-sunlight #ae_field_bottom_nav .text-\[\#3FC07A\],
+    body.ae-sunlight #ae_field_bottom_nav .text-\[\#247B50\] {
+      color: #000000 !important;
+      font-weight: 700 !important;
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[#F4F6F4] text-[#111613] flex flex-col antialiased selection:bg-[#DCFAE5]">
@@ -299,11 +312,11 @@
         <span id="ae_hdr_sync_text" class="tabular-nums font-medium hidden sm:inline">Synced</span>
       </button>
 
-      <!-- Install PWA Button (Always visible on mobile & desktop until installed) -->
+      <!-- Install PWA Button (Visible on sm: and up; on mobile phones accessible in Bottom Nav & Drawer) -->
       <button type="button" onclick="AEFieldApp.promptInstall()"
         id="ae_hdr_install_btn"
         title="Install AE Field App PWA on device home screen"
-        class="h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+        class="hidden sm:inline-flex h-8 px-2 sm:px-2.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 shrink-0 ae-press">
         <i class="fa-solid fa-mobile-screen-button text-xs"></i>
         <span class="hidden xs:inline sm:inline" id="ae_hdr_install_label">Install</span>
       </button>
@@ -348,10 +361,10 @@
         <span id="ae_hdr_enum_name" class="truncate font-medium">Moses Adundo (HQ Admin)</span>
       </button>
 
-      <!-- Admin Studio Switcher (Direct return for authenticated Admins; PIN-protected for field enumerators) -->
+      <!-- Admin Studio Switcher (Direct return for authenticated Admins; PIN-protected for field enumerators - visible on md: and up) -->
       <button type="button" id="ae_hdr_admin_btn" onclick="AEFieldApp.openAdminPinPrompt()"
         title="Admin Studio (Requires PIN)"
-        class="h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white inline-flex items-center gap-1.5 shrink-0 ae-press">
+        class="hidden md:inline-flex h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white items-center gap-1.5 shrink-0 ae-press">
         <i class="fa-solid fa-lock text-xs text-[#A3ACA6]"></i>
         <span class="hidden lg:inline">Admin Studio</span>
       </button>
@@ -368,9 +381,52 @@
   </header>
 
   <!-- Main Viewport Canvas -->
-  <main id="ae_field_viewport" class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 pb-28 space-y-5">
+  <main id="ae_field_viewport" class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 pb-36 md:pb-28 space-y-5">
     <div class="p-8 text-center text-xs text-[#525B56]">Initializing offline field collector…</div>
   </main>
+
+  <!-- Native Mobile Bottom Navigation Dock (Thumb-Driven Field Ergonomics - Visible on < md:) -->
+  <nav id="ae_field_bottom_nav" aria-label="Mobile Field Navigation"
+    class="md:hidden fixed bottom-0 left-0 right-0 z-40 ae-glass-dark-nav text-white border-t border-white/10 px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] transition-colors shadow-lg">
+    <div class="max-w-md mx-auto grid grid-cols-4 gap-1 items-center text-center">
+      <!-- 1. Survey Runner -->
+      <button type="button" onclick="AEFieldApp.navToRunner()" id="ae_bnav_runner"
+        class="flex flex-col items-center justify-center py-1 px-1 rounded-[8px] text-white bg-white/10 transition-colors ae-press relative">
+        <i class="fa-solid fa-clipboard-list text-base mb-1 text-[#3FC07A]"></i>
+        <span class="text-[10px] font-semibold tracking-tight truncate max-w-[68px]" id="ae_bnav_runner_lbl">Survey</span>
+      </button>
+
+      <!-- 2. Shift Pacing & Quotas -->
+      <button type="button" onclick="AEFieldApp.openPacingModal()" id="ae_bnav_pacing"
+        class="flex flex-col items-center justify-center py-1 px-1 rounded-[8px] text-[#CFD5D0] hover:text-white hover:bg-white/5 transition-colors ae-press relative">
+        <div class="relative">
+          <i class="fa-solid fa-bullseye text-base mb-1 text-[#FBBF24]"></i>
+          <span id="ae_bnav_pacing_badge" class="hidden absolute -top-1.5 -right-3 text-[9px] font-bold px-1 py-0.2 rounded-full bg-[#247B50] text-white tabular-nums leading-tight"></span>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight truncate max-w-[68px]" id="ae_bnav_pacing_lbl">Pacing</span>
+      </button>
+
+      <!-- 3. Cloud Sync & Outbox -->
+      <button type="button" onclick="AEFieldApp.triggerCloudSync()" id="ae_bnav_sync"
+        class="flex flex-col items-center justify-center py-1 px-1 rounded-[8px] text-[#CFD5D0] hover:text-white hover:bg-white/5 transition-colors ae-press relative">
+        <div class="relative">
+          <i id="ae_bnav_sync_icon" class="fa-solid fa-cloud-arrow-up text-base mb-1 text-[#3FC07A]"></i>
+          <span id="ae_bnav_sync_badge" class="hidden absolute -top-1.5 -right-3 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-[#D97706] text-white tabular-nums leading-tight"></span>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight truncate max-w-[68px]" id="ae_bnav_sync_lbl">Sync</span>
+      </button>
+
+      <!-- 4. Operations Menu Drawer -->
+      <button type="button" onclick="AEFieldApp.toggleMobileMenu()" id="ae_bnav_menu"
+        class="flex flex-col items-center justify-center py-1 px-1 rounded-[8px] text-[#CFD5D0] hover:text-white hover:bg-white/5 transition-colors ae-press relative">
+        <div class="relative">
+          <i class="fa-solid fa-sliders text-base mb-1 text-[#CFD5D0]"></i>
+          <span id="ae_bnav_menu_dot" class="hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#3FC07A]"></span>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight truncate max-w-[68px]" id="ae_bnav_menu_lbl">Menu</span>
+      </button>
+    </div>
+  </nav>
 
   <!-- Modal Mount -->
   <div id="ae_field_modal_root"></div>
