@@ -37,7 +37,6 @@ window.QUESTION_TYPES_CATALOG = QUESTION_TYPES_CATALOG;
 
 window.AEBuilder = {
   activePageIndex: 0,
-  selectedQuestionId: null,
   leftTab: 'questions', // 'questions' | 'translations' | 'theme'
   targetLang: 'sw', // 'sw' | 'fr'
   previewMode: false, // false = editor, true = interactive simulator

@@ -1055,7 +1055,6 @@ window.AEAnalytics = {
   selectedAnovaOutcome: null,
   selectedAnovaGroup: null,
   selectedSpatialMetric: null,
-  questionViewModes: {}, // qId -> 'both' | 'chart' | 'table'
   questionSubTabs: {}, // qId -> 'chart' | 'table' | 'stats' | 'verbatim'
   questionChartTypes: {}, // qId -> 'horizontalBar' | 'bar' | 'doughnut'
   chartInstances: {}, // qId -> Chart.js instance
@@ -1380,11 +1379,6 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   setQuestionSubTab(qId, subTab) {
     this.questionSubTabs[qId] = subTab;
-    window.AEApp.render();
-  },
-
-  setQuestionViewMode(qId, mode) {
-    this.questionViewModes[qId] = mode;
     window.AEApp.render();
   },
 

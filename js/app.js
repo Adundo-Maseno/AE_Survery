@@ -3558,13 +3558,6 @@ window.AEApp = {
     this.render();
   },
 
-  resetAnalyticsFilters() {
-    window.AEAnalytics.filterSyncStatus = 'ALL';
-    window.AEAnalytics.filterCollectorId = 'ALL';
-    window.AEAnalytics.individualIndex = 0;
-    this.render();
-  },
-
   createBlankSurvey() {
     if (window.AESession && !window.AESession.hasPermission('CREATE_SURVEY')) {
       this.showToast('Access Denied: Only HQ Administrators can author surveys.', 'error');
@@ -4434,33 +4427,12 @@ window.AEApp = {
     this.render();
   },
 
-  setAnalyticsFilter(kind, value) {
-    if (window.AEAnalytics && window.AEAnalytics.setFilter) {
-      const keyMap = { sync: 'syncStatus', collector: 'collectorId' };
-      window.AEAnalytics.setFilter(keyMap[kind] || kind, value);
-    } else {
-      if (kind === 'sync') window.AEAnalytics.filterSyncStatus = value;
-      if (kind === 'collector') window.AEAnalytics.filterCollectorId = value;
-      window.AEAnalytics.individualIndex = 0;
-      this.render();
-    }
-  },
-
   stepIndividualResponse(delta, total) {
     const next = window.AEAnalytics.individualIndex + delta;
     if (next >= 0 && next < total) {
       window.AEAnalytics.individualIndex = next;
       this.render();
     }
-  },
-
-  deleteSingleResponse(respId) {
-    if (!window.confirm(`Delete response ${respId}? This action cannot be undone.`)) {
-      return;
-    }
-    window.aeStore.deleteResponse(respId);
-    this.showToast('Response deleted.', 'success');
-    this.render();
   },
 
   approveSingleResponse(respId) {
