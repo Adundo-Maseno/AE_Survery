@@ -153,7 +153,7 @@ self.addEventListener('fetch', (event) => {
   // 1. Navigation requests: Fast App Shell Strategy (Guarantees PWA opens in <200ms offline and on rural 2G/3G)
   if (request.mode === 'navigate' || request.destination === 'document') {
     const isFieldApp = url.pathname.includes('/field');
-    
+
     // Quick network fetch with 2200ms timeout race so rural network stalls never freeze PWA launch
     const networkFetchWithTimeout = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('NetworkTimeoutRuralField')), 2200);
