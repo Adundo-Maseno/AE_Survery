@@ -948,11 +948,17 @@ window.AEFieldApp = {
         errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : 'border-[#E4E7E4]'
       } rounded-[8px] p-5 space-y-3 transition-colors">
         <div class="flex items-start justify-between gap-3">
-          <label class="block text-sm font-semibold text-[#111613] leading-snug ae-break-words">
+          <label class="block text-sm font-semibold text-[#111613] leading-snug ae-break-words flex-1 min-w-0">
             ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums text-[#525B56] mr-1.5">${idx + 1}.</span>` : ''}
             <span>${this.escapeHtml(pipedTitle)}</span>
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
+          <button type="button" onclick="AEFieldApp.speakQuestion('${q.id}')"
+            title="Soma kwa sauti / Read question aloud (Voice Assist)"
+            class="w-7 h-7 rounded-[4px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#DCFAE5] hover:border-[#247B50] text-[#525B56] hover:text-[#04250E] flex items-center justify-center text-xs shrink-0 ae-press"
+            aria-label="Read Question Aloud">
+            <i class="fa-solid fa-volume-high text-[11px]"></i>
+          </button>
         </div>
         ${
           pipedHelp
@@ -975,6 +981,37 @@ window.AEFieldApp = {
         }
       </div>
     `;
+  },
+
+  speakQuestion(questionId) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      this.showToast('Text-to-speech audio synthesis is not supported on this device.', 'warning');
+      return;
+    }
+    const currentSurvey = this.activeSurvey || (window.aeStore && window.aeStore.getSurveyById(this.activeSurveyId));
+    const allQs = (currentSurvey?.pages || []).flatMap((p) => p.questions || []);
+    const q = allQs.find((item) => item.id === questionId);
+    if (!q) return;
+
+    window.speechSynthesis.cancel();
+    const lang = this.lang || 'sw';
+    const localizedTitle = window.AEI18n ? window.AEI18n.translatePhrase(q.title, lang) : q.title;
+    const localizedHelp = q.helpText ? (window.AEI18n ? window.AEI18n.translatePhrase(q.helpText, lang) : q.helpText) : '';
+    const textToSpeak = `${localizedTitle}. ${localizedHelp}`;
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    const langVoiceMap = { sw: 'sw-KE', fr: 'fr-FR', pt: 'pt-BR', en: 'en-KE' };
+    utterance.lang = langVoiceMap[lang] || 'en-KE';
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find((v) => v.lang.toLowerCase().startsWith(lang) || v.lang === utterance.lang);
+    if (matchedVoice) utterance.voice = matchedVoice;
+
+    window.speechSynthesis.speak(utterance);
+    const langLabel = lang === 'sw' ? 'Kiswahili' : lang === 'fr' ? 'Français' : lang === 'pt' ? 'Português' : 'English';
+    this.showToast(`Inasoma kwa sauti (${langLabel})...`, 'info');
   },
 
   renderQuestionControl(q) {

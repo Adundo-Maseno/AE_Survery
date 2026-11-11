@@ -3871,6 +3871,38 @@ window.AEApp = {
     }
   },
 
+  speakQuestion(questionId) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      this.showToast('Text-to-speech hardware is not supported on this browser.', 'warning');
+      return;
+    }
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    const allQs = window.aeStore.getQuestionsForSurvey(s);
+    const q = allQs.find((item) => item.id === questionId);
+    if (!q) return;
+
+    window.speechSynthesis.cancel();
+    const lang = this.runnerLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+    const localizedTitle = window.AEI18n ? window.AEI18n.translatePhrase(q.title, lang) : q.title;
+    const localizedHelp = q.helpText ? (window.AEI18n ? window.AEI18n.translatePhrase(q.helpText, lang) : q.helpText) : '';
+    const textToSpeak = `${localizedTitle}. ${localizedHelp}`;
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    const langVoiceMap = { sw: 'sw-KE', fr: 'fr-FR', pt: 'pt-BR', en: 'en-KE' };
+    utterance.lang = langVoiceMap[lang] || 'en-KE';
+    utterance.rate = 0.92;
+    utterance.pitch = 1.0;
+
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice = voices.find((v) => v.lang.toLowerCase().startsWith(lang) || v.lang === utterance.lang);
+    if (matchedVoice) utterance.voice = matchedVoice;
+
+    window.speechSynthesis.speak(utterance);
+    const langLabel = lang === 'sw' ? 'Kiswahili' : lang === 'fr' ? 'Français' : lang === 'pt' ? 'Português' : 'English';
+    this.showToast(`Reading aloud (${langLabel})...`, 'info');
+  },
+
   updateSurveyTranslationMeta(field, value) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;

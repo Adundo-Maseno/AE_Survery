@@ -596,16 +596,24 @@ window.AECollector = {
     return `
       <div id="runner_q_${q.id}" class="space-y-2 pb-6 border-b border-[#EFEFEF] last:border-b-0 last:pb-0">
         <div class="flex items-start justify-between gap-2 min-w-0">
-          <label for="runner_input_${q.id}" class="block text-sm sm:text-base font-semibold text-[#111613] leading-snug ae-break-words min-w-0">
+          <label for="runner_input_${q.id}" class="block text-sm sm:text-base font-semibold text-[#111613] leading-snug ae-break-words min-w-0 flex-1">
             ${showNum ? `<span class="tabular-nums text-xs font-semibold text-[#247B50] mr-1.5">Q${idx + 1}.</span>` : ''}
             ${AEApp.escapeHtml(pipedTitle)}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
-          ${
-            q.logic && q.logic.enabled
-              ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E]">Skip rule</span>`
-              : ''
-          }
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" onclick="AEApp.speakQuestion('${q.id}')"
+              title="Read question aloud (Voice Assist)"
+              class="w-7 h-7 rounded-[4px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#DCFAE5] hover:border-[#247B50] text-[#525B56] hover:text-[#04250E] flex items-center justify-center text-xs shrink-0 ae-press"
+              aria-label="Read Question Aloud">
+              <i class="fa-solid fa-volume-high text-[11px]"></i>
+            </button>
+            ${
+              q.logic && q.logic.enabled
+                ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E]">Skip rule</span>`
+                : ''
+            }
+          </div>
         </div>
 
         ${
