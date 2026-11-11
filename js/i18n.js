@@ -1244,17 +1244,523 @@
 
   const COMMON_DICTIONARY = {
     // English -> Swahili / French / Portuguese terms
+    // Core Choices & Boolean Responses
     'Yes': { sw: 'Ndiyo', fr: 'Oui', pt: 'Sim' },
     'No': { sw: 'Hapana', fr: 'Non', pt: 'Não' },
+    'Maybe': { sw: 'Labda', fr: 'Peut-être', pt: 'Talvez' },
+    'Not Sure': { sw: 'Sina Hakika', fr: 'Pas Sûr', pt: 'Não Tenho Certeza' },
+    'Don\'t Know': { sw: 'Sijui', fr: 'Ne Sais Pas', pt: 'Não Sei' },
+    'Refused': { sw: 'Amekataa Kujibu', fr: 'Refusé', pt: 'Recusado' },
     'Other': { sw: 'Nyingine', fr: 'Autre', pt: 'Outro' },
+    'Other (Specify)': { sw: 'Nyingine (Taja)', fr: 'Autre (Préciser)', pt: 'Outro (Especificar)' },
+    'Other (please specify)': { sw: 'Nyingine (tafadhali taja)', fr: 'Autre (veuillez préciser)', pt: 'Outro (por favor especifique)' },
+    'Other (please specify)…': { sw: 'Nyingine (tafadhali taja)…', fr: 'Autre (veuillez préciser)…', pt: 'Outro (por favor especifique)…' },
+    'None': { sw: 'Hakuna', fr: 'Aucun', pt: 'Nenhum' },
+    'None (Unamended Soil)': { sw: 'Hakuna (Udongo Bila Mbolea)', fr: 'Aucun (Sol Non Amendé)', pt: 'Nenhum (Solo Sem Adubo)' },
+    'Not Applicable': { sw: 'Haihusiki', fr: 'Non Applicable', pt: 'Não Aplicável' },
+    'N/A': { sw: 'Haihusiki', fr: 'N/A', pt: 'N/A' },
+    'True': { sw: 'Kweli', fr: 'Vrai', pt: 'Verdadeiro' },
+    'False': { sw: 'Si Kweli', fr: 'Faux', pt: 'Falso' },
+
+    // Quality, Satisfaction & Agreement Scales
     'Poor': { sw: 'Duni', fr: 'Médiocre', pt: 'Fraco' },
     'Fair': { sw: 'Wastani', fr: 'Passable', pt: 'Razoável' },
     'Good': { sw: 'Nzuri', fr: 'Bon', pt: 'Bom' },
+    'Very Good': { sw: 'Nzuri Sana', fr: 'Très Bon', pt: 'Muito Bom' },
     'Excellent': { sw: 'Bora Kabisa', fr: 'Excellent', pt: 'Excelente' },
+    'Strongly Agree': { sw: 'Nakubali Kabisa', fr: 'Tout à Fait d’Accord', pt: 'Concordo Totalmente' },
+    'Agree': { sw: 'Nakubali', fr: 'D’Accord', pt: 'Concordo' },
+    'Neutral': { sw: 'Kati na Kati', fr: 'Neutre', pt: 'Neutro' },
+    'Neither Agree nor Disagree': { sw: 'Kati na Kati (Sikubali wala Sikatai)', fr: 'Ni d’Accord ni Pas d’Accord', pt: 'Nem Concordo nem Discordo' },
+    'Disagree': { sw: 'Sikubali', fr: 'Pas d’Accord', pt: 'Discordo' },
+    'Strongly Disagree': { sw: 'Sikubali Kabisa', fr: 'Pas du Tout d’Accord', pt: 'Discordo Totalmente' },
+    'Very Satisfied': { sw: 'Nimeridhika Sana', fr: 'Très Satisfait', pt: 'Muito Satisfeito' },
+    'Satisfied': { sw: 'Nimeridhika', fr: 'Satisfait', pt: 'Satisfeito' },
+    'Dissatisfied': { sw: 'Sijaridhika', fr: 'Insatisfait', pt: 'Insatisfeito' },
+    'Very Dissatisfied': { sw: 'Sijaridhika Kabisa', fr: 'Très Insatisfait', pt: 'Muito Insatisfeito' },
+    '1 star = Very Dissatisfied, 5 stars = Very Satisfied': {
+      sw: 'Nyota 1 = Sijaridhika Kabisa, Nyota 5 = Nimeridhika Sana',
+      fr: '1 étoile = Très Insatisfait, 5 étoiles = Très Satisfait',
+      pt: '1 estrela = Muito Insatisfeito, 5 estrelas = Muito Satisfeito'
+    },
+    '5 stars = Off-floor wooden pallets, dry roof, away from chemicals.': {
+      sw: 'Nyota 5 = Paleti za mbao mbali na sakafu, paa kavu, mbali na kemikali.',
+      fr: '5 étoiles = Palettes en bois surélevées, toiture sèche, éloigné des produits chimiques.',
+      pt: '5 estrelas = Paletes de madeira elevadas do chão, teto seco, longe de químicos.'
+    },
+    '0 = Not at all likely, 10 = Extremely likely': {
+      sw: '0 = Haiwezekani kabisa, 10 = Inawezekana sana',
+      fr: '0 = Pas du tout probable, 10 = Extrêmement probable',
+      pt: '0 = Nada provável, 10 = Extremamente provável'
+    },
+    '0 = Not likely, 10 = Extremely likely': {
+      sw: '0 = Haiwezekani, 10 = Inawezekana sana',
+      fr: '0 = Peu probable, 10 = Extrêmement probable',
+      pt: '0 = Pouco provável, 10 = Extremamente provável'
+    },
+    'High': { sw: 'Juu', fr: 'Élevé', pt: 'Alto' },
+    'Medium': { sw: 'Wastani', fr: 'Moyen', pt: 'Médio' },
+    'Low': { sw: 'Chini', fr: 'Faible', pt: 'Baixo' },
+    'Very High': { sw: 'Juu Sana', fr: 'Très Élevé', pt: 'Muito Alto' },
+    'Very Low': { sw: 'Chini Sana', fr: 'Très Faible', pt: 'Muito Baixo' },
+
+    // Frequencies & Time Periods
+    'Daily': { sw: 'Kila Siku', fr: 'Quotidien', pt: 'Diariamente' },
+    'Weekly': { sw: 'Kila Wiki', fr: 'Hebdomadaire', pt: 'Semanalmente' },
+    'Monthly': { sw: 'Kila Mwezi', fr: 'Mensuel', pt: 'Mensalmente' },
+    'Seasonally': { sw: 'Kwa Msimu', fr: 'Saisonnier', pt: 'Sazonalmente' },
+    'Yearly': { sw: 'Kila Mwaka', fr: 'Annuel', pt: 'Anualmente' },
+    'Annually': { sw: 'Kila Mwaka', fr: 'Annuel', pt: 'Anualmente' },
+    'Never': { sw: 'Kamwe / Sijawahi', fr: 'Jamais', pt: 'Nunca' },
+    'Frequently': { sw: 'Mara kwa Mara', fr: 'Fréquemment', pt: 'Frequentemente' },
+    'Rarely': { sw: 'Mara Chache', fr: 'Rarement', pt: 'Raramente' },
+    'One brief sentence.': { sw: 'Sentensi moja fupi.', fr: 'Une brève phrase.', pt: 'Uma frase curta.' },
+
+    // Demographics & Roles
     'Male': { sw: 'Mwanaume', fr: 'Homme', pt: 'Masculino' },
     'Female': { sw: 'Mwanamke', fr: 'Femme', pt: 'Feminino' },
     'Smallholder': { sw: 'Mkulima Mdogo', fr: 'Petit Exploitant', pt: 'Pequeno Agricultor' },
     'Commercial': { sw: 'Kibiashara', fr: 'Commercial', pt: 'Comercial' },
+    'Single': { sw: 'Hajaoa / Hajaolewa', fr: 'Célibataire', pt: 'Solteiro(a)' },
+    'Married': { sw: 'Ameoa / Ameolewa', fr: 'Marié(e)', pt: 'Casado(a)' },
+    'Widowed': { sw: 'Mjane', fr: 'Veuf / Veuve', pt: 'Viúvo(a)' },
+    'Divorced / Separated': { sw: 'Ameachika / Wametengana', fr: 'Divorcé(e) / Séparé(e)', pt: 'Divorciado(a) / Separado(a)' },
+    'Head of Household': { sw: 'Kiongozi wa Kaya', fr: 'Chef de Ménage', pt: 'Chefe de Família' },
+    'Farmer': { sw: 'Mkulima', fr: 'Producteur / Agriculteur', pt: 'Agricultor' },
+    'Farmers': { sw: 'Wakulima', fr: 'Producteurs / Agriculteurs', pt: 'Agricultores' },
+    'Farmer Name': { sw: 'Jina la Mkulima', fr: 'Nom du Producteur', pt: 'Nome do Agricultor' },
+    'Respondent Name': { sw: 'Jina la Mhojiwa', fr: 'Nom de l’Enquêté', pt: 'Nome do Entrevistado' },
+    'Name of Farmer': { sw: 'Jina la Mkulima', fr: 'Nom du Producteur', pt: 'Nome do Agricultor' },
+    'Farmer Age': { sw: 'Umri wa Mkulima', fr: 'Âge du Producteur', pt: 'Idade do Agricultor' },
+    'Age of Respondent': { sw: 'Umri wa Mhojiwa', fr: 'Âge de l’Enquêté', pt: 'Idade do Entrevistado' },
+    'Household Size': { sw: 'Idadi ya Watu Katika Kaya', fr: 'Taille du Ménage', pt: 'Tamanho do Agregado Familiar' },
+    'Primary Education': { sw: 'Elimu ya Msingi', fr: 'Éducation Primaire', pt: 'Ensino Primário' },
+    'Secondary Education': { sw: 'Elimu ya Sekondari', fr: 'Éducation Secondaire', pt: 'Ensino Secundário' },
+    'College / University': { sw: 'Chuo / Chuo Kikuu', fr: 'Collège / Université', pt: 'Ensino Superior / Universidade' },
+    'No Formal Education': { sw: 'Bila Elimu Rasmi', fr: 'Aucune Éducation Formelle', pt: 'Sem Educação Formal' },
+    'Farmer / Respondent Full Name or Household ID': {
+      sw: 'Jina Kamili la Mkulima / Nambari ya Kaya',
+      fr: 'Nom Complet du Producteur / ID du Foyer',
+      pt: 'Nome Completo do Agricultor / ID do Agregado Familiar'
+    },
+    'Farmer Consent & Survey Verification Signature': {
+      sw: 'Idhini ya Mkulima na Sahihi ya Kuthibitisha Utafiti',
+      fr: 'Consentement du Producteur & Signature de Vérification',
+      pt: 'Consentimento do Agricultor e Assinatura de Verificação'
+    },
+    'Farmer or respondent confirms verbal consent and verifies receipt of extension advice.': {
+      sw: 'Mkulima au mhojiwa anathibitisha idhini ya mdomo na kupokea ushauri wa ugani.',
+      fr: 'Le producteur ou l’enquêté confirme son consentement verbal et atteste avoir reçu des conseils agricoles.',
+      pt: 'O agricultor ou entrevistado confirma o consentimento verbal e verifica a recepção de orientação técnica.'
+    },
+
+    // 2026 Smallholder Drought-Tolerant Maize Survey
+    '2026 Smallholder Drought-Tolerant Maize & Seed Adoption Survey': {
+      sw: 'Utafiti wa Wakulima Wadogo wa Mahindi Yanayovumilia Ukame na Uasili wa Mbegu Bora 2026',
+      fr: 'Enquête 2026 sur l’Adoption des Semences de Maïs Tolérantes à la Sécheresse',
+      pt: 'Inquérito 2026 de Adoção de Sementes de Milho Tolerantes à Seca'
+    },
+    'Field enumeration evaluating seed variety performance, germination rates, fertilizer co-application, and farmer Net Promoter Score across rural counties.': {
+      sw: 'Tathmini ya nyanjani ya utendaji wa mbegu, viwango vya uotaji, matumizi ya mbolea, na kuridhika kwa wakulima (NPS) kote kauntini.',
+      fr: 'Évaluation de terrain sur la performance variétale, le taux de germination, l’application d’engrais et le score NPS dans les comtés ruraux.',
+      pt: 'Avaliação de campo do desempenho varietal, taxas de germinação, adubação e recomendação do produtor (NPS).'
+    },
+    'Section 1: Plot Profile, Seed Variety & Field Coordinates': {
+      sw: 'Sehemu ya 1: Wasifu wa Shamba, Aina ya Mbegu na Majira ya GPS',
+      fr: 'Section 1 : Profil de la Parcelle, Variété de Semences & Coordonnées GPS',
+      pt: 'Secção 1: Perfil da Parcela, Variedade de Semente e Coordenadas GPS'
+    },
+    'Record farmer plot metadata, primary seed source, and GPS location before capturing harvest metrics.': {
+      sw: 'Rekodi taarifa za shamba, chanzo kikuu cha mbegu, na eneo la GPS kabla ya kurekodi takwimu za mavuno.',
+      fr: 'Enregistrez les métadonnées de la parcelle, la source de semences et la localisation GPS avant de saisir les récoltes.',
+      pt: 'Registe os dados da parcela, fonte da semente e localização GPS antes das métricas de colheita.'
+    },
+    'Which county / agro-ecological zone is this farm plot located in?': {
+      sw: 'Je, shamba hili liko katika kaunti au eneo gani la kilimo na ikolojia?',
+      fr: 'Dans quel comté ou zone agro-écologique cette parcelle est-elle située ?',
+      pt: 'Em que província ou zona agroecológica está localizada esta parcela?'
+    },
+    'Select the administrative county where the interview is taking place.': {
+      sw: 'Chagua kaunti ya kiutawala ambapo mahojiano yanafanyika.',
+      fr: 'Sélectionnez le comté administratif où se déroule l’entretien.',
+      pt: 'Selecione a província administrativa onde a entrevista está a decorrer.'
+    },
+    'Nakuru County (Rift Valley Highland)': {
+      sw: 'Kaunti ya Nakuru (Nyanda za Juu za Bonde la Ufa)',
+      fr: 'Comté de Nakuru (Hautes Terres de la Vallée du Rift)',
+      pt: 'Província de Nakuru (Planalto do Vale do Rift)'
+    },
+    'Machakos County (Eastern Semi-Arid)': {
+      sw: 'Kaunti ya Machakos (Mashariki Nusu-Ukame)',
+      fr: 'Comté de Machakos (Semi-Aride de l’Est)',
+      pt: 'Província de Machakos (Semiárido Oriental)'
+    },
+    'Kakamega County (Western Moist Transitional)': {
+      sw: 'Kaunti ya Kakamega (Magharibi yenye Unyevu)',
+      fr: 'Comté de Kakamega (Zone Humide de Transition de l’Ouest)',
+      pt: 'Província de Kakamega (Transição Húmida Ocidental)'
+    },
+    'Meru County (Upper Midland)': {
+      sw: 'Kaunti ya Meru (Nyanda za Kati za Juu)',
+      fr: 'Comté de Meru (Moyenne Altitude Supérieure)',
+      pt: 'Província de Meru (Terras Médias Superiores)'
+    },
+    'Uasin Gishu County (Maize Basket)': {
+      sw: 'Kaunti ya Uasin Gishu (Ghala Kuu la Mahindi)',
+      fr: 'Comté d’Uasin Gishu (Grenier à Maïs)',
+      pt: 'Província de Uasin Gishu (Celeiro de Milho)'
+    },
+    'Kitui County (Arid & Semi-Arid Lands)': {
+      sw: 'Kaunti ya Kitui (Maeneo Yenye Ukame na Nusu-Ukame)',
+      fr: 'Comté de Kitui (Terres Arides et Semi-Arides)',
+      pt: 'Província de Kitui (Terras Áridas e Semiáridas)'
+    },
+    'Which primary maize seed variety did you plant during the main rains?': {
+      sw: 'Ni aina gani kuu ya mbegu ya mahindi uliyopanda wakati wa msimu wa mvua kuu?',
+      fr: 'Quelle variété principale de maïs avez-vous semée pendant la grande saison des pluies ?',
+      pt: 'Qual a principal variedade de milho que semeou durante a época das chuvas principais?'
+    },
+    'Ask to inspect the seed packet label if the farmer still has it.': {
+      sw: 'Omba kukagua lebo ya pakiti ya mbegu ikiwa mkulima bado anayo.',
+      fr: 'Demandez à vérifier l’étiquette de l’emballage si le producteur la possède encore.',
+      pt: 'Peça para verificar a etiqueta da embalagem se o produtor ainda a tiver.'
+    },
+    'DH04 (Drought-Tolerant Hybrid)': {
+      sw: 'DH04 (Chotara Inayovumilia Ukame)',
+      fr: 'DH04 (Hybride Tolérant à la Sécheresse)',
+      pt: 'DH04 (Híbrido Tolerante à Seca)'
+    },
+    'KH500-43A (Highland Hybrid)': {
+      sw: 'KH500-43A (Chotara ya Nyanda za Juu)',
+      fr: 'KH500-43A (Hybride des Hautes Terres)',
+      pt: 'KH500-43A (Híbrido de Terras Altas)'
+    },
+    'SC Duma 43 (Early Maturing)': {
+      sw: 'SC Duma 43 (Inayokomaa Mapema)',
+      fr: 'SC Duma 43 (Précocité Élevée)',
+      pt: 'SC Duma 43 (Maturação Precoce)'
+    },
+    'DK 8031 (Medium Maturity)': {
+      sw: 'DK 8031 (Inayokomaa kwa Muda wa Kati)',
+      fr: 'DK 8031 (Maturité Intermédiaire)',
+      pt: 'DK 8031 (Maturação Média)'
+    },
+    'Local Recycled / Farm-Saved Seed': {
+      sw: 'Mbegu ya Kienyeji Iliyohifadhiwa Shambani / Iliyorudiwa',
+      fr: 'Semences Fermières Locales / Recyclées',
+      pt: 'Semente Tradicional Guardada / Reciclada'
+    },
+    'Which soil fertility or crop protection inputs were applied on this plot?': {
+      sw: 'Ni pembejeo gani za rutuba ya udongo au kinga ya mimea zilizotumika shambani humu?',
+      fr: 'Quels intrants de fertilité ou de protection des cultures ont été appliqués sur cette parcelle ?',
+      pt: 'Quais insumos de fertilidade ou proteção fitossanitária foram aplicados nesta parcela?'
+    },
+    'Select all inputs used during planting and top-dressing.': {
+      sw: 'Chagua pembejeo zote zilizotumika wakati wa kupanda na kukuzia.',
+      fr: 'Sélectionnez tous les intrants utilisés lors du semis et de la couverture.',
+      pt: 'Selecione todos os insumos aplicados no plantio e cobertura.'
+    },
+    'DAP / NPK Planting Fertilizer': {
+      sw: 'Mbolea ya Kupandia ya DAP / NPK',
+      fr: 'Engrais de Semis DAP / NPK',
+      pt: 'Adubo de Plantio DAP / NPK'
+    },
+    'CAN / Urea Top-Dressing': {
+      sw: 'Mbolea ya Kukuzia ya CAN / Urea',
+      fr: 'Engrais de Couverture CAN / Urée',
+      pt: 'Adubo de Cobertura CAN / Ureia'
+    },
+    'Compost / Farmyard Manure': {
+      sw: 'Mboji / Samadi ya Mifugo',
+      fr: 'Compost / Fumier de Ferme',
+      pt: 'Composto Orgânico / Estrume de Curral'
+    },
+    'Fall Armyworm Biological/Chemical Control': {
+      sw: 'Udhibiti wa Kibaolojia / Kikemikali wa Funza wa Jeshi (Fall Armyworm)',
+      fr: 'Contrôle Biologique/Chimique de la Chenille Légionnaire',
+      pt: 'Controle Biológico/Químico da Lagarta-do-cartucho'
+    },
+    'certified Rhizobium / Bio-Stimulant': {
+      sw: 'Kichocheo cha Asili / Rhizobium Iliyoidhinishwa',
+      fr: 'Inoculant Rhizobium Certifié / Bio-stimulant',
+      pt: 'Inoculante Rhizobium Certificado / Bioestimulante'
+    },
+    'Capture Farm Plot GPS Coordinates & Village Landmark': {
+      sw: 'Nasa Majira ya GPS ya Shamba na Alama Kuu ya Kijiji',
+      fr: 'Capturer les Coordonnées GPS de la Parcelle & Repère du Village',
+      pt: 'Capturar Coordenadas GPS da Parcela e Ponto de Referência'
+    },
+    'Stand at the edge of the main maize plot for ±10m satellite accuracy.': {
+      sw: 'Simama ukingoni mwa shamba kuu la mahindi kwa usahihi wa satelaiti wa ±10m.',
+      fr: 'Tenez-vous en bordure de la parcelle principale pour une précision satellite de ±10m.',
+      pt: 'Posicione-se no limite da parcela principal para precisão de satélite de ±10m.'
+    },
+    'Section 2: Agronomic Performance, Harvest Yield & Farmer NPS': {
+      sw: 'Sehemu ya 2: Utendaji wa Kilimo, Mavuno na Kiwango cha Kuridhika (NPS)',
+      fr: 'Section 2 : Performance Agronomique, Rendement Récolté & NPS',
+      pt: 'Secção 2: Desempenho Agronómico, Rendimento de Colheita e NPS'
+    },
+    'Evaluate variety traits, harvested yield per acre, and overall seed recommendation score.': {
+      sw: 'Tathmini sifa za mbegu, mavuno kwa ekari, na alama ya kupendekeza mbegu.',
+      fr: 'Évaluez les caractéristiques variétales, le rendement par acre et le score de recommandation.',
+      pt: 'Avalie os traços da variedade, colheita por acre e índice de recomendação.'
+    },
+    'Rate the planted seed variety across the following agronomic traits:': {
+      sw: 'Kadiria aina ya mbegu uliyopanda kulingana na sifa zifuatazo za kilimo:',
+      fr: 'Évaluez la variété semée selon les caractéristiques agronomiques suivantes :',
+      pt: 'Avalie a variedade semeada segundo as seguintes características agronómicas:'
+    },
+    'Read each trait aloud and record the farmer’s assessment.': {
+      sw: 'Soma kila sifa kwa sauti na urekodi tathmini ya mkulima.',
+      fr: 'Lisez chaque critère à voix haute et notez l’évaluation du producteur.',
+      pt: 'Leia cada critério em voz alta e registe a avaliação do produtor.'
+    },
+    'Germination uniformity (emergence within 7 days)': {
+      sw: 'Ulinganifu wa uotaji (kuota ndani ya siku 7)',
+      fr: 'Uniformité de germination (levée sous 7 jours)',
+      pt: 'Uniformidade de germinação (emergência em 7 dias)'
+    },
+    'Tolerance to mid-season dry spells': {
+      sw: 'Ustahimilivu wa vipindi vikavu katikati ya msimu',
+      fr: 'Tolérance aux poches de sécheresse en cours de saison',
+      pt: 'Tolerância a períodos de estiagem a meio da época'
+    },
+    'Resistance to cob rot and storage pests': {
+      sw: 'Upinzani dhidi ya kuoza kwa gunzi na wadudu wa ghala',
+      fr: 'Résistance à la pourriture des épis et aux ravageurs de stockage',
+      pt: 'Resistência ao apodrecimento da espiga e pragas de armazém'
+    },
+    'Grain weight and flour milling quality': {
+      sw: 'Uzito wa nafaka na ubora wa unga wakati wa kusaga',
+      fr: 'Poids du grain et qualité meunière de la farine',
+      pt: 'Peso do grão e rendimento de moagem para farinha'
+    },
+    'Estimated Harvested Maize Yield per Acre': {
+      sw: 'Kadirio la Mavuno ya Mahindi Yaliyovunwa kwa Ekari',
+      fr: 'Rendement Estimé de Maïs Récolté par Acre',
+      pt: 'Estimativa de Rendimento de Milho Colhido por Acre'
+    },
+    'Convert 90kg bags to kilograms if needed (e.g., 15 bags = 1,350 kg/acre).': {
+      sw: 'Badilisha mifuko ya kilo 90 kuwa kilo ikihitajika (mfano, mifuko 15 = kilo 1,350/ekari).',
+      fr: 'Convertir les sacs de 90kg en kilogrammes si nécessaire (ex : 15 sacs = 1 350 kg/acre).',
+      pt: 'Converta sacos de 90kg em quilogramas se necessário (ex.: 15 sacos = 1.350 kg/acre).'
+    },
+    'How satisfied were you with the distance and service at your local agro-dealer?': {
+      sw: 'Je, umeridhika kwa kiwango gani na umbali na huduma katika duka lako la pembejeo za kilimo?',
+      fr: 'Dans quelle mesure êtes-vous satisfait de la proximité et du service de votre agro-dealer local ?',
+      pt: 'Quão satisfeito ficou com a distância e o atendimento na sua loja agro-comercial local?'
+    },
+    'On a scale of 0 to 10, how likely are you to recommend this certified seed variety to neighboring farmers next season?': {
+      sw: 'Kwenye mizani ya 0 hadi 10, una uwezekano gani wa kuipendekeza mbegu hii iliyoidhinishwa kwa wakulima jirani msimu ujao?',
+      fr: 'Sur une échelle de 0 à 10, quelle est la probabilité que vous recommandiez cette semence certifiée à vos voisins la saison prochaine ?',
+      pt: 'Numa escala de 0 a 10, com que probabilidade recomendaria esta semente certificada aos vizinhos na próxima época?'
+    },
+    'Enumerator Observations & Farmer Feedback on Seed Availability': {
+      sw: 'Maoni ya Mtafiti na Maoni ya Mkulima Kuhusu Upatikanaji wa Mbegu',
+      fr: 'Observations de l’Enquêteur & Retours du Producteur sur la Disponibilité des Semences',
+      pt: 'Observações do Inquiridor e Feedback do Produtor sobre Disponibilidade de Sementes'
+    },
+    'Note any pack size preferences (2kg vs 10kg), fake seed concerns, or credit constraints.': {
+      sw: 'Zingatia upendeleo wa ukubwa wa pakiti (kilo 2 dhidi ya kilo 10), wasiwasi wa mbegu bandia, au changamoto za mikopo.',
+      fr: 'Notez les préférences de conditionnement (2kg vs 10kg), les craintes de contrefaçon ou les contraintes de crédit.',
+      pt: 'Registe preferências de embalagem (2kg vs 10kg), receios de sementes falsas ou limitações de crédito.'
+    },
+    'E.g., Farmer requested 2kg trial packs at local stockist before planting season...': {
+      sw: 'Mfano: Mkulima aliomba pakiti za majaribio za kilo 2 kwenye duka kabla ya msimu wa upandaji...',
+      fr: 'Ex : Le producteur a demandé des paquets d’essai de 2kg chez le détaillant avant la saison…',
+      pt: 'Ex.: O produtor solicitou embalagens de teste de 2kg no retalhista antes do plantio…'
+    },
+    'Crop Trial / Field Stand Photo Proof': {
+      sw: 'Picha ya Ushahidi wa Shamba na Mimea ya Majaribio',
+      fr: 'Preuve Photo de la Parcelle d’Essai / Peuplement Végétal',
+      pt: 'Foto Comprovativa da Parcela de Ensaio / Povoamento'
+    },
+    'Take a clear photo of the maize plot stand, cob development, or pest pressure.': {
+      sw: 'Piga picha safi ya mimea ya mahindi shambani, ukuaji wa magunzi, au shinikizo la wadudu.',
+      fr: 'Prenez une photo nette du peuplement de maïs, du développement des épis ou de la pression parasitaire.',
+      pt: 'Tire uma foto nítida do povoamento de milho, formação de maçarocas ou ataque de pragas.'
+    },
+
+    // Agro-Dealer Retail Audit Survey
+    'Agro-Dealer Stockout, Pack Size & Input Pricing Audit': {
+      sw: 'Ukaguzi wa Upungufu wa Hisa za Muuzaji, Ukubwa wa Pakiti na Bei za Pembejeo',
+      fr: 'Audit des Ruptures de Stock, Tailles de Paquets & Prix chez les Agro-dealers',
+      pt: 'Auditoria de Rutura de Stock, Embalagens e Preços nos Agro-dealers'
+    },
+    'Quarterly retail audit of rural agro-vet stockists assessing certified seed inventory, cold/dry storage compliance, and digital payment readiness.': {
+      sw: 'Ukaguzi wa robo mwaka wa maduka ya pembejeo vijijini unaotathmini hisa za mbegu, uhifadhi kavu, na malipo ya kidijitali.',
+      fr: 'Audit trimestriel des agro-vétérinaires ruraux évaluant les stocks de semences, le stockage sec et les paiements mobiles.',
+      pt: 'Auditoria trimestral dos retalhistas agropecuários avaliando stock de sementes, armazenamento e pagamentos digitais.'
+    },
+    'Retailer Inventory & Pricing Verification': {
+      sw: 'Uhakiki wa Hisa za Muuzaji na Bei',
+      fr: 'Vérification des Stocks et des Prix chez le Détaillant',
+      pt: 'Verificação de Stock e Preços do Retalhista'
+    },
+    'Complete at the agro-dealer counter with the shop owner or attendant.': {
+      sw: 'Kamilisha kaunta ya duka pamoja na mmiliki wa duka au mhudumu.',
+      fr: 'À remplir au comptoir de l’agro-dealer avec le propriétaire ou le gérant.',
+      pt: 'Preencha no balcão do agro-dealer com o proprietário ou atendente.'
+    },
+    'What is the classification of this agricultural input stockist?': {
+      sw: 'Je, duka hili la pembejeo za kilimo liko katika kundi gani?',
+      fr: 'Quelle est la classification de ce point de vente d’intrants agricoles ?',
+      pt: 'Qual a classificação deste ponto de venda de insumos agrícolas?'
+    },
+    'Verify KEPHIS / PCPB license display.': {
+      sw: 'Thibitisha kuwepo kwa leseni ya KEPHIS / PCPB.',
+      fr: 'Vérifiez l’affichage des licences KEPHIS / PCPB.',
+      pt: 'Verifique a exibição da licença oficial de comercialização.'
+    },
+    'Wholesale Hub & Retail Agro-Dealer': {
+      sw: 'Kituo Kikuu cha Jumla na Rejareja ya Pembejeo',
+      fr: 'Grossiste & Détaillant d’Intrants',
+      pt: 'Distribuidor Grossista e Retalhista de Insumos'
+    },
+    'Independent Rural Agro-Vet Retailer': {
+      sw: 'Duka Huru la Pembejeo za Kilimo na Mifugo Vijijini',
+      fr: 'Agro-vétérinaire Rural Indépendant',
+      pt: 'Agro-veterinária Rural Independente'
+    },
+    'Cooperative Society Input Store': {
+      sw: 'Duka la Pembejeo la Ushirika wa Wakulima',
+      fr: 'Magasin d’Intrants de Coopérative',
+      pt: 'Loja de Insumos da Cooperativa de Produtores'
+    },
+    'Village Agent / Last-Mile Stockist': {
+      sw: 'Wakala wa Kijiji / Muuzaji wa Pembejeo Mashinani',
+      fr: 'Agent Villageois / Détaillant de Proximité',
+      pt: 'Agente de Aldeia / Retalhista de Última Milha'
+    },
+    'Which certified seed categories are physically in stock today?': {
+      sw: 'Ni makundi gani ya mbegu zilizoidhinishwa yaliyopo dukani hivi leo?',
+      fr: 'Quelles catégories de semences certifiées sont physiquement en stock aujourd’hui ?',
+      pt: 'Que categorias de sementes certificadas estão fisicamente em stock hoje?'
+    },
+    'Visually confirm shelves or store room.': {
+      sw: 'Thibitisha kwa macho rafu au stoo ya duka.',
+      fr: 'Confirmez visuellement en rayon ou en réserve.',
+      pt: 'Confirme visualmente nas prateleiras ou no armazém.'
+    },
+    'Drought-Tolerant Maize Hybrids (2kg / 10kg)': {
+      sw: 'Chotara za Mahindi Yanayovumilia Ukame (Kilo 2 / Kilo 10)',
+      fr: 'Hybrides de Maïs Tolérants à la Sécheresse (2kg / 10kg)',
+      pt: 'Híbridos de Milho Tolerantes à Seca (2kg / 10kg)'
+    },
+    'Certified Common Beans (Nyota / Angaza)': {
+      sw: 'Maharage Yaliyoidhinishwa (Nyota / Angaza)',
+      fr: 'Semences Certifiées de Haricot Commun (Nyota / Angaza)',
+      pt: 'Feijão Comum Certificado (Nyota / Angaza)'
+    },
+    'Cowpea, Green Gram & Sorghum Pulses': {
+      sw: 'Kunde, Dengu na Mtama',
+      fr: 'Niébé, Mungo & Sorgho',
+      pt: 'Feijão-frade, Feijão-mungo e Sorgo'
+    },
+    'Assorted Vegetable Seeds (Hermetic Packets)': {
+      sw: 'Mbegu Mbalimbali za Mbogamboga (Pakiti Zilizofungwa Vizuri)',
+      fr: 'Semences Maraîchères Diverses (Sachets Hermétiques)',
+      pt: 'Sementes Hortícolas Variadas (Saquetas Herméticas)'
+    },
+    'Forage & Pasture Seeds (Brachiaria / Boma Rhodes)': {
+      sw: 'Mbegu za Lishe na Malisho (Brachiaria / Boma Rhodes)',
+      fr: 'Semences Fourragères et Pastorales (Brachiaria / Boma Rhodes)',
+      pt: 'Sementes Forrageiras e Pastagens (Brachiaria / Boma Rhodes)'
+    },
+    'Current Retail Price for a 2kg Packet of Certified Maize Seed': {
+      sw: 'Bei ya Sasa ya Rejareja ya Pakiti ya Kilo 2 ya Mbegu ya Mahindi Iliyoidhinishwa',
+      fr: 'Prix de Vente Actuel pour un Paquet de 2kg de Semences de Maïs Certifiées',
+      pt: 'Preço Atual de Retalho de um Pacote de 2kg de Milho Certificado'
+    },
+    'Record price in Kenyan Shillings (KES).': {
+      sw: 'Rekodi bei kwa Shilingi za Kenya (KES).',
+      fr: 'Enregistrez le prix en Shillings Kényans (KES).',
+      pt: 'Registe o preço em Xelins Quenianos (KES).'
+    },
+    'Enumerator Audit Score: Seed Storage Ventilation & Pallet Compliance': {
+      sw: 'Alama ya Ukaguzi wa Mtafiti: Uingizaji Hewa wa Stoo na Matumizi ya Paleti',
+      fr: 'Score d’Audit de l’Enquêteur : Aération du Stockage & Conformité des Palettes',
+      pt: 'Pontuação de Auditoria: Ventilação de Armazenamento e Paletes'
+    },
+    'Agro-Dealer Shop Front GPS Coordinates': {
+      sw: 'Majira ya GPS ya Eneo la Mbele ya Duka la Kilimo',
+      fr: 'Coordonnées GPS de la Devanture de l’Agro-dealer',
+      pt: 'Coordenadas GPS da Entrada da Loja Agro-comercial'
+    },
+    'Capture outside the shop entrance for clear satellite lock.': {
+      sw: 'Nasa nje ya mlango wa duka ili kupata mawimbi bora ya satelaiti.',
+      fr: 'Capturer devant l’entrée pour un signal satellite optimal.',
+      pt: 'Capture em frente à entrada da loja para sinal de satélite ideal.'
+    },
+
+    // Extension Pulse Survey
+    'Farmer Field Day & Demo Plot Training Feedback': {
+      sw: 'Maoni ya Wakulima Kuhusu Siku ya Nyanjani na Mafunzo ya Mashamba ya Maonyesho',
+      fr: 'Retours des Producteurs sur la Journée de Champ & Formations Démonstratives',
+      pt: 'Feedback dos Agricultores sobre o Dia de Campo e Parcelas de Demonstração'
+    },
+    'Post-event pulse survey measuring farmer learning outcomes, agronomic demo clarity, and extension officer effectiveness.': {
+      sw: 'Utafiti wa baada ya hafla unaopima mafunzo ya wakulima, uwazi wa maonyesho, na ufanisi wa maafisa ugani.',
+      fr: 'Enquête flash post-événement évaluant l’apprentissage, la clarté des démonstrations et l’efficacité des vulgarisateurs.',
+      pt: 'Inquérito rápido pós-evento avaliando a aprendizagem, clareza das demonstrações e eficácia da extensão.'
+    },
+    'Field Day Experience & Knowledge Gain': {
+      sw: 'Uzoefu wa Siku ya Nyanjani na Maarifa Yaliyopatikana',
+      fr: 'Expérience de la Journée de Champ & Acquis de Connaissances',
+      pt: 'Experiência do Dia de Campo e Aquisição de Conhecimento'
+    },
+    'Quick 2-minute exit survey for farmers attending demonstration plots.': {
+      sw: 'Utafiti wa haraka wa dakika 2 kwa wakulima wanaohudhuria mashamba ya maonyesho.',
+      fr: 'Enquête de sortie rapide de 2 minutes pour les producteurs ayant visité les parcelles d’essai.',
+      pt: 'Inquérito rápido de saída de 2 minutos para agricultores que visitaram os campos de demonstração.'
+    },
+    'Which demonstration station was most useful for your farm today?': {
+      sw: 'Ni kituo kipi cha maonyesho kilichokuwa na manufaa zaidi kwa shamba lako leo?',
+      fr: 'Quelle station de démonstration a été la plus utile pour votre exploitation aujourd’hui ?',
+      pt: 'Qual estação de demonstração foi mais útil para a sua propriedade hoje?'
+    },
+    'Select the top session.': {
+      sw: 'Chagua kipindi bora zaidi.',
+      fr: 'Sélectionnez la session principale.',
+      pt: 'Selecione a sessão mais relevante.'
+    },
+    'Planting Spacing & Basal Fertilizer Calibration': {
+      sw: 'Nafasi ya Upandaji na Upimaji Sahihi wa Mbolea ya Kupandia',
+      fr: 'Espacement de Semis & Calibration de l’Engrais de Fond',
+      pt: 'Espaçamento de Plantio e Calibração de Adubo de Fundo'
+    },
+    'Drought-Tolerant Seed Variety Side-by-Side Comparison': {
+      sw: 'Ulinganisho wa Ana kwa Ana wa Mbegu Zinazovumilia Ukame',
+      fr: 'Comparaison Variétale Côte à Côte de Variétés Tolérantes à la Sécheresse',
+      pt: 'Comparação Lado a Lado de Variedades Tolerantes à Seca'
+    },
+    'Post-Harvest Hermetic Storage (PICS Bags)': {
+      sw: 'Uhifadhi Bora Baada ya Mavuno (Mifuko ya PICS)',
+      fr: 'Stockage Hermétique Post-Récolte (Sacs PICS)',
+      pt: 'Armazenamento Hermético Pós-Colheita (Sacos PICS)'
+    },
+    'Soil pH Testing & Liming Demonstration': {
+      sw: 'Upimaji wa Asidi ya Udongo (pH) na Maonyesho ya Chokaa',
+      fr: 'Analyse du pH du Sol & Démonstration de Chaulage',
+      pt: 'Teste de pH do Solo e Demonstração de Calagem'
+    },
+    'How likely are you to invite another farmer from your village to the next Agri Experience Field Day?': {
+      sw: 'Una uwezekano gani wa kumwalika mkulima mwingine kutoka kijijini kwako kwenye Siku ijayo ya Nyanjani ya Agri Experience?',
+      fr: 'Quelle est la probabilité que vous invitiez un autre producteur à la prochaine Journée de Champ Agri Experience ?',
+      pt: 'Qual a probabilidade de convidar outro produtor para o próximo Dia de Campo da Agri Experience?'
+    },
+    'What is the #1 practice you plan to change on your plot next season?': {
+      sw: 'Ni zoezi gani nambari moja unalopanga kubadilisha shambani mwako msimu ujao?',
+      fr: 'Quelle est la pratique n°1 que vous prévoyez d’adopter sur votre parcelle la saison prochaine ?',
+      pt: 'Qual é a prática número 1 que planeia alterar na sua parcela na próxima época?'
+    },
+    'E.g., Switching from recycled seed to certified DH04...': {
+      sw: 'Mfano: Kubadilisha kutoka mbegu iliyorudiwa hadi mbegu iliyoidhinishwa ya DH04...',
+      fr: 'Ex : Remplacer les semences recyclées par l’hybride certifié DH04…',
+      pt: 'Ex.: Mudar de semente reciclada para o híbrido certificado DH04…'
+    },
+
+    // General Agricultural & Survey Vocabularies
     'Select one option.': { sw: 'Chagua jibu moja.', fr: 'Sélectionnez une option.', pt: 'Selecione uma opção.' },
     'Select all that apply.': { sw: 'Chagua zote zinazohusika.', fr: 'Sélectionnez toutes les réponses applicables.', pt: 'Selecione todas as opções aplicáveis.' },
     'Choose from the list.': { sw: 'Chagua kutoka kwenye orodha.', fr: 'Choisissez dans la liste.', pt: 'Escolha da lista.' },
@@ -1292,11 +1798,6 @@
       fr: 'Date de Semis / Inspection au Champ',
       pt: 'Data de Semeadura / Inspeção de Campo'
     },
-    'Farmer / Respondent Full Name or Household ID': {
-      sw: 'Jina Kamili la Mkulima / Nambari ya Kaya',
-      fr: 'Nom Complet du Producteur / ID du Foyer',
-      pt: 'Nome Completo do Agricultor / ID do Agregado Familiar'
-    },
     'Additional Enumerator Observations & Qualitative Feedback': {
       sw: 'Maoni ya Ziada ya Mtafiti na Taarifa za Ubora',
       fr: 'Observations Supplémentaires de l’Enquêteur & Retours Qualitatifs',
@@ -1327,12 +1828,102 @@
     'Top-Dressing Fertilizer (CAN/Urea)': { sw: 'Mbolea ya Kukuzia (CAN/Urea)', fr: 'Engrais de Couverture (CAN/Urée)', pt: 'Adubo de Cobertura (CAN/Ureia)' },
     'Organic Manure / Compost': { sw: 'Samadi ya Wanyama / Mboji', fr: 'Fumier Organique / Compost', pt: 'Estrume Orgânico / Composto' },
     'Crop Rotation with Legumes': { sw: 'Mzunguko wa Mazao na Mikunde', fr: 'Rotation des Cultures avec des Légumineuses', pt: 'Rotação de Culturas com Leguminosas' },
+    'Grain hardness & storage pest tolerance': { sw: 'Ugumu wa nafaka na uvumilivu wa wadudu wa ghala', fr: 'Dureté du grain et tolérance aux ravageurs de stockage', pt: 'Dureza do grão e tolerância a pragas de armazém' },
+    'Flour yield & taste quality': { sw: 'Kiwango cha unga na ladha nzuri', fr: 'Rendement en farine et qualité gustative', pt: 'Rendimento em farinha e sabor' },
+
+    // Geographic Counties
     'Nakuru County': { sw: 'Kaunti ya Nakuru', fr: 'Comté de Nakuru', pt: 'Província de Nakuru' },
     'Machakos County': { sw: 'Kaunti ya Machakos', fr: 'Comté de Machakos', pt: 'Província de Machakos' },
     'Kakamega County': { sw: 'Kaunti ya Kakamega', fr: 'Comté de Kakamega', pt: 'Província de Kakamega' },
     'Meru County': { sw: 'Kaunti ya Meru', fr: 'Comté de Meru', pt: 'Província de Meru' },
-    'Uasin Gishu County': { sw: 'Kaunti ya Uasin Gishu', fr: 'Comté d’Uasin Gishu', pt: 'Província de Uasin Gishu' }
+    'Uasin Gishu County': { sw: 'Kaunti ya Uasin Gishu', fr: 'Comté d’Uasin Gishu', pt: 'Província de Uasin Gishu' },
+    'Kitui County': { sw: 'Kaunti ya Kitui', fr: 'Comté de Kitui', pt: 'Província de Kitui' },
+    'Trans Nzoia County': { sw: 'Kaunti ya Trans Nzoia', fr: 'Comté de Trans Nzoia', pt: 'Província de Trans Nzoia' },
+    'Bungoma County': { sw: 'Kaunti ya Bungoma', fr: 'Comté de Bungoma', pt: 'Província de Bungoma' },
+    'Kisumu County': { sw: 'Kaunti ya Kisumu', fr: 'Comté de Kisumu', pt: 'Província de Kisumu' },
+    'Siaya County': { sw: 'Kaunti ya Siaya', fr: 'Comté de Siaya', pt: 'Província de Siaya' },
+    'Homa Bay County': { sw: 'Kaunti ya Homa Bay', fr: 'Comté de Homa Bay', pt: 'Província de Homa Bay' },
+    'Migori County': { sw: 'Kaunti ya Migori', fr: 'Comté de Migori', pt: 'Província de Migori' },
+    'Kisii County': { sw: 'Kaunti ya Kisii', fr: 'Comté de Kisii', pt: 'Província de Kisii' },
+    'Nyamira County': { sw: 'Kaunti ya Nyamira', fr: 'Comté de Nyamira', pt: 'Província de Nyamira' },
+    'Kericho County': { sw: 'Kaunti ya Kericho', fr: 'Comté de Kericho', pt: 'Província de Kericho' },
+    'Bomet County': { sw: 'Kaunti ya Bomet', fr: 'Comté de Bomet', pt: 'Província de Bomet' },
+    'Nandi County': { sw: 'Kaunti ya Nandi', fr: 'Comté de Nandi', pt: 'Província de Nandi' },
+    'Laikipia County': { sw: 'Kaunti ya Laikipia', fr: 'Comté de Laikipia', pt: 'Província de Laikipia' },
+    'Narok County': { sw: 'Kaunti ya Narok', fr: 'Comté de Narok', pt: 'Província de Narok' },
+    'Kajiado County': { sw: 'Kaunti ya Kajiado', fr: 'Comté de Kajiado', pt: 'Província de Kajiado' },
+    'Makueni County': { sw: 'Kaunti ya Makueni', fr: 'Comté de Makueni', pt: 'Província de Makueni' },
+    'Embu County': { sw: 'Kaunti ya Embu', fr: 'Comté d’Embu', pt: 'Província de Embu' },
+    'Kiambu County': { sw: 'Kaunti ya Kiambu', fr: 'Comté de Kiambu', pt: 'Província de Kiambu' },
+    'Murang\'a County': { sw: 'Kaunti ya Murang\'a', fr: 'Comté de Murang\'a', pt: 'Província de Murang\'a' },
+    'Nyeri County': { sw: 'Kaunti ya Nyeri', fr: 'Comté de Nyeri', pt: 'Província de Nyeri' },
+    'Kirinyaga County': { sw: 'Kaunti ya Kirinyaga', fr: 'Comté de Kirinyaga', pt: 'Província de Kirinyaga' },
+    'Nyandarua County': { sw: 'Kaunti ya Nyandarua', fr: 'Comté de Nyandarua', pt: 'Província de Nyandarua' },
+    'Nairobi County': { sw: 'Kaunti ya Nairobi', fr: 'Comté de Nairobi', pt: 'Província de Nairobi' },
+    'Mombasa County': { sw: 'Kaunti ya Mombasa', fr: 'Comté de Mombasa', pt: 'Província de Mombasa' },
+    'Kilifi County': { sw: 'Kaunti ya Kilifi', fr: 'Comté de Kilifi', pt: 'Província de Kilifi' },
+    'Kwale County': { sw: 'Kaunti ya Kwale', fr: 'Comté de Kwale', pt: 'Província de Kwale' },
+
+    // Common Question & Form Vocabulary
+    'What is your primary crop?': { sw: 'Ni zao gani kuu unalolima?', fr: 'Quelle est votre culture principale ?', pt: 'Qual é a sua principal cultura?' },
+    'What is your name?': { sw: 'Jina lako nani?', fr: 'Quel est votre nom ?', pt: 'Qual é o seu nome?' },
+    'Respondent Name': { sw: 'Jina la Mhojiwa', fr: 'Nom de l’Enquêté', pt: 'Nome do Entrevistado' },
+    'Phone Number': { sw: 'Nambari ya Simu', fr: 'Numéro de Téléphone', pt: 'Número de Telefone' },
+    'National ID': { sw: 'Kitambulisho cha Taifa', fr: 'Carte d’Identité Nationale', pt: 'Bilhete de Identidade' },
+    'Farm Size': { sw: 'Ukubwa wa Shamba', fr: 'Superficie de l’Exploitation', pt: 'Tamanho da Propriedade' },
+    'Farm size in acres': { sw: 'Ukubwa wa shamba kwa ekari', fr: 'Superficie de l’exploitation en acres', pt: 'Tamanho da propriedade em acres' },
+    'Land allocated to crops': { sw: 'Ardhi iliyotengwa kwa mazao', fr: 'Terres allouées aux cultures', pt: 'Área dedicada a culturas' },
+    'Where did you buy your seed?': { sw: 'Ulinunua wapi mbegu zako?', fr: 'Où avez-vous acheté vos semences ?', pt: 'Onde comprou as suas sementes?' },
+    'Where did you purchase your seed?': { sw: 'Ulinunua wapi mbegu zako?', fr: 'Où avez-vous acheté vos semences ?', pt: 'Onde comprou as suas sementes?' },
+    'Did you receive agronomic training?': { sw: 'Je, ulipata mafunzo ya kilimo?', fr: 'Avez-vous reçu une formation agronomique ?', pt: 'Recebeu formação agronómica?' },
+    'Did you use certified seeds?': { sw: 'Je, ulitumia mbegu zilizoidhinishwa?', fr: 'Avez-vous utilisé des semences certifiées ?', pt: 'Utilizou sementes certificadas?' },
+    'Did you use fertilizer?': { sw: 'Je, ulitumia mbolea?', fr: 'Avez-vous utilisé des engrais ?', pt: 'Utilizou adubo?' },
+    'What type of fertilizer did you use?': { sw: 'Ulitumia aina gani ya mbolea?', fr: 'Quel type d’engrais avez-vous utilisé ?', pt: 'Que tipo de adubo utilizou?' },
+    'Total Harvest': { sw: 'Jumla ya Mavuno', fr: 'Récolte Totale', pt: 'Colheita Total' },
+    'Total Yield': { sw: 'Jumla ya Mavuno', fr: 'Rendement Total', pt: 'Rendimento Total' },
+    'Yield in 90kg bags': { sw: 'Mavuno kwa mifuko ya kilo 90', fr: 'Rendement en sacs de 90kg', pt: 'Rendimento em sacos de 90kg' },
+    'How do you store your grain?': { sw: 'Je, unahifadhije nafaka yako?', fr: 'Comment stockez-vous votre grain ?', pt: 'Como armazena os seus grãos?' },
+    'Storage Method': { sw: 'Njia ya Uhifadhi', fr: 'Méthode de Stockage', pt: 'Método de Armazenamento' },
+    'Water Source': { sw: 'Chanzo cha Maji', fr: 'Source d’Eau', pt: 'Fonte de Água' },
+    'Main Source of Income': { sw: 'Chanzo Kikuu cha Mapato', fr: 'Principale Source de Revenu', pt: 'Principal Fonte de Renda' },
+    'Family Labor': { sw: 'Kazi ya Wanafamilia', fr: 'Main-d’œuvre Familiale', pt: 'Mão-de-obra Familiar' },
+    'Hired Labor': { sw: 'Kibarua / Vibarua wa Kulipwa', fr: 'Main-d’œuvre Salariée', pt: 'Mão-de-obra Contratada' },
+    'Cash': { sw: 'Fedha Taslimu', fr: 'Espèces', pt: 'Dinheiro Vivo' },
+    'M-Pesa / Mobile Money': { sw: 'M-Pesa / Pesa ya Simu', fr: 'M-Pesa / Paiement Mobile', pt: 'M-Pesa / Dinheiro Móvel' },
+    'Credit / Pay Later': { sw: 'Mkopo / Kulipa Baadaye', fr: 'Crédit / Paiement Différé', pt: 'Crédito / Pagamento Posterior' },
+    'Agro-dealer Shop': { sw: 'Duka la Pembejeo za Kilimo', fr: 'Boutique d’Agro-dealers', pt: 'Loja de Insumos Agrícolas' },
+    'Agro-dealer shop': { sw: 'Duka la pembejeo za kilimo', fr: 'Boutique d’agro-dealers', pt: 'Loja de insumos agrícolas' },
+    'Local Market': { sw: 'Soko la Kienyeji', fr: 'Marché Local', pt: 'Mercado Local' },
+    'Local market': { sw: 'Soko la kienyeji', fr: 'Marché local', pt: 'Mercado local' },
+    'Local Open Market': { sw: 'Soko Huria la Kienyeji', fr: 'Marché Ouvert Local', pt: 'Mercado Aberto Local' },
+    'Fellow Farmer': { sw: 'Mkulima Mwenzangu', fr: 'Producteur Voisin', pt: 'Agricultor Vizinho' },
+    'Fellow farmer': { sw: 'Mkulima mwenzangu', fr: 'Producteur voisin', pt: 'Agricultor vizinho' },
+    'Neighboring Farmer': { sw: 'Mkulima Jirani', fr: 'Producteur Voisin', pt: 'Agricultor Vizinho' },
+    'Farmer Group / Cooperative': { sw: 'Kikundi cha Wakulima / Ushirika', fr: 'Groupement de Producteurs / Coopérative', pt: 'Associação de Produtores / Cooperativa' },
+    'Government Extension Officer': { sw: 'Afisa Ugani wa Serikali', fr: 'Agent de Vulgarisation Gouvernemental', pt: 'Técnico de Extensão Governamental' },
+    'Satisfaction': { sw: 'Kiwango cha Kuridhika', fr: 'Satisfaction', pt: 'Satisfação' },
+    'Seed Quality': { sw: 'Ubora wa Mbegu', fr: 'Qualité des Semences', pt: 'Qualidade das Sementes' },
+    'Crop Variety': { sw: 'Aina ya Zao', fr: 'Variété de Culture', pt: 'Variedade de Cultura' },
+    'Fertilizer Application': { sw: 'Matumizi ya Mbolea', fr: 'Application d’Engrais', pt: 'Aplicação de Adubo' }
   };
+
+  // Pre-computed lowercase and reverse indices for O(1) case-insensitive & bidirectional lookup
+  const DICTIONARY_LOWER_MAP = {};
+  const REVERSE_DICTIONARY_MAP = { sw: {}, fr: {}, pt: {} };
+
+  for (const [enKey, translations] of Object.entries(COMMON_DICTIONARY)) {
+    const lowerKey = enKey.trim().toLowerCase();
+    DICTIONARY_LOWER_MAP[lowerKey] = translations;
+    const strippedLower = lowerKey.replace(/[\?\:\.\!\…\)]+$/, '').trim();
+    if (strippedLower && strippedLower !== lowerKey && !DICTIONARY_LOWER_MAP[strippedLower]) {
+      DICTIONARY_LOWER_MAP[strippedLower] = translations;
+    }
+    for (const lang of ['sw', 'fr', 'pt']) {
+      if (translations[lang]) {
+        REVERSE_DICTIONARY_MAP[lang][translations[lang].trim().toLowerCase()] = enKey;
+      }
+    }
+  }
 
   const AEI18n = {
     LANGUAGES,
@@ -1369,11 +1960,7 @@
       if (!term || typeof term !== 'string') return term;
       const lang = langOverride || this.getLanguage();
       if (lang === 'en') return term;
-      const entry = COMMON_DICTIONARY[term.trim()];
-      if (entry && entry[lang]) {
-        return entry[lang];
-      }
-      return term;
+      return this.translatePhrase(term, lang);
     },
 
     /**
@@ -1386,8 +1973,14 @@
       const lang = langOverride || this.getLanguage();
       if (lang === 'en') return rawSurvey;
 
-      const surveyI18n = (SURVEY_TRANSLATIONS[rawSurvey.id] && SURVEY_TRANSLATIONS[rawSurvey.id][lang]) ||
-        (rawSurvey.translations && rawSurvey.translations[lang]) || {};
+      const seedI18n = (SURVEY_TRANSLATIONS[rawSurvey.id] && SURVEY_TRANSLATIONS[rawSurvey.id][lang]) || {};
+      const userI18n = (rawSurvey.translations && rawSurvey.translations[lang]) || {};
+      const surveyI18n = {
+        ...seedI18n,
+        ...userI18n,
+        pages: { ...(seedI18n.pages || {}), ...(userI18n.pages || {}) },
+        questions: { ...(seedI18n.questions || {}), ...(userI18n.questions || {}) }
+      };
 
       const localizedPages = (rawSurvey.pages || []).map((page) => {
         const pageI18n = (surveyI18n.pages && surveyI18n.pages[page.id]) || {};
@@ -1399,26 +1992,40 @@
           if (Array.isArray(qI18n.options) && qI18n.options.length > 0) {
             translatedOptions = qI18n.options;
           } else if (Array.isArray(q.options)) {
-            translatedOptions = q.options.map((opt) => this.translateTerm(opt, lang));
+            translatedOptions = q.options.map((opt) => this.translatePhrase(opt, lang));
           }
 
           let translatedRows = q.rows;
-          if (Array.isArray(qI18n.rows)) {
+          if (Array.isArray(qI18n.rows) && qI18n.rows.length > 0) {
             translatedRows = qI18n.rows;
+          } else if (Array.isArray(q.rows)) {
+            translatedRows = q.rows.map((row) => this.translatePhrase(row, lang));
           }
 
           let translatedColumns = q.columns;
-          if (Array.isArray(qI18n.columns)) {
+          if (Array.isArray(qI18n.columns) && qI18n.columns.length > 0) {
             translatedColumns = qI18n.columns;
           } else if (Array.isArray(q.columns)) {
-            translatedColumns = q.columns.map((col) => this.translateTerm(col, lang));
+            translatedColumns = q.columns.map((col) => this.translatePhrase(col, lang));
           }
+
+          const locTitle = (qI18n.title && qI18n.title !== q.title)
+            ? qI18n.title
+            : this.translatePhrase(q.title, lang);
+
+          const locHelp = (qI18n.helpText !== undefined && qI18n.helpText !== '' && qI18n.helpText !== q.helpText)
+            ? qI18n.helpText
+            : (q.helpText ? this.translatePhrase(q.helpText, lang) : q.helpText);
+
+          const locPlaceholder = (qI18n.placeholder !== undefined && qI18n.placeholder !== '' && qI18n.placeholder !== q.placeholder)
+            ? qI18n.placeholder
+            : (q.placeholder ? this.translatePhrase(q.placeholder, lang) : q.placeholder);
 
           return {
             ...q,
-            title: qI18n.title || q.title,
-            helpText: qI18n.helpText !== undefined ? qI18n.helpText : q.helpText,
-            placeholder: qI18n.placeholder !== undefined ? qI18n.placeholder : q.placeholder,
+            title: locTitle,
+            helpText: locHelp,
+            placeholder: locPlaceholder,
             options: translatedOptions,
             rows: translatedRows,
             columns: translatedColumns,
@@ -1426,18 +2033,34 @@
           };
         });
 
+        const locPageTitle = (pageI18n.title && pageI18n.title !== page.title)
+          ? pageI18n.title
+          : this.translatePhrase(page.title, lang);
+
+        const locPageDesc = (pageI18n.description !== undefined && pageI18n.description !== '' && pageI18n.description !== page.description)
+          ? pageI18n.description
+          : (page.description ? this.translatePhrase(page.description, lang) : page.description);
+
         return {
           ...page,
-          title: pageI18n.title || page.title,
-          description: pageI18n.description !== undefined ? pageI18n.description : page.description,
+          title: locPageTitle,
+          description: locPageDesc,
           questions: localizedQuestions
         };
       });
 
+      const locSurveyTitle = (surveyI18n.title && surveyI18n.title !== rawSurvey.title)
+        ? surveyI18n.title
+        : this.translatePhrase(rawSurvey.title, lang);
+
+      const locSurveyDesc = (surveyI18n.description !== undefined && surveyI18n.description !== '' && surveyI18n.description !== rawSurvey.description)
+        ? surveyI18n.description
+        : (rawSurvey.description ? this.translatePhrase(rawSurvey.description, lang) : rawSurvey.description);
+
       return {
         ...rawSurvey,
-        title: surveyI18n.title || rawSurvey.title,
-        description: surveyI18n.description !== undefined ? surveyI18n.description : rawSurvey.description,
+        title: locSurveyTitle,
+        description: locSurveyDesc,
         pages: localizedPages,
         _activeLang: lang
       };
@@ -1447,17 +2070,169 @@
       if (!phrase || typeof phrase !== 'string') return phrase;
       if (lang === 'en') return phrase;
       const trimmed = phrase.trim();
+      if (!trimmed) return phrase;
+
+      // 1. Exact match in COMMON_DICTIONARY
       if (COMMON_DICTIONARY[trimmed] && COMMON_DICTIONARY[trimmed][lang]) {
         return COMMON_DICTIONARY[trimmed][lang];
       }
+
+      // 2. Case-insensitive lookup
+      const lower = trimmed.toLowerCase();
+      if (DICTIONARY_LOWER_MAP[lower] && DICTIONARY_LOWER_MAP[lower][lang]) {
+        return DICTIONARY_LOWER_MAP[lower][lang];
+      }
+
+      // 3. Extract trailing punctuation (e.g. '?', ':', '.', '!', '…', '...')
+      const punctMatch = trimmed.match(/^(.*?)([\?\:\.\!\…\)]+)$/);
+      if (punctMatch) {
+        const core = punctMatch[1].trim();
+        const punct = punctMatch[2];
+        const coreLower = core.toLowerCase();
+        if (DICTIONARY_LOWER_MAP[coreLower] && DICTIONARY_LOWER_MAP[coreLower][lang]) {
+          const rawTrans = DICTIONARY_LOWER_MAP[coreLower][lang];
+          const cleanTrans = rawTrans.replace(/[\.\:\?]+$/, '');
+          return cleanTrans + (punct === ':' ? ':' : punct === '?' ? '?' : punct);
+        }
+      }
+
+      // 4. Swahili sentence pattern matchers for common question formats
+      if (lang === 'sw') {
+        const swTr = this.translateSwahiliSentencePattern(trimmed);
+        if (swTr && swTr !== trimmed) {
+          return swTr;
+        }
+      }
+
+      // 5. Compound / Multi-word phrase replacement fallback for agricultural terms
+      const compoundTr = this.translateCompoundPhrase(trimmed, lang);
+      if (compoundTr && compoundTr !== trimmed) {
+        return compoundTr;
+      }
+
       return phrase;
+    },
+
+    translateSwahiliSentencePattern(phrase) {
+      const trimmed = phrase.trim();
+      const hasQMark = trimmed.endsWith('?');
+      const clean = trimmed.replace(/[\?\.\!]$/, '').trim();
+
+      // "What is your / What is the [X]?" -> "Je, [X] yako ni nini?"
+      let m = clean.match(/^(?:what is your|what's your|what is the)\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Je, ${restTr.toLowerCase()} ni nini?`;
+      }
+
+      // "How many [X]..." -> "Ni [X] ngapi?"
+      m = clean.match(/^how many\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Ni ${restTr.toLowerCase()} ngapi?`;
+      }
+
+      // "How much [X]..." -> "Ni kiasi gani cha [X]?"
+      m = clean.match(/^how much\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Ni kiasi gani cha ${restTr.toLowerCase()}?`;
+      }
+
+      // "Do you have / Do you own [X]?" -> "Je, una [X]?"
+      m = clean.match(/^(?:do you have|do you own|have you got)\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Je, una ${restTr.toLowerCase()}?`;
+      }
+
+      // "Did you receive / Did you apply [X]?" -> "Je, ulipata / ulitumia [X]?"
+      m = clean.match(/^did you\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Je, uli ${restTr.toLowerCase()}?`;
+      }
+
+      // "Where did you purchase / buy [X]?" -> "Ulinunua wapi [X]?"
+      m = clean.match(/^where did you (?:purchase|buy|get)\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Ulinunua wapi ${restTr.toLowerCase()}?`;
+      }
+
+      // "Which [X] did you plant / use?" -> "Ni [X] gani?"
+      m = clean.match(/^which\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Ni ${restTr.toLowerCase()} gani?`;
+      }
+
+      // "Rate the / Rate your [X]" -> "Kadiria [X]:"
+      m = clean.match(/^rate (?:the|your)\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Kadiria ${restTr.toLowerCase()}:`;
+      }
+
+      // "Please enter / specify [X]" -> "Tafadhali weka [X]:"
+      m = clean.match(/^please (?:enter|specify|provide)\s+(.+)$/i);
+      if (m) {
+        const restTr = this.translatePhrase(m[1].trim(), 'sw');
+        return `Tafadhali weka ${restTr.toLowerCase()}:`;
+      }
+
+      return phrase;
+    },
+
+    translateCompoundPhrase(phrase, lang) {
+      if (lang !== 'sw') return phrase;
+      let text = phrase;
+
+      // Common term substitutions in phrases
+      const SUB_TERMS = [
+        [/\bin acres\b/gi, 'kwa ekari'],
+        [/\bper acre\b/gi, 'kwa ekari'],
+        [/\bin kgs\b/gi, 'kwa kilo'],
+        [/\bin kilograms\b/gi, 'kwa kilo'],
+        [/\b90kg bags\b/gi, 'mifuko ya kilo 90'],
+        [/\bthis season\b/gi, 'msimu huu'],
+        [/\blast season\b/gi, 'msimu uliopita'],
+        [/\bnext season\b/gi, 'msimu ujao'],
+        [/\bon this plot\b/gi, 'shambani humu'],
+        [/\bfarm plot\b/gi, 'shamba'],
+        [/\bhousehold head\b/gi, 'kiongozi wa kaya'],
+        [/\bfertilizer\b/gi, 'mbolea'],
+        [/\bcertified seed\b/gi, 'mbegu iliyoidhinishwa'],
+        [/\bmaize seed\b/gi, 'mbegu ya mahindi'],
+        [/\bdrought-tolerant\b/gi, 'inayovumilia ukame'],
+        [/\bharvested yield\b/gi, 'mavuno yaliyovunwa'],
+        [/\bgps coordinates\b/gi, 'majira ya GPS'],
+        [/\bagro-dealer shop\b/gi, 'duka la pembejeo za kilimo'],
+        [/\bagro-dealer\b/gi, 'muuzaji wa pembejeo za kilimo'],
+        [/\blocal market\b/gi, 'soko la kienyeji'],
+        [/\bfellow farmer\b/gi, 'mkulima mwenzangu'],
+        [/\bneighboring farmer\b/gi, 'mkulima jirani'],
+        [/\bseed quality\b/gi, 'ubora wa mbegu'],
+        [/\bextension officer\b/gi, 'afisa ugani'],
+        [/\bfield day\b/gi, 'siku ya nyanjani'],
+        [/\bdemonstration plot\b/gi, 'shamba la maonyesho'],
+        [/\bdemo plot\b/gi, 'shamba la maonyesho'],
+        [/\bsoil testing\b/gi, 'upimaji wa udongo']
+      ];
+
+      for (const [pattern, replacement] of SUB_TERMS) {
+        text = text.replace(pattern, replacement);
+      }
+
+      return text;
     },
 
     /**
      * Auto-translates a survey's title, description, sections, questions, and options
-     * into the specified target language ('sw' or 'fr') using the agricultural dictionary.
+     * into the specified target language ('sw', 'fr', or 'pt') using the agricultural dictionary.
+     * When force=true, replaces any translations that match the English original or are empty.
      */
-    autoTranslateSurvey(survey, targetLang = 'sw') {
+    autoTranslateSurvey(survey, targetLang = 'sw', force = true) {
       if (!survey) return null;
       if (!survey.translations) survey.translations = {};
       if (!survey.translations[targetLang]) survey.translations[targetLang] = { pages: {}, questions: {} };
@@ -1466,36 +2241,55 @@
       if (!trans.pages) trans.pages = {};
       if (!trans.questions) trans.questions = {};
 
-      if (!trans.title) {
+      if (!trans.title || force || trans.title === survey.title) {
         trans.title = this.translatePhrase(survey.title, targetLang);
       }
-      if (!trans.description && survey.description) {
+      if ((!trans.description || force || trans.description === survey.description) && survey.description) {
         trans.description = this.translatePhrase(survey.description, targetLang);
       }
 
       (survey.pages || []).forEach((page, pIdx) => {
         if (!trans.pages[page.id]) trans.pages[page.id] = {};
         const pTrans = trans.pages[page.id];
-        if (!pTrans.title) {
+        if (!pTrans.title || force || pTrans.title === page.title) {
           pTrans.title = this.translatePhrase(page.title, targetLang) || `${this.t('section', targetLang)} ${pIdx + 1}`;
         }
-        if (!pTrans.description && page.description) {
+        if ((!pTrans.description || force || pTrans.description === page.description) && page.description) {
           pTrans.description = this.translatePhrase(page.description, targetLang);
         }
 
         (page.questions || []).forEach((q) => {
           if (!trans.questions[q.id]) trans.questions[q.id] = {};
           const qTrans = trans.questions[q.id];
-          if (!qTrans.title) qTrans.title = this.translatePhrase(q.title, targetLang);
-          if (!qTrans.helpText && q.helpText) qTrans.helpText = this.translatePhrase(q.helpText, targetLang);
-          if (Array.isArray(q.options) && (!qTrans.options || qTrans.options.length === 0)) {
-            qTrans.options = q.options.map((opt) => this.translatePhrase(opt, targetLang));
+          if (!qTrans.title || force || qTrans.title === q.title) {
+            qTrans.title = this.translatePhrase(q.title, targetLang);
           }
-          if (Array.isArray(q.rows) && (!qTrans.rows || qTrans.rows.length === 0)) {
-            qTrans.rows = q.rows.map((row) => this.translatePhrase(row, targetLang));
+          if (q.helpText && (!qTrans.helpText || force || qTrans.helpText === q.helpText)) {
+            qTrans.helpText = this.translatePhrase(q.helpText, targetLang);
           }
-          if (Array.isArray(q.columns) && (!qTrans.columns || qTrans.columns.length === 0)) {
-            qTrans.columns = q.columns.map((col) => this.translatePhrase(col, targetLang));
+          if (q.placeholder && (!qTrans.placeholder || force || qTrans.placeholder === q.placeholder)) {
+            qTrans.placeholder = this.translatePhrase(q.placeholder, targetLang);
+          }
+          if (Array.isArray(q.options)) {
+            qTrans.options = q.options.map((opt, idx) => {
+              const existing = (qTrans.options && qTrans.options[idx]) || '';
+              if (!force && existing && existing !== opt) return existing;
+              return this.translatePhrase(opt, targetLang);
+            });
+          }
+          if (Array.isArray(q.rows)) {
+            qTrans.rows = q.rows.map((row, idx) => {
+              const existing = (qTrans.rows && qTrans.rows[idx]) || '';
+              if (!force && existing && existing !== row) return existing;
+              return this.translatePhrase(row, targetLang);
+            });
+          }
+          if (Array.isArray(q.columns)) {
+            qTrans.columns = q.columns.map((col, idx) => {
+              const existing = (qTrans.columns && qTrans.columns[idx]) || '';
+              if (!force && existing && existing !== col) return existing;
+              return this.translatePhrase(col, targetLang);
+            });
           }
         });
       });
@@ -1544,11 +2338,13 @@
               return q.options[idx];
             }
           }
-          // Reverse lookup in COMMON_DICTIONARY
-          for (const [enKey, translations] of Object.entries(COMMON_DICTIONARY)) {
-            if (translations[lang] && translations[lang].trim().toLowerCase() === val.trim().toLowerCase()) {
-              return enKey;
-            }
+          // Fast reverse index lookup
+          const lowerVal = val.trim().toLowerCase();
+          if (REVERSE_DICTIONARY_MAP[lang] && REVERSE_DICTIONARY_MAP[lang][lowerVal]) {
+            const matchedEn = REVERSE_DICTIONARY_MAP[lang][lowerVal];
+            if (q.options.includes(matchedEn)) return matchedEn;
+            const ciOpt = q.options.find((opt) => opt.toLowerCase() === matchedEn.toLowerCase());
+            if (ciOpt) return ciOpt;
           }
         }
       }

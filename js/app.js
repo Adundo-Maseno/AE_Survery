@@ -3825,7 +3825,7 @@ window.AEApp = {
     this.render();
   },
 
-  autoTranslateSurvey() {
+  autoTranslateSurvey(force = true) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
     const secondaryLangs = (s.supportedLanguages || ['en']).filter((l) => l !== 'en');
@@ -3838,11 +3838,11 @@ window.AEApp = {
       : secondaryLangs[0];
     if (window.AEBuilder) window.AEBuilder.targetLang = targetLang;
     if (window.AEI18n) {
-      window.AEI18n.autoTranslateSurvey(s, targetLang);
+      window.AEI18n.autoTranslateSurvey(s, targetLang, force);
       window.aeStore.upsertSurvey(s);
       const langNames = { sw: 'Kiswahili', pt: 'Português', fr: 'Français' };
       const langName = langNames[targetLang] || targetLang.toUpperCase();
-      this.showToast(`Auto-translated survey to ${langName}.`, 'success');
+      this.showToast(`Auto-translated survey to ${langName} (${force ? 'refreshed all unchanged text' : 'preserved manual edits'}).`, 'success');
       this.render();
     }
   },
@@ -3899,6 +3899,44 @@ window.AEApp = {
       qT.options = q && Array.isArray(q.options) ? [...q.options] : [];
     }
     qT.options[optIdx] = value;
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateQuestionMatrixRowTranslation(qId, rowIdx, value) {
+    const ctx = this.findQuestionContext(qId);
+    if (!ctx) return;
+    const s = ctx.survey;
+    const q = ctx.question;
+    const targetLang = (window.AEBuilder && window.AEBuilder.targetLang) || 'sw';
+    s.translations = s.translations || {};
+    s.translations[targetLang] = s.translations[targetLang] || {};
+    s.translations[targetLang].questions = s.translations[targetLang].questions || {};
+    s.translations[targetLang].questions[qId] = s.translations[targetLang].questions[qId] || {};
+    const qT = s.translations[targetLang].questions[qId];
+    if (!Array.isArray(qT.rows)) {
+      qT.rows = q && Array.isArray(q.rows) ? [...q.rows] : [];
+    }
+    qT.rows[rowIdx] = value;
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateQuestionMatrixColTranslation(qId, colIdx, value) {
+    const ctx = this.findQuestionContext(qId);
+    if (!ctx) return;
+    const s = ctx.survey;
+    const q = ctx.question;
+    const targetLang = (window.AEBuilder && window.AEBuilder.targetLang) || 'sw';
+    s.translations = s.translations || {};
+    s.translations[targetLang] = s.translations[targetLang] || {};
+    s.translations[targetLang].questions = s.translations[targetLang].questions || {};
+    s.translations[targetLang].questions[qId] = s.translations[targetLang].questions[qId] || {};
+    const qT = s.translations[targetLang].questions[qId];
+    if (!Array.isArray(qT.columns)) {
+      qT.columns = q && Array.isArray(q.columns) ? [...q.columns] : [];
+    }
+    qT.columns[colIdx] = value;
     window.aeStore.upsertSurvey(s);
     this.render();
   },

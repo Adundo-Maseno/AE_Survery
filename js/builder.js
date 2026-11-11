@@ -899,14 +899,22 @@ window.AEBuilder = {
           </div>
         </div>
 
-        <div class="pt-2 border-t border-[#EFEFEF]">
-          <button type="button" onclick="AEApp.autoTranslateSurvey()"
-            class="w-full h-9 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
-            <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
-            <span>Auto-Translate to ${langLabel}</span>
-          </button>
-          <p class="text-[11px] text-[#525B56] mt-1.5 leading-snug">
-            Applies agricultural dictionary presets to all questions and options in this survey.
+        <div class="pt-2 border-t border-[#EFEFEF] space-y-2">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button type="button" onclick="AEApp.autoTranslateSurvey(false)"
+              class="h-9 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
+              <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+              <span>Auto-Translate</span>
+            </button>
+            <button type="button" onclick="AEApp.autoTranslateSurvey(true)"
+              title="Force re-translation of any questions, matrix rows, or options that remain in English"
+              class="h-9 px-3 rounded-[6px] border border-[#247B50] bg-[#DCFAE5] hover:bg-[#C9F7D6] text-[#04250E] text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
+              <i class="fa-solid fa-arrows-rotate text-xs"></i>
+              <span>Refresh Unchanged</span>
+            </button>
+          </div>
+          <p class="text-[11px] text-[#525B56] leading-snug">
+            Applies the comprehensive agricultural dictionary to questions, options, matrices, and section titles in ${langLabel}.
           </p>
         </div>
 
@@ -959,6 +967,18 @@ window.AEBuilder = {
                         class="w-full h-7 text-xs bg-white border border-[#CFD5D0] rounded-[4px] px-2 text-[#111613] focus:border-[#247B50] focus:outline-none" />
                     </div>
                     ${
+                      q.helpText
+                        ? `<div class="pt-1 border-t border-[#EFEFEF]">
+                            <label class="block text-[10px] text-[#525B56] mb-0.5">Help text (${langLabel}):</label>
+                            <input type="text"
+                              value="${AEApp.escapeAttr(qT.helpText || '')}"
+                              onchange="AEApp.updateQuestionTranslationMeta('${q.id}', 'helpText', this.value)"
+                              placeholder="${AEApp.escapeAttr(q.helpText)}"
+                              class="w-full h-6 text-[11px] bg-white border border-[#CFD5D0] rounded-[4px] px-1.5 text-[#111613] focus:border-[#247B50] focus:outline-none" />
+                          </div>`
+                        : ''
+                    }
+                    ${
                       Array.isArray(q.options) && q.options.length > 0
                         ? `<div class="space-y-1 pt-1 border-t border-[#EFEFEF]">
                             <span class="text-[10px] text-[#525B56] font-medium">Options (${langLabel}):</span>
@@ -972,6 +992,50 @@ window.AEBuilder = {
                                       value="${AEApp.escapeAttr(optVal)}"
                                       onchange="AEApp.updateQuestionOptionTranslation('${q.id}', ${optIdx}, this.value)"
                                       placeholder="${AEApp.escapeAttr(opt)}"
+                                      class="flex-1 min-w-0 h-6 text-[11px] bg-white border border-[#CFD5D0] rounded-[4px] px-1.5 text-[#111613] focus:border-[#247B50] focus:outline-none" />
+                                  </div>
+                                `;
+                              })
+                              .join('')}
+                          </div>`
+                        : ''
+                    }
+                    ${
+                      Array.isArray(q.rows) && q.rows.length > 0
+                        ? `<div class="space-y-1 pt-1 border-t border-[#EFEFEF]">
+                            <span class="text-[10px] text-[#525B56] font-medium">Matrix Rows (${langLabel}):</span>
+                            ${q.rows
+                              .map((row, rowIdx) => {
+                                const rowVal = (qT.rows && qT.rows[rowIdx]) || '';
+                                return `
+                                  <div class="flex items-center gap-1.5">
+                                    <span class="text-[10px] text-[#646E68] w-4 text-center shrink-0">${rowIdx + 1}</span>
+                                    <input type="text"
+                                      value="${AEApp.escapeAttr(rowVal)}"
+                                      onchange="AEApp.updateQuestionMatrixRowTranslation('${q.id}', ${rowIdx}, this.value)"
+                                      placeholder="${AEApp.escapeAttr(row)}"
+                                      class="flex-1 min-w-0 h-6 text-[11px] bg-white border border-[#CFD5D0] rounded-[4px] px-1.5 text-[#111613] focus:border-[#247B50] focus:outline-none" />
+                                  </div>
+                                `;
+                              })
+                              .join('')}
+                          </div>`
+                        : ''
+                    }
+                    ${
+                      Array.isArray(q.columns) && q.columns.length > 0
+                        ? `<div class="space-y-1 pt-1 border-t border-[#EFEFEF]">
+                            <span class="text-[10px] text-[#525B56] font-medium">Matrix Columns (${langLabel}):</span>
+                            ${q.columns
+                              .map((col, colIdx) => {
+                                const colVal = (qT.columns && qT.columns[colIdx]) || '';
+                                return `
+                                  <div class="flex items-center gap-1.5">
+                                    <span class="text-[10px] text-[#646E68] w-4 text-center shrink-0">${colIdx + 1}</span>
+                                    <input type="text"
+                                      value="${AEApp.escapeAttr(colVal)}"
+                                      onchange="AEApp.updateQuestionMatrixColTranslation('${q.id}', ${colIdx}, this.value)"
+                                      placeholder="${AEApp.escapeAttr(col)}"
                                       class="flex-1 min-w-0 h-6 text-[11px] bg-white border border-[#CFD5D0] rounded-[4px] px-1.5 text-[#111613] focus:border-[#247B50] focus:outline-none" />
                                   </div>
                                 `;
