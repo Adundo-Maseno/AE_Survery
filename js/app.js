@@ -3825,7 +3825,7 @@ window.AEApp = {
     this.render();
   },
 
-  autoTranslateSurvey(force = true) {
+  async autoTranslateSurvey(force = true) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
     const secondaryLangs = (s.supportedLanguages || ['en']).filter((l) => l !== 'en');
@@ -3837,12 +3837,36 @@ window.AEApp = {
       ? window.AEBuilder.targetLang
       : secondaryLangs[0];
     if (window.AEBuilder) window.AEBuilder.targetLang = targetLang;
-    if (window.AEI18n) {
-      window.AEI18n.autoTranslateSurvey(s, targetLang, force);
-      window.aeStore.upsertSurvey(s);
-      const langNames = { sw: 'Kiswahili', pt: 'Português', fr: 'Français' };
-      const langName = langNames[targetLang] || targetLang.toUpperCase();
-      this.showToast(`Auto-translated survey to ${langName} (${force ? 'refreshed all unchanged text' : 'preserved manual edits'}).`, 'success');
+
+    const langNames = { sw: 'Kiswahili', pt: 'Português', fr: 'Français' };
+    const langName = langNames[targetLang] || targetLang.toUpperCase();
+
+    if (window.AEBuilder) {
+      window.AEBuilder.isTranslating = true;
+      this.render();
+    }
+
+    try {
+      if (window.AEI18n && typeof window.AEI18n.autoTranslateSurveyAsync === 'function') {
+        const res = await window.AEI18n.autoTranslateSurveyAsync(s, targetLang, force);
+        window.aeStore.upsertSurvey(s);
+        if (res.provider === 'google') {
+          this.showToast(`Google Translate translated ${res.count} items into ${langName}.`, 'success');
+        } else {
+          this.showToast(`Translated ${res.count} items into ${langName} via local dictionary (offline fallback).`, 'success');
+        }
+      } else if (window.AEI18n) {
+        window.AEI18n.autoTranslateSurvey(s, targetLang, force);
+        window.aeStore.upsertSurvey(s);
+        this.showToast(`Auto-translated survey to ${langName} (${force ? 'refreshed all unchanged text' : 'preserved manual edits'}).`, 'success');
+      }
+    } catch (err) {
+      console.error('[AE Translate Error]:', err);
+      this.showToast(`Translation failed: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      if (window.AEBuilder) {
+        window.AEBuilder.isTranslating = false;
+      }
       this.render();
     }
   },

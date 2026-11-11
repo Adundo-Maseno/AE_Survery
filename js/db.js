@@ -4559,6 +4559,49 @@ class AESurveyStore {
       }
     }
   }
+
+  /**
+   * Batches array of strings to Google Apps Script LanguageApp service for translation.
+   * Free, zero-API-key Google Translate engine.
+   * Returns array of translated strings or null if unavailable/offline.
+   */
+  async batchTranslateWithGoogle(texts, targetLang = 'sw', sourceLang = 'en') {
+    if (!this.isEffectivelyOnline()) return null;
+    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !this.isValidGasUrl(gasUrl)) return null;
+    if (!Array.isArray(texts) || texts.length === 0) return [];
+
+    const payload = {
+      action: 'BATCH_TRANSLATE',
+      syncToken: this.settings.syncToken || '',
+      deviceId: this.settings.deviceId || 'ae-studio-browser',
+      sourceLang: sourceLang,
+      targetLang: targetLang,
+      texts: texts
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    try {
+      const resp = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (data && data.ok && Array.isArray(data.translations)) {
+        return data.translations;
+      }
+      return null;
+    } catch (err) {
+      clearTimeout(timer);
+      console.warn('[AE Translate] Google Apps Script translation request failed:', err);
+      return null;
+    }
+  }
 }
 
 window.SURVEY_TEMPLATES = SURVEY_TEMPLATES;

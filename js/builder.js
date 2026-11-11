@@ -902,19 +902,21 @@ window.AEBuilder = {
         <div class="pt-2 border-t border-[#EFEFEF] space-y-2">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <button type="button" onclick="AEApp.autoTranslateSurvey(false)"
-              class="h-9 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
-              <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
-              <span>Auto-Translate</span>
+              ${this.isTranslating ? 'disabled' : ''}
+              class="h-9 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press ${this.isTranslating ? 'opacity-70 cursor-wait' : ''}">
+              <i class="fa-solid ${this.isTranslating ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-xs"></i>
+              <span>${this.isTranslating ? 'Translating...' : 'Google Auto-Translate'}</span>
             </button>
             <button type="button" onclick="AEApp.autoTranslateSurvey(true)"
+              ${this.isTranslating ? 'disabled' : ''}
               title="Force re-translation of any questions, matrix rows, or options that remain in English"
-              class="h-9 px-3 rounded-[6px] border border-[#247B50] bg-[#DCFAE5] hover:bg-[#C9F7D6] text-[#04250E] text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
-              <i class="fa-solid fa-arrows-rotate text-xs"></i>
+              class="h-9 px-3 rounded-[6px] border border-[#247B50] bg-[#DCFAE5] hover:bg-[#C9F7D6] text-[#04250E] text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press ${this.isTranslating ? 'opacity-70 cursor-wait' : ''}">
+              <i class="fa-solid ${this.isTranslating ? 'fa-spinner fa-spin' : 'fa-arrows-rotate'} text-xs"></i>
               <span>Refresh Unchanged</span>
             </button>
           </div>
           <p class="text-[11px] text-[#525B56] leading-snug">
-            Applies the comprehensive agricultural dictionary to questions, options, matrices, and section titles in ${langLabel}.
+            Leverages Google Translate via Google Apps Script with local agricultural fallback to translate questions, options, matrices, and section titles into ${langLabel}.
           </p>
         </div>
 

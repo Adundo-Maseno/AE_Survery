@@ -2298,6 +2298,117 @@
     },
 
     /**
+     * Asynchronously translates survey schema using Google Apps Script LanguageApp service (Google Translate).
+     * Automatically and gracefully falls back to local agricultural dictionary if offline or unavailable.
+     * Returns: { survey, provider: 'google' | 'local_fallback', count: number }
+     */
+    async autoTranslateSurveyAsync(survey, targetLang = 'sw', force = true) {
+      if (!survey) return { survey: null, provider: 'none', count: 0 };
+      if (!survey.translations) survey.translations = {};
+      if (!survey.translations[targetLang]) survey.translations[targetLang] = { pages: {}, questions: {} };
+
+      const trans = survey.translations[targetLang];
+      if (!trans.pages) trans.pages = {};
+      if (!trans.questions) trans.questions = {};
+
+      const tasks = [];
+
+      // Survey Title & Description
+      if (survey.title && (!trans.title || force || trans.title === survey.title)) {
+        tasks.push({ text: survey.title, apply: (val) => { trans.title = val; } });
+      }
+      if (survey.description && (!trans.description || force || trans.description === survey.description)) {
+        tasks.push({ text: survey.description, apply: (val) => { trans.description = val; } });
+      }
+
+      // Pages & Questions
+      (survey.pages || []).forEach((page, pIdx) => {
+        if (!trans.pages[page.id]) trans.pages[page.id] = {};
+        const pTrans = trans.pages[page.id];
+
+        if (page.title && (!pTrans.title || force || pTrans.title === page.title)) {
+          tasks.push({ text: page.title, apply: (val) => { pTrans.title = val; } });
+        }
+        if (page.description && (!pTrans.description || force || pTrans.description === page.description)) {
+          tasks.push({ text: page.description, apply: (val) => { pTrans.description = val; } });
+        }
+
+        (page.questions || []).forEach((q) => {
+          if (!trans.questions[q.id]) trans.questions[q.id] = {};
+          const qTrans = trans.questions[q.id];
+
+          if (q.title && (!qTrans.title || force || qTrans.title === q.title)) {
+            tasks.push({ text: q.title, apply: (val) => { qTrans.title = val; } });
+          }
+          if (q.helpText && (!qTrans.helpText || force || qTrans.helpText === q.helpText)) {
+            tasks.push({ text: q.helpText, apply: (val) => { qTrans.helpText = val; } });
+          }
+          if (q.placeholder && (!qTrans.placeholder || force || qTrans.placeholder === q.placeholder)) {
+            tasks.push({ text: q.placeholder, apply: (val) => { qTrans.placeholder = val; } });
+          }
+
+          if (Array.isArray(q.options)) {
+            if (!Array.isArray(qTrans.options)) qTrans.options = [];
+            q.options.forEach((opt, idx) => {
+              const existing = qTrans.options[idx] || '';
+              if (!force && existing && existing !== opt) return;
+              tasks.push({ text: opt, apply: (val) => { qTrans.options[idx] = val; } });
+            });
+          }
+
+          if (Array.isArray(q.rows)) {
+            if (!Array.isArray(qTrans.rows)) qTrans.rows = [];
+            q.rows.forEach((row, idx) => {
+              const existing = qTrans.rows[idx] || '';
+              if (!force && existing && existing !== row) return;
+              tasks.push({ text: row, apply: (val) => { qTrans.rows[idx] = val; } });
+            });
+          }
+
+          if (Array.isArray(q.columns)) {
+            if (!Array.isArray(qTrans.columns)) qTrans.columns = [];
+            q.columns.forEach((col, idx) => {
+              const existing = qTrans.columns[idx] || '';
+              if (!force && existing && existing !== col) return;
+              tasks.push({ text: col, apply: (val) => { qTrans.columns[idx] = val; } });
+            });
+          }
+        });
+      });
+
+      if (tasks.length === 0) {
+        return { survey, provider: 'none', count: 0 };
+      }
+
+      // Try Google Apps Script LanguageApp (Google Translate)
+      if (window.aeStore && typeof window.aeStore.batchTranslateWithGoogle === 'function' && window.aeStore.isEffectivelyOnline()) {
+        try {
+          const uniqueTexts = Array.from(new Set(tasks.map((t) => t.text).filter((t) => t && typeof t === 'string' && t.trim())));
+          if (uniqueTexts.length > 0) {
+            const googleResults = await window.aeStore.batchTranslateWithGoogle(uniqueTexts, targetLang, 'en');
+            if (Array.isArray(googleResults) && googleResults.length === uniqueTexts.length) {
+              const transMap = new Map();
+              uniqueTexts.forEach((txt, idx) => {
+                transMap.set(txt, googleResults[idx] || txt);
+              });
+              tasks.forEach((t) => {
+                const tr = transMap.get(t.text) || t.text;
+                t.apply(tr);
+              });
+              return { survey, provider: 'google', count: tasks.length };
+            }
+          }
+        } catch (err) {
+          console.warn('[AE Translate] Google Translate call failed, falling back to local dictionary:', err);
+        }
+      }
+
+      // Local graceful fallback using expanded dictionary and pattern engine
+      this.autoTranslateSurvey(survey, targetLang, force);
+      return { survey, provider: 'local_fallback', count: tasks.length };
+    },
+
+    /**
      * Maps localized choice / dropdown / checkbox / matrix answers back to canonical English.
      * Open text responses are left untouched for automated translation in Google Apps Script.
      */

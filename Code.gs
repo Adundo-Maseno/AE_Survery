@@ -353,6 +353,40 @@ function doPost(e) {
       });
     }
 
+    // Google Translate Engine Endpoint (Zero-API-key native Google Apps Script LanguageApp service)
+    if (action === 'BATCH_TRANSLATE' || action === 'TRANSLATE') {
+      var sourceLang = String(payload.sourceLang || 'en').trim().toLowerCase();
+      var targetLang = String(payload.targetLang || 'sw').trim().toLowerCase();
+      var rawTexts = Array.isArray(payload.texts) ? payload.texts : (payload.text ? [payload.text] : []);
+      var translatedTexts = [];
+
+      for (var tIdx = 0; tIdx < rawTexts.length; tIdx++) {
+        var src = rawTexts[tIdx];
+        if (src === null || src === undefined || typeof src !== 'string' || !src.trim()) {
+          translatedTexts.push(src || '');
+          continue;
+        }
+        var trimmed = src.trim();
+        try {
+          var res = LanguageApp.translate(trimmed, sourceLang, targetLang);
+          translatedTexts.push(res ? res.trim() : trimmed);
+        } catch (transErr) {
+          // Gracefully fall back to original text if single string exceeds quota or contains invalid characters
+          translatedTexts.push(trimmed);
+        }
+      }
+
+      return jsonResponse_({
+        ok: true,
+        action: action,
+        sourceLang: sourceLang,
+        targetLang: targetLang,
+        translations: translatedTexts,
+        count: translatedTexts.length,
+        serverTime: new Date().toISOString()
+      });
+    }
+
     // Default: BATCH_SYNC (handles offline queue flush + full sync)
     var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
     var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
