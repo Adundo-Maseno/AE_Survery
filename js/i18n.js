@@ -1904,7 +1904,36 @@
     'Satisfaction': { sw: 'Kiwango cha Kuridhika', fr: 'Satisfaction', pt: 'Satisfação' },
     'Seed Quality': { sw: 'Ubora wa Mbegu', fr: 'Qualité des Semences', pt: 'Qualidade das Sementes' },
     'Crop Variety': { sw: 'Aina ya Zao', fr: 'Variété de Culture', pt: 'Variedade de Cultura' },
-    'Fertilizer Application': { sw: 'Matumizi ya Mbolea', fr: 'Application d’Engrais', pt: 'Aplicação de Adubo' }
+    'Fertilizer Application': { sw: 'Matumizi ya Mbolea', fr: 'Application d’Engrais', pt: 'Aplicação de Adubo' },
+
+    // Metric Units, Agricultural Units & Temporal Measures
+    'years': { sw: 'miaka', fr: 'ans', pt: 'anos' },
+    'year': { sw: 'mwaka', fr: 'an', pt: 'ano' },
+    'acres': { sw: 'ekari', fr: 'acres', pt: 'acres' },
+    'acre': { sw: 'ekari', fr: 'acre', pt: 'acre' },
+    'hectares': { sw: 'hekta', fr: 'hectares', pt: 'hectares' },
+    'hectare': { sw: 'hekta', fr: 'hectare', pt: 'hectare' },
+    'kg': { sw: 'kilo', fr: 'kg', pt: 'kg' },
+    'kgs': { sw: 'kilo', fr: 'kg', pt: 'kg' },
+    'kg/acre': { sw: 'kg/ekari', fr: 'kg/acre', pt: 'kg/acre' },
+    'bags/acre': { sw: 'magunia/ekari', fr: 'sacs/acre', pt: 'sacos/acre' },
+    'bags': { sw: 'magunia', fr: 'sacs', pt: 'sacos' },
+    'bag': { sw: 'gunia', fr: 'sac', pt: 'saco' },
+    'months': { sw: 'miezi', fr: 'mois', pt: 'meses' },
+    'month': { sw: 'mwezi', fr: 'mois', pt: 'mês' },
+    'days': { sw: 'siku', fr: 'jours', pt: 'dias' },
+    'day': { sw: 'siku', fr: 'jour', pt: 'dia' },
+    'units': { sw: 'vipimo', fr: 'unités', pt: 'unidades' },
+    'unit': { sw: 'kipimo', fr: 'unité', pt: 'unidade' },
+    'shillings': { sw: 'shilingi', fr: 'shillings', pt: 'xelins' },
+    'shilling': { sw: 'shilingi', fr: 'shilling', pt: 'xelim' },
+    'KES': { sw: 'KES', fr: 'KES', pt: 'KES' },
+    'Ksh': { sw: 'Ksh', fr: 'Ksh', pt: 'Ksh' },
+    'Enter completed years.': {
+      sw: 'Weka miaka iliyokamilika.',
+      fr: 'Entrez les années révolues.',
+      pt: 'Insira os anos completos.'
+    }
   };
 
   // Pre-computed lowercase and reverse indices for O(1) case-insensitive & bidirectional lookup
@@ -2021,11 +2050,16 @@
             ? qI18n.placeholder
             : (q.placeholder ? this.translatePhrase(q.placeholder, lang) : q.placeholder);
 
+          const locUnit = (qI18n.unit !== undefined && qI18n.unit !== '' && qI18n.unit !== q.unit)
+            ? qI18n.unit
+            : (q.unit ? this.translatePhrase(q.unit, lang) : q.unit);
+
           return {
             ...q,
             title: locTitle,
             helpText: locHelp,
             placeholder: locPlaceholder,
+            unit: locUnit,
             options: translatedOptions,
             rows: translatedRows,
             columns: translatedColumns,
@@ -2270,6 +2304,9 @@
           if (q.placeholder && (!qTrans.placeholder || force || qTrans.placeholder === q.placeholder)) {
             qTrans.placeholder = this.translatePhrase(q.placeholder, targetLang);
           }
+          if (q.unit && (!qTrans.unit || force || qTrans.unit === q.unit)) {
+            qTrans.unit = this.translatePhrase(q.unit, targetLang);
+          }
           if (Array.isArray(q.options)) {
             qTrans.options = q.options.map((opt, idx) => {
               const existing = (qTrans.options && qTrans.options[idx]) || '';
@@ -2345,6 +2382,9 @@
           }
           if (q.placeholder && (!qTrans.placeholder || force || qTrans.placeholder === q.placeholder)) {
             tasks.push({ text: q.placeholder, apply: (val) => { qTrans.placeholder = val; } });
+          }
+          if (q.unit && (!qTrans.unit || force || qTrans.unit === q.unit)) {
+            tasks.push({ text: q.unit, apply: (val) => { qTrans.unit = val; } });
           }
 
           if (Array.isArray(q.options)) {

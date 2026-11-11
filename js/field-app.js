@@ -1074,8 +1074,9 @@ window.AEFieldApp = {
     }
 
     if (q.type === 'number_yield') {
-      const unitStr = q.unit || 'kg/acre';
-      const isKg = unitStr.toLowerCase().includes('kg');
+      const rawUnit = q.unit || 'kg/acre';
+      const unitStr = window.AEI18n ? window.AEI18n.translatePhrase(rawUnit, this.lang) : rawUnit;
+      const isKg = rawUnit.toLowerCase().includes('kg');
       const minVal = q.min ?? 0;
       const maxVal = q.max ?? 100000;
       return `

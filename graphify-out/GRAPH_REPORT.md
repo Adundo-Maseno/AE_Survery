@@ -1,7 +1,7 @@
 # Graph Report - AE_Survery  (2026-11-11)
 
 ## Corpus Check
-- 22 files · ~118,868 words
+- 22 files · ~119,176 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 2, .css 2, .gs 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `02399d35`
+- Built from commit: `fad8dd29`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -269,17 +269,17 @@ Nodes (8): approveSingleResponse(), boot(), flagSingleResponse(), getCurrentUser
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `zs` connect `zs` to `en`, `chart.umd.min.js`, `O`?**
-  _High betweenness centrality (0.056) - this node is a cross-community bridge._
+- **Why does `Os` connect `Os` to `.parse`, `chart.umd.min.js`, `_calculateBarValuePixels`, `.getDataset`, `updateElements`, `.parse`, `pa`, `.getParsed`?**
+  _High betweenness centrality (0.050) - this node is a cross-community bridge._
 - **What connects `manifest.json (Admin PWA)`, `manifest-collector.json (Field PWA)`, `Code.gs (Google Apps Script Backend)` to the rest of the system?**
   _5 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `AESurveyStore` be split into smaller, more focused modules?**
   _Cohesion score 0.05343993267410057 - nodes in this community are weakly interconnected._
-- **Why does `en` connect `en` to `zs`, `chart.umd.min.js`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **Why does `i` connect `i` to `chart.umd.min.js`, `draw`, `Fa`, `de`, `ae`, `Ji`, `t`?**
+  _High betweenness centrality (0.050) - this node is a cross-community bridge._
 - **Should `zs` be split into smaller, more focused modules?**
   _Cohesion score 0.06101914962674456 - nodes in this community are weakly interconnected._
-- **Why does `i` connect `i` to `chart.umd.min.js`, `draw`, `Fa`, `de`, `ae`, `Ji`, `t`?**
-  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+- **Why does `zs` connect `zs` to `en`, `chart.umd.min.js`, `O`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Should `field-app.js` be split into smaller, more focused modules?**
   _Cohesion score 0.08209876543209876 - nodes in this community are weakly interconnected._
