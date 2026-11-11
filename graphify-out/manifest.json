@@ -1,0 +1,272 @@
+{
+  ".well-known/ard.json": {
+    "mtime": 1794243339.8404446,
+    "seen": 1794387672.5977907,
+    "ast_hash": "6105b0fb401a9b8a75d45212f01967c1",
+    "semantic_hash": ""
+  },
+  "js/analytics.js": {
+    "mtime": 1794239884.200252,
+    "seen": 1794387672.5977967,
+    "ast_hash": "eb90d470dcf9425a03ec1fc50d49412d",
+    "semantic_hash": ""
+  },
+  "js/app.js": {
+    "mtime": 1794243372.1409314,
+    "seen": 1794387672.597799,
+    "ast_hash": "4c0789cd4395524f83dd9cdf53781d5f",
+    "semantic_hash": ""
+  },
+  "js/builder.js": {
+    "mtime": 1794214654.7499,
+    "seen": 1794387672.5978003,
+    "ast_hash": "2dfa16e8bb865970f64a6a61f32d2be5",
+    "semantic_hash": ""
+  },
+  "js/chart.umd.min.js": {
+    "mtime": 1793217520.178372,
+    "seen": 1794387672.5978012,
+    "ast_hash": "50cf2ab0db25f5d6df90a1046520e68e",
+    "semantic_hash": ""
+  },
+  "js/collector.js": {
+    "mtime": 1794239884.9378078,
+    "seen": 1794387672.597802,
+    "ast_hash": "2bf18b548fea78bd94cbfa3564588efa",
+    "semantic_hash": ""
+  },
+  "js/db.js": {
+    "mtime": 1794239885.2104566,
+    "seen": 1794387672.5978034,
+    "ast_hash": "3bfb5e7e4dbf2d50ea4c69cd58416d27",
+    "semantic_hash": ""
+  },
+  "js/field-app.js": {
+    "mtime": 1794242394.1450057,
+    "seen": 1794387672.5978043,
+    "ast_hash": "c74244b2bc114165cef266243994cfa2",
+    "semantic_hash": ""
+  },
+  "js/i18n.js": {
+    "mtime": 1794219006.3436086,
+    "seen": 1794387672.597805,
+    "ast_hash": "ab39a7e1f4484b110b6d4e6b70cbcc3e",
+    "semantic_hash": ""
+  },
+  "js/qrcode.js": {
+    "mtime": 1793199995.0419228,
+    "seen": 1794387672.5978057,
+    "ast_hash": "97d64b095b0f047da99405f6a94ec2c5",
+    "semantic_hash": ""
+  },
+  "manifest-collector.json": {
+    "mtime": 1794207916.8786583,
+    "seen": 1794387672.5978067,
+    "ast_hash": "e380c0ff98af157e23d5c8cc9d73c888",
+    "semantic_hash": ""
+  },
+  "manifest.json": {
+    "mtime": 1794207917.0092485,
+    "seen": 1794387672.5978074,
+    "ast_hash": "837476dc569fef3f39cff70f5ef08b64",
+    "semantic_hash": ""
+  },
+  "sw.js": {
+    "mtime": 1794243372.3939116,
+    "seen": 1794387672.5978081,
+    "ast_hash": "fc1b94f3e17f350c350d414bc50a0346",
+    "semantic_hash": ""
+  },
+  "tailwind.config.js": {
+    "mtime": 1794225596.7509346,
+    "seen": 1794387672.597809,
+    "ast_hash": "56ba2efd9573f118b9fb9cf279b59fe8",
+    "semantic_hash": ""
+  },
+  "DESIGN.md": {
+    "mtime": 1793268045.1917856,
+    "seen": 1794387672.59781,
+    "ast_hash": "21dfb4021b4bd35ae48cc7add0519a4b",
+    "semantic_hash": ""
+  },
+  "PRODUCT.md": {
+    "mtime": 1793215694.0268025,
+    "seen": 1794387672.5978107,
+    "ast_hash": "e8c1f7d1ff6a07093eaba4afab37a9ed",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1793215694.1254623,
+    "seen": 1794387672.5978115,
+    "ast_hash": "0bdce5a6acf51763143a5f811a177465",
+    "semantic_hash": ""
+  },
+  "docs/adr/0001-chartjs-over-d3-for-offline-field-analytics.md": {
+    "mtime": 1793219075.1967213,
+    "seen": 1794387672.5978122,
+    "ast_hash": "77923705bcac937ac387ef2f8bd39b98",
+    "semantic_hash": ""
+  },
+  "docs/adr/0002-client-side-merkle-audit-and-sha256-seals.md": {
+    "mtime": 1793219075.2397616,
+    "seen": 1794387672.597813,
+    "ast_hash": "47f7a450431bc053f799a1409e473e32",
+    "semantic_hash": ""
+  },
+  "docs/adr/0003-rbac-and-seamless-admin-field-transition.md": {
+    "mtime": 1793219075.2707534,
+    "seen": 1794387672.5978138,
+    "ast_hash": "d3737311b865b30e4d366477a2b7edbd",
+    "semantic_hash": ""
+  },
+  "docs/adr/0004-offline-first-pwa-service-worker-storage.md": {
+    "mtime": 1793219075.3065345,
+    "seen": 1794387672.5978148,
+    "ast_hash": "df3ae5c91f644d7d2b97f71bc5b0e265",
+    "semantic_hash": ""
+  },
+  "docs/adr/README.md": {
+    "mtime": 1793219075.3808534,
+    "seen": 1794387672.5978155,
+    "ast_hash": "0d7279298e5248ccc889179cf8edcef7",
+    "semantic_hash": ""
+  },
+  "field.html": {
+    "mtime": 1794243371.5521204,
+    "seen": 1794387672.5978165,
+    "ast_hash": "939bce4fc7e8eb62b7ec43d25b953c5d",
+    "semantic_hash": ""
+  },
+  "index.html": {
+    "mtime": 1794244281.8266141,
+    "seen": 1794387672.5978174,
+    "ast_hash": "91855461ff0801217590af509d811aa2",
+    "semantic_hash": ""
+  },
+  "llms.txt": {
+    "mtime": 1794241440.3678565,
+    "seen": 1794387672.5978181,
+    "ast_hash": "dae0a914831333a6b38ab59af98c8f9a",
+    "semantic_hash": ""
+  },
+  "robots.txt": {
+    "mtime": 1794244281.9389825,
+    "seen": 1794387672.5978189,
+    "ast_hash": "c1e0579253891c8e556cedffa029d8a7",
+    "semantic_hash": ""
+  },
+  "assets/screenshots/admin-narrow.png": {
+    "mtime": 1793212887.9761376,
+    "seen": 1794387672.5978198,
+    "ast_hash": "d9c7c0e48ed95298c98845ad8f796f64",
+    "semantic_hash": ""
+  },
+  "assets/screenshots/admin-wide.png": {
+    "mtime": 1793212870.3904862,
+    "seen": 1794387672.5978208,
+    "ast_hash": "2c3f2e0019b54016f4fb07de7795c7bc",
+    "semantic_hash": ""
+  },
+  "assets/screenshots/field-narrow.png": {
+    "mtime": 1793212626.7417881,
+    "seen": 1794387672.5978212,
+    "ast_hash": "2d8009760ccf6e212b1947ff768c1076",
+    "semantic_hash": ""
+  },
+  "assets/screenshots/field-wide.png": {
+    "mtime": 1793212659.9262884,
+    "seen": 1794387672.597822,
+    "ast_hash": "a2fede4bff1790796f4c859ad058b0d8",
+    "semantic_hash": ""
+  },
+  "icons/agri_experience_logo.png": {
+    "mtime": 1794240942.244767,
+    "seen": 1794387672.597823,
+    "ast_hash": "58f43214e37da63c0bf6a6073e018e1c",
+    "semantic_hash": ""
+  },
+  "icons/agri_experience_logo.webp": {
+    "mtime": 1794242925.8343587,
+    "seen": 1794387672.5978239,
+    "ast_hash": "9b4f288d6a454a1aa9083bd9f5cb3eee",
+    "semantic_hash": ""
+  },
+  "icons/apple-touch-icon.png": {
+    "mtime": 1793345973.8859441,
+    "seen": 1794387672.5978246,
+    "ast_hash": "fbe4b07d8f71df08c69cbfb336230edb",
+    "semantic_hash": ""
+  },
+  "icons/favicon-32.png": {
+    "mtime": 1793345973.868744,
+    "seen": 1794387672.5978253,
+    "ast_hash": "50e68d2bcd240ac8b1256495eca91ecc",
+    "semantic_hash": ""
+  },
+  "icons/favicon-48.png": {
+    "mtime": 1793345973.8788602,
+    "seen": 1794387672.5978262,
+    "ast_hash": "70027b425996ce7f3f52e4f09fda1307",
+    "semantic_hash": ""
+  },
+  "icons/field-192.png": {
+    "mtime": 1793346048.8578713,
+    "seen": 1794387672.5978267,
+    "ast_hash": "52d5e3e0801a30b4bd29740de9e897ac",
+    "semantic_hash": ""
+  },
+  "icons/field-512.png": {
+    "mtime": 1793346048.8875465,
+    "seen": 1794387672.5978277,
+    "ast_hash": "f0df48fa8d027bb9f8a5a15a00d8ca01",
+    "semantic_hash": ""
+  },
+  "icons/field-apple-touch-icon.png": {
+    "mtime": 1793346048.9572692,
+    "seen": 1794387672.5978286,
+    "ast_hash": "59a7fccd2af301161f4c2e1701f77220",
+    "semantic_hash": ""
+  },
+  "icons/field-favicon-32.png": {
+    "mtime": 1793346048.9410422,
+    "seen": 1794387672.5978293,
+    "ast_hash": "0765f25992838f9401946f859ad82c59",
+    "semantic_hash": ""
+  },
+  "icons/field-maskable-192.png": {
+    "mtime": 1793346048.9040484,
+    "seen": 1794387672.59783,
+    "ast_hash": "52d5e3e0801a30b4bd29740de9e897ac",
+    "semantic_hash": ""
+  },
+  "icons/field-maskable-512.png": {
+    "mtime": 1793346048.924232,
+    "seen": 1794387672.597831,
+    "ast_hash": "f0df48fa8d027bb9f8a5a15a00d8ca01",
+    "semantic_hash": ""
+  },
+  "icons/icon-192.png": {
+    "mtime": 1793345692.084091,
+    "seen": 1794387672.5978317,
+    "ast_hash": "5027abd55ba0a92a0ec3f6fd8a388aa6",
+    "semantic_hash": ""
+  },
+  "icons/icon-512.png": {
+    "mtime": 1793345692.133041,
+    "seen": 1794387672.5978324,
+    "ast_hash": "637d779fe7356d084930fe11a4d3d63b",
+    "semantic_hash": ""
+  },
+  "icons/icon-maskable-192.png": {
+    "mtime": 1793345691.9750888,
+    "seen": 1794387672.5978334,
+    "ast_hash": "61ca839b36320e5de7de8249027dcf37",
+    "semantic_hash": ""
+  },
+  "icons/icon-maskable-512.png": {
+    "mtime": 1793345692.0382602,
+    "seen": 1794387672.5978346,
+    "ast_hash": "487a1ab1c4630f41b8b5f954b054636d",
+    "semantic_hash": ""
+  }
+}
