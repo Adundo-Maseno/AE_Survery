@@ -1509,8 +1509,15 @@
      */
     getCanonicalEnglishAnswer(survey, questionId, val, sourceLang) {
       if (val === undefined || val === null || val === '') return val;
-      if (!sourceLang || sourceLang === 'en') return val;
       if (!survey) return val;
+
+      // Normalize localized "Other: ..." prefixes across Swahili, Portuguese, and French
+      if (typeof val === 'string') {
+        const otherMatch = val.match(/^(?:Nyingine|Outro|Autre|Other)\s*:\s*(.*)$/i);
+        if (otherMatch) {
+          return `Other: ${otherMatch[1].trim()}`;
+        }
+      }
 
       const rawQuestions = (window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function')
         ? window.aeStore.getQuestionsForSurvey(survey)
@@ -1518,21 +1525,30 @@
       const q = rawQuestions.find((item) => item.id === questionId);
       if (!q) return val;
 
+      const candidateLangs = (sourceLang && sourceLang !== 'en')
+        ? [sourceLang, ...['sw', 'pt', 'fr'].filter((l) => l !== sourceLang)]
+        : ['sw', 'pt', 'fr'];
+
       // 1. Radio / Dropdown / Single Choice
       if (typeof val === 'string' && Array.isArray(q.options)) {
         if (q.options.includes(val)) return val;
-        const localizedSurvey = this.localizeSurvey(survey, sourceLang);
-        const locQ = (window.aeStore ? window.aeStore.getQuestionsForSurvey(localizedSurvey) : []).find((item) => item.id === questionId);
-        if (locQ && Array.isArray(locQ.options)) {
-          const idx = locQ.options.findIndex((opt) => String(opt).trim().toLowerCase() === String(val).trim().toLowerCase());
-          if (idx !== -1 && q.options[idx]) {
-            return q.options[idx];
+        const ciIdx = q.options.findIndex((opt) => String(opt).trim().toLowerCase() === String(val).trim().toLowerCase());
+        if (ciIdx !== -1) return q.options[ciIdx];
+
+        for (const lang of candidateLangs) {
+          const localizedSurvey = this.localizeSurvey(survey, lang);
+          const locQ = (window.aeStore ? window.aeStore.getQuestionsForSurvey(localizedSurvey) : []).find((item) => item.id === questionId);
+          if (locQ && Array.isArray(locQ.options)) {
+            const idx = locQ.options.findIndex((opt) => String(opt).trim().toLowerCase() === String(val).trim().toLowerCase());
+            if (idx !== -1 && q.options[idx]) {
+              return q.options[idx];
+            }
           }
-        }
-        // Reverse lookup in COMMON_DICTIONARY
-        for (const [enKey, translations] of Object.entries(COMMON_DICTIONARY)) {
-          if (translations[sourceLang] && translations[sourceLang].trim().toLowerCase() === val.trim().toLowerCase()) {
-            return enKey;
+          // Reverse lookup in COMMON_DICTIONARY
+          for (const [enKey, translations] of Object.entries(COMMON_DICTIONARY)) {
+            if (translations[lang] && translations[lang].trim().toLowerCase() === val.trim().toLowerCase()) {
+              return enKey;
+            }
           }
         }
       }
@@ -1545,19 +1561,35 @@
       // 3. Matrix Questions: { [rowLabel]: colLabel }
       if (typeof val === 'object' && val !== null && !Array.isArray(val) && q.type === 'matrix') {
         const canonicalMatrix = {};
-        const localizedSurvey = this.localizeSurvey(survey, sourceLang);
-        const locQ = (window.aeStore ? window.aeStore.getQuestionsForSurvey(localizedSurvey) : []).find((item) => item.id === questionId);
+        const locQuestionsByLang = candidateLangs.map((lang) => {
+          const localizedSurvey = this.localizeSurvey(survey, lang);
+          return (window.aeStore ? window.aeStore.getQuestionsForSurvey(localizedSurvey) : []).find((item) => item.id === questionId);
+        }).filter(Boolean);
 
         Object.entries(val).forEach(([rKey, cVal]) => {
           let englishRow = rKey;
-          if (locQ && Array.isArray(locQ.rows) && Array.isArray(q.rows)) {
-            const rIdx = locQ.rows.findIndex((r) => String(r).trim().toLowerCase() === String(rKey).trim().toLowerCase());
-            if (rIdx !== -1 && q.rows[rIdx]) englishRow = q.rows[rIdx];
+          if (Array.isArray(q.rows) && !q.rows.includes(rKey)) {
+            for (const locQ of locQuestionsByLang) {
+              if (Array.isArray(locQ.rows)) {
+                const rIdx = locQ.rows.findIndex((r) => String(r).trim().toLowerCase() === String(rKey).trim().toLowerCase());
+                if (rIdx !== -1 && q.rows[rIdx]) {
+                  englishRow = q.rows[rIdx];
+                  break;
+                }
+              }
+            }
           }
           let englishCol = cVal;
-          if (locQ && Array.isArray(locQ.columns) && Array.isArray(q.columns)) {
-            const cIdx = locQ.columns.findIndex((c) => String(c).trim().toLowerCase() === String(cVal).trim().toLowerCase());
-            if (cIdx !== -1 && q.columns[cIdx]) englishCol = q.columns[cIdx];
+          if (Array.isArray(q.columns) && !q.columns.includes(cVal)) {
+            for (const locQ of locQuestionsByLang) {
+              if (Array.isArray(locQ.columns)) {
+                const cIdx = locQ.columns.findIndex((c) => String(c).trim().toLowerCase() === String(cVal).trim().toLowerCase());
+                if (cIdx !== -1 && q.columns[cIdx]) {
+                  englishCol = q.columns[cIdx];
+                  break;
+                }
+              }
+            }
           }
           canonicalMatrix[englishRow] = englishCol;
         });

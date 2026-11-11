@@ -56,15 +56,21 @@ window.AEApp = {
     // Check URL query param `?survey=srv_...` for direct respondent link
     const params = new URLSearchParams(window.location.search);
     const linkedSurveyId = params.get('survey');
+    const linkedCollectorId = params.get('collector');
     const linkedMode = (params.get('mode') || '').toLowerCase();
-    if (linkedSurveyId) {
+    if (linkedSurveyId || linkedCollectorId) {
       if (!currentUser || linkedMode === 'respondent' || linkedMode === 'self') {
-        window.location.replace(`./field.html?survey=${encodeURIComponent(linkedSurveyId)}&mode=respondent`);
+        const qParts = [];
+        if (linkedSurveyId) qParts.push(`survey=${encodeURIComponent(linkedSurveyId)}`);
+        if (linkedCollectorId) qParts.push(`collector=${encodeURIComponent(linkedCollectorId)}`);
+        qParts.push('mode=respondent');
+        window.location.replace(`./field.html?${qParts.join('&')}`);
         return;
       }
-      if (window.aeStore.getSurveyById(linkedSurveyId)) {
+      if (linkedSurveyId && window.aeStore.getSurveyById(linkedSurveyId)) {
         if (currentUser.role === 'admin' || (currentUser.assignedSurveys && currentUser.assignedSurveys.includes(linkedSurveyId))) {
           this.activeSurveyId = linkedSurveyId;
+          if (linkedCollectorId && window.AECollector) window.AECollector.activeCollectorId = linkedCollectorId;
           this.currentStage = 'collect';
           window.AECollector.initRunnerForSurvey(window.aeStore.getSurveyById(linkedSurveyId));
         } else {
@@ -226,7 +232,8 @@ window.AEApp = {
     return String(str ?? '')
       .replace(/\\/g, '\\\\')
       .replace(/'/g, "\\'")
-      .replace(/"/g, '\\"')
+      .replace(/"/g, '\\x22')
+      .replace(/&/g, '\\x26')
       .replace(/</g, '\\x3c')
       .replace(/>/g, '\\x3e')
       .replace(/\r/g, '\\r')
@@ -709,7 +716,14 @@ window.AEApp = {
       return;
     }
 
-    const activeSurvey = window.aeStore.getSurveyById(this.activeSurveyId) || window.aeStore.surveys[0];
+    const accessibleSurveys = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
+      : window.aeStore.surveys || [];
+    const activeSurvey =
+      accessibleSurveys.find((s) => s.id === this.activeSurveyId) ||
+      accessibleSurveys[0] ||
+      window.aeStore.getSurveyById(this.activeSurveyId) ||
+      window.aeStore.surveys[0];
 
     if (this.currentStage === 'design') {
       if (currentUser.role === 'supervisor') {
@@ -1732,7 +1746,7 @@ window.AEApp = {
                 return `
                   <div class="p-3.5 space-y-2 min-w-0 ${isArchived ? 'opacity-85 bg-[#FAFBF9]' : ''}">
                     <div class="flex items-start justify-between gap-2 min-w-0">
-                      <button onclick="AEApp.switchStage('design', '${s.id}')" class="text-left font-semibold text-sm text-[#111613] leading-snug min-w-0 ae-break-words">
+                      <button onclick="${isAdmin ? `AEApp.switchStage('design', '${s.id}')` : `AEApp.switchStage('collect', '${s.id}')`}" class="text-left font-semibold text-sm text-[#111613] leading-snug min-w-0 ae-break-words">
                         ${this.escapeHtml(s.title)}
                       </button>
                       <span class="shrink-0 px-2 py-0.5 rounded-[4px] text-xs font-medium ${
@@ -1801,8 +1815,8 @@ window.AEApp = {
           }
         </section>
 
-        <!-- 4. Getting-Started / Verified Survey Templates Strip (1 container split by 1px dividers, zero icon-chips) -->
-        <section class="space-y-2.5">
+        <!-- 4. Getting-Started / Verified Survey Templates Strip (Admin Only) -->
+        ${isAdmin ? `<section class="space-y-2.5">
           <div class="flex items-baseline justify-between gap-2">
             <div>
               <h2 class="text-[18px] font-medium text-[#111613]">Initialize from a Universal Template</h2>
@@ -1834,7 +1848,7 @@ window.AEApp = {
             `
             ).join('')}
           </div>
-        </section>
+        </section>` : ''}
       </div>
     `;
   },
@@ -2467,7 +2481,7 @@ window.AEApp = {
                   aria-label="Filter by County"
                   class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613]">
                   <option value="all" ${this.teamTaskFilterCounty === 'all' ? 'selected' : ''}>All Counties (${counties.length})</option>
-                  ${counties.map((c) => `<option value="${c}" ${this.teamTaskFilterCounty === c ? 'selected' : ''}>${c}</option>`).join('')}
+                  ${counties.map((c) => `<option value="${this.escapeAttr(c)}" ${this.teamTaskFilterCounty === c ? 'selected' : ''}>${this.escapeHtml(c)}</option>`).join('')}
                 </select>
               </div>
 
@@ -2640,7 +2654,7 @@ window.AEApp = {
                   aria-label="Filter by County"
                   class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613]">
                   <option value="all" ${this.teamFilterCounty === 'all' ? 'selected' : ''}>All Counties (${counties.length})</option>
-                  ${counties.map((c) => `<option value="${c}" ${this.teamFilterCounty === c ? 'selected' : ''}>${c}</option>`).join('')}
+                  ${counties.map((c) => `<option value="${this.escapeAttr(c)}" ${this.teamFilterCounty === c ? 'selected' : ''}>${this.escapeHtml(c)}</option>`).join('')}
                 </select>
               </div>
 
@@ -2928,8 +2942,8 @@ window.AEApp = {
                                   <input type="checkbox" name="ae_team_person" value="${this.escapeAttr(enm.id)}" ${isAssigned ? 'checked' : ''}
                                     class="rounded border-[#CFD5D0] text-[#247B50] focus:ring-[#247B50]" />
                                   <div class="min-w-0">
-                                    <div class="font-medium text-[#111613] truncate">${this.escapeHtml(enm.fullName)} (${enm.id})</div>
-                                    <div class="text-[10px] text-[#646E68] truncate">${this.escapeHtml(enm.county)} · ${sup ? `Sup: ${sup.fullName}` : 'No supervisor'}</div>
+                                    <div class="font-medium text-[#111613] truncate">${this.escapeHtml(enm.fullName)} (${this.escapeHtml(enm.id)})</div>
+                                    <div class="text-[10px] text-[#646E68] truncate">${this.escapeHtml(enm.county)} · ${sup ? `Sup: ${this.escapeHtml(sup.fullName)}` : 'No supervisor'}</div>
                                   </div>
                                 </div>
                                 ${
@@ -3130,7 +3144,7 @@ window.AEApp = {
                     .map((p) => {
                       const roleLabel = p.role === 'admin' ? 'Admin' : p.role === 'supervisor' ? 'Supervisor' : 'Enumerator';
                       const selected = this.assigningPersonId === p.id ? 'selected' : '';
-                      return `<option value="${p.id}" ${selected}>${this.escapeHtml(p.fullName)} (${roleLabel} · ${p.county})</option>`;
+                      return `<option value="${this.escapeAttr(p.id)}" ${selected}>${this.escapeHtml(p.fullName)} (${roleLabel} · ${this.escapeHtml(p.county)})</option>`;
                     })
                     .join('')}
                 </select>
@@ -3146,7 +3160,7 @@ window.AEApp = {
                   ${allSurveys
                     .map((s) => {
                       const selected = targetSurveyId === s.id ? 'selected' : '';
-                      return `<option value="${s.id}" ${selected}>${this.escapeHtml(s.title)} (${s.category || 'General'})</option>`;
+                      return `<option value="${this.escapeAttr(s.id)}" ${selected}>${this.escapeHtml(s.title)} (${this.escapeHtml(s.category || 'General')})</option>`;
                     })
                     .join('')}
                 </select>
@@ -3177,7 +3191,7 @@ window.AEApp = {
                   ${allSupervisors
                     .map((s) => {
                       const selected = existingSupervisorId === s.id ? 'selected' : '';
-                      return `<option value="${s.id}" ${selected}>${this.escapeHtml(s.fullName)} (${s.county} Cluster · ${s.id})</option>`;
+                      return `<option value="${this.escapeAttr(s.id)}" ${selected}>${this.escapeHtml(s.fullName)} (${this.escapeHtml(s.county)} Cluster · ${this.escapeHtml(s.id)})</option>`;
                     })
                     .join('')}
                 </select>
@@ -3342,109 +3356,6 @@ window.AEApp = {
       `;
       return;
     }
-
-
-
-    if (this.showStudioMobileMenu) {
-      const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
-        ? window.AESession.getCurrentUser()
-        : null;
-      const isAdmin = currentUser && currentUser.role === 'admin';
-      const activeSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
-      const online = window.aeStore.isEffectivelyOnline();
-
-      modalRoot.innerHTML = `
-        <div data-ui="modal-overlay"
-          onclick="if(event.target===this) AEApp.toggleStudioMobileMenu()"
-          class="fixed inset-0 z-50 ae-glass-scrim flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div data-ui="modal-dialog" role="dialog" aria-modal="true" aria-label="Operations Studio Menu"
-            class="ae-glass-modal rounded-t-[16px] sm:rounded-[12px] max-w-md w-full p-5 space-y-4 ae-dialog-animate max-h-[90vh] overflow-y-auto">
-            <!-- Mobile Sheet Grab Bar -->
-            <div class="w-10 h-1 bg-[#CFD5D0] rounded-full mx-auto sm:hidden -mt-1 mb-1"></div>
-
-            <div class="flex items-center justify-between pb-3 border-b border-[#EFEFEF]">
-              <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-[5px] bg-[#247B50] text-white flex items-center justify-center text-xs">
-                  <i class="fa-solid fa-seedling"></i>
-                </div>
-                <div>
-                  <h3 class="text-sm font-semibold text-[#111613]">Operations Studio Menu</h3>
-                  <p class="text-[11px] text-[#525B56]">Agri Experience HQ Controls</p>
-                </div>
-              </div>
-              <button onclick="AEApp.toggleStudioMobileMenu()" aria-label="Close"
-                class="w-7 h-7 rounded-[5px] hover:bg-[#F4F6F4] flex items-center justify-center text-[#525B56] ae-press">
-                <i class="fa-solid fa-xmark text-sm"></i>
-              </button>
-            </div>
-
-            <!-- Staff Identity Card -->
-            <div class="p-3.5 rounded-[8px] bg-[#F8F9F8] border border-[#E4E7E4] flex items-center justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-[11px] text-[#525B56]">Signed in as:</div>
-                <div class="text-xs font-bold text-[#111613] truncate">${this.escapeHtml(currentUser ? currentUser.fullName : 'Guest')}</div>
-                <div class="text-[11px] text-[#525B56]">${currentUser ? currentUser.id : ''} · ${this.escapeHtml((currentUser && currentUser.county) || 'HQ')}</div>
-              </div>
-              <span class="px-2 py-0.5 rounded-[4px] text-[10px] font-bold ${isAdmin ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#EFF6FF] text-[#1E40AF]'} shrink-0">
-                ${(currentUser ? currentUser.role : 'GUEST').toUpperCase()}
-              </span>
-            </div>
-
-            <!-- Action List -->
-            <div class="space-y-2">
-              ${
-                !this.isAppInstalled
-                  ? `<button onclick="AEApp.promptInstall(); AEApp.toggleStudioMobileMenu();"
-                      class="w-full h-11 px-4 rounded-[8px] border border-[#247B50] bg-white hover:bg-[#F4F6F4] text-[#247B50] text-xs font-semibold inline-flex items-center justify-between ae-press">
-                      <span class="inline-flex items-center gap-2">
-                        <i class="fa-solid fa-download text-sm"></i>
-                        <span>Install Operations Studio (PWA)</span>
-                      </span>
-                      <i class="fa-solid fa-chevron-right text-xs"></i>
-                    </button>`
-                  : ''
-              }
-
-              <a href="./field.html${activeSurvey ? '?survey=' + encodeURIComponent(activeSurvey.id) : ''}"
-                class="w-full h-11 px-4 rounded-[8px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-between ae-press shadow-xs">
-                <span class="inline-flex items-center gap-2">
-                  <i class="fa-solid fa-mobile-screen-button"></i>
-                  <span>Open Mobile Field App (PWA)</span>
-                </span>
-                <i class="fa-solid fa-arrow-right text-xs"></i>
-              </a>
-
-              <button onclick="AEApp.toggleSimulatedOffline(); AEApp.toggleStudioMobileMenu();"
-                class="w-full h-10 px-4 rounded-[8px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center justify-between ae-press">
-                <span class="inline-flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full ${online ? 'bg-[#247B50]' : 'bg-[#D97706]'}"></span>
-                  <span>${online ? 'Switch to Offline Mode' : 'Switch to Online Mode'}</span>
-                </span>
-                <span class="text-[11px] font-semibold ${online ? 'text-[#247B50]' : 'text-[#D97706]'}">${online ? 'Online' : 'Offline'}</span>
-              </button>
-
-              <button onclick="AEApp.openSyncSettingsModal(); AEApp.toggleStudioMobileMenu();"
-                class="w-full h-10 px-4 rounded-[8px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center justify-between ae-press">
-                <span class="inline-flex items-center gap-2">
-                  <i class="fa-solid fa-table text-[#525B56]"></i>
-                  <span>Google Sheets &amp; GAS Backend</span>
-                </span>
-                <i class="fa-solid fa-gear text-xs text-[#525B56]"></i>
-              </button>
-
-              <button onclick="AEApp.handleLogout()"
-                class="w-full h-10 px-4 rounded-[8px] border border-[#F5C2C0] bg-[#FFEDEA] hover:bg-[#FDE2DC] text-xs font-semibold text-[#831C1E] inline-flex items-center justify-center gap-2 ae-press">
-                <i class="fa-solid fa-arrow-right-from-bracket"></i>
-                <span>Sign Out of Operations Studio</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-
 
     const settings = window.aeStore.settings;
     const queue = window.aeStore.syncQueue;
@@ -3680,7 +3591,7 @@ window.AEApp = {
 
   resetDashboardFilters() {
     this.searchQuery = '';
-    this.statusFilter = 'ALL';
+    this.statusFilter = 'All';
     this.render();
   },
 
@@ -3904,7 +3815,15 @@ window.AEApp = {
   autoTranslateSurvey() {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
-    const targetLang = (window.AEBuilder && window.AEBuilder.targetLang) || 'sw';
+    const secondaryLangs = (s.supportedLanguages || ['en']).filter((l) => l !== 'en');
+    if (secondaryLangs.length === 0) {
+      this.showToast('Enable at least one secondary language (SW, PT, or FR) before auto-translating.', 'warning');
+      return;
+    }
+    const targetLang = (window.AEBuilder && window.AEBuilder.targetLang && secondaryLangs.includes(window.AEBuilder.targetLang))
+      ? window.AEBuilder.targetLang
+      : secondaryLangs[0];
+    if (window.AEBuilder) window.AEBuilder.targetLang = targetLang;
     if (window.AEI18n) {
       window.AEI18n.autoTranslateSurvey(s, targetLang);
       window.aeStore.upsertSurvey(s);
@@ -3923,6 +3842,7 @@ window.AEApp = {
     s.translations[targetLang] = s.translations[targetLang] || {};
     s.translations[targetLang][field] = value;
     window.aeStore.upsertSurvey(s);
+    this.render();
   },
 
   updatePageTranslationMeta(pageId, field, value) {
@@ -3935,6 +3855,7 @@ window.AEApp = {
     s.translations[targetLang].pages[pageId] = s.translations[targetLang].pages[pageId] || {};
     s.translations[targetLang].pages[pageId][field] = value;
     window.aeStore.upsertSurvey(s);
+    this.render();
   },
 
   updateQuestionTranslationMeta(qId, field, value) {
@@ -3947,11 +3868,14 @@ window.AEApp = {
     s.translations[targetLang].questions[qId] = s.translations[targetLang].questions[qId] || {};
     s.translations[targetLang].questions[qId][field] = value;
     window.aeStore.upsertSurvey(s);
+    this.render();
   },
 
   updateQuestionOptionTranslation(qId, optIdx, value) {
-    const s = window.aeStore.getSurveyById(this.activeSurveyId);
-    if (!s) return;
+    const ctx = this.findQuestionContext(qId);
+    if (!ctx) return;
+    const s = ctx.survey;
+    const q = ctx.question;
     const targetLang = (window.AEBuilder && window.AEBuilder.targetLang) || 'sw';
     s.translations = s.translations || {};
     s.translations[targetLang] = s.translations[targetLang] || {};
@@ -3959,12 +3883,11 @@ window.AEApp = {
     s.translations[targetLang].questions[qId] = s.translations[targetLang].questions[qId] || {};
     const qT = s.translations[targetLang].questions[qId];
     if (!Array.isArray(qT.options)) {
-      const page = s.pages[window.AEBuilder.activePageIndex];
-      const q = page ? page.questions.find((x) => x.id === qId) : null;
       qT.options = q && Array.isArray(q.options) ? [...q.options] : [];
     }
     qT.options[optIdx] = value;
     window.aeStore.upsertSurvey(s);
+    this.render();
   },
 
   addSurveyPage() {
@@ -3995,7 +3918,18 @@ window.AEApp = {
     ) {
       return;
     }
+    const deletedPageId = page ? page.id : null;
     s.pages.splice(pageIdx, 1);
+    if (deletedPageId) {
+      s.pages.forEach((p) => {
+        (p.questions || []).forEach((q) => {
+          if (q.logic && q.logic.target === deletedPageId) {
+            q.logic.target = '';
+            q.logic.enabled = false;
+          }
+        });
+      });
+    }
     window.AEBuilder.activePageIndex = Math.max(0, pageIdx - 1);
     window.aeStore.upsertSurvey(s);
     this.render();
@@ -4051,7 +3985,11 @@ window.AEApp = {
   updateQuestionOption(questionId, optIdx, value) {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx || !Array.isArray(ctx.question.options)) return;
+    const oldVal = ctx.question.options[optIdx];
     ctx.question.options[optIdx] = value;
+    if (ctx.question.logic && ctx.question.logic.value === oldVal) {
+      ctx.question.logic.value = value;
+    }
     window.aeStore.upsertSurvey(ctx.survey);
     this.render();
   },
@@ -4068,7 +4006,11 @@ window.AEApp = {
   removeQuestionOption(questionId, optIdx) {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx || !Array.isArray(ctx.question.options) || ctx.question.options.length <= 1) return;
+    const removedVal = ctx.question.options[optIdx];
     ctx.question.options.splice(optIdx, 1);
+    if (ctx.question.logic && ctx.question.logic.value === removedVal) {
+      ctx.question.logic.value = ctx.question.options[0] || '';
+    }
     window.aeStore.upsertSurvey(ctx.survey);
     this.render();
   },
@@ -4340,9 +4282,27 @@ window.AEApp = {
           return;
         } else if (q.type === 'matrix') {
           const rows = q.rows || [];
-          const answeredRows = Object.keys(val || {}).length;
+          const answeredRows = rows.filter((rName) => val && typeof val === 'object' && val[rName] !== undefined && val[rName] !== '').length;
           if (answeredRows < rows.length) {
             errors[q.id] = `Please select a rating for all ${rows.length} rows.`;
+            return;
+          }
+        } else if (q.type === 'gps_location') {
+          if (!val || typeof val !== 'object' || val.lat === '' || val.lng === '' || val.lat === undefined || val.lng === undefined) {
+            errors[q.id] = 'Please capture or enter GPS coordinates.';
+            return;
+          }
+        } else if (q.type === 'cascading_dropdown') {
+          if (!val || typeof val !== 'object' || !val.level1) {
+            errors[q.id] = 'Please select a primary location.';
+            return;
+          }
+        } else if (q.type === 'repeat_group') {
+          const nonEmptyRows = Array.isArray(val)
+            ? val.filter((row) => row && typeof row === 'object' && Object.values(row).some((v) => String(v ?? '').trim() !== ''))
+            : [];
+          if (nonEmptyRows.length === 0) {
+            errors[q.id] = 'Please add at least one item to the roster.';
             return;
           }
         }
@@ -4387,6 +4347,13 @@ window.AEApp = {
   },
 
   prevRunnerPage() {
+    if (window.AECollector._pageHistory && window.AECollector._pageHistory.length > 0) {
+      window.AECollector.currentPageIndex = window.AECollector._pageHistory.pop();
+      window.AECollector.persistDraft(this.activeSurveyId);
+      this.render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (window.AECollector.currentPageIndex > 0) {
       window.AECollector.currentPageIndex--;
       window.AECollector.persistDraft(this.activeSurveyId);
@@ -4406,20 +4373,36 @@ window.AEApp = {
       return;
     }
 
-    // Evaluate Conditional Skip Logic on current page questions
+    if (!window.AECollector._pageHistory) window.AECollector._pageHistory = [];
+
+    // Evaluate Conditional Skip Logic on current page questions (with canonical English normalization)
     for (const q of page.questions || []) {
       if (q.logic && q.logic.enabled && q.logic.target) {
-        const ans = window.AECollector.draftAnswers[q.id];
-        const matches = Array.isArray(ans)
-          ? ans.includes(q.logic.value)
-          : String(ans ?? '') === String(q.logic.value);
+        const rawAns = window.AECollector.draftAnswers[q.id];
+        const canonicalAns = (window.AEI18n && typeof window.AEI18n.getCanonicalEnglishAnswer === 'function')
+          ? window.AEI18n.getCanonicalEnglishAnswer(survey, q.id, rawAns, this.runnerLang || 'en')
+          : rawAns;
+        const matches = Array.isArray(canonicalAns)
+          ? canonicalAns.includes(q.logic.value) || (Array.isArray(rawAns) && rawAns.includes(q.logic.value))
+          : String(canonicalAns ?? '') === String(q.logic.value) || String(rawAns ?? '') === String(q.logic.value);
         if (matches) {
           if (q.logic.target === 'END_SURVEY') {
+            for (let sIdx = window.AECollector.currentPageIndex + 1; sIdx < survey.pages.length; sIdx++) {
+              (survey.pages[sIdx].questions || []).forEach((sq) => {
+                delete window.AECollector.draftAnswers[sq.id];
+              });
+            }
             this.submitRunnerResponse(surveyId, true);
             return;
           }
           const targetIdx = survey.pages.findIndex((p) => p.id === q.logic.target);
-          if (targetIdx >= 0) {
+          if (targetIdx > window.AECollector.currentPageIndex) {
+            for (let sIdx = window.AECollector.currentPageIndex + 1; sIdx < targetIdx; sIdx++) {
+              (survey.pages[sIdx].questions || []).forEach((sq) => {
+                delete window.AECollector.draftAnswers[sq.id];
+              });
+            }
+            window.AECollector._pageHistory.push(window.AECollector.currentPageIndex);
             window.AECollector.currentPageIndex = targetIdx;
             window.AECollector.persistDraft(surveyId);
             this.showToast(`Skip rule jumped to Page ${targetIdx + 1}.`, 'success');
@@ -4431,6 +4414,7 @@ window.AEApp = {
       }
     }
 
+    window.AECollector._pageHistory.push(window.AECollector.currentPageIndex);
     window.AECollector.currentPageIndex++;
     window.AECollector.persistDraft(surveyId);
     this.render();
@@ -4582,7 +4566,8 @@ window.AEApp = {
   },
 
   approveSingleResponse(respId) {
-    const userSup = 'SUP-01 (Peter Kamau)';
+    const cur = this.getCurrentUser();
+    const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Peter Kamau)';
     window.aeStore.approveResponse(respId, userSup, 'Verified and sign-off by regional supervisor');
     this.showToast('Response verified & approved by supervisor.', 'success');
     this.render();
@@ -4591,7 +4576,9 @@ window.AEApp = {
   flagSingleResponse(respId) {
     const reason = window.prompt('Enter reason for flagging this response for field re-check:', 'Agronomic yield or GPS anomaly requires verification');
     if (!reason) return;
-    window.aeStore.flagResponse(respId, 'SUP-01 (Peter Kamau)', reason);
+    const cur = this.getCurrentUser();
+    const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Peter Kamau)';
+    window.aeStore.flagResponse(respId, userSup, reason);
     this.showToast('Response flagged for enumerator follow-up.', 'warning');
     this.render();
   },
@@ -4771,26 +4758,107 @@ window.AEApp = {
   <main id="app_root" class="space-y-4"></main>
   <script>
     window.AE_SURVEY = ${safeSurveyJson};
-    const root = document.getElementById('app_root');
-    const card = document.createElement('div');
-    card.className = "bg-white border border-[#E4E7E4] rounded-[10px] p-6 space-y-4";
-    const h2 = document.createElement('h2');
-    h2.className = "text-base font-semibold";
-    h2.textContent = window.AE_SURVEY.title || 'Untitled Survey';
-    const p = document.createElement('p');
-    p.className = "text-xs text-[#525B56]";
-    p.textContent = window.AE_SURVEY.description || 'Pre-loaded air-gapped survey questionnaire.';
-    const notice = document.createElement('div');
-    notice.className = "p-4 bg-[#DCFAE5] rounded-[6px] text-xs text-[#04250E] font-medium flex items-center gap-2";
-    notice.innerHTML = '<i class="fa-solid fa-check text-[#247B50]"></i> <span>Standalone Field Collector successfully loaded offline.</span>';
-    const info = document.createElement('p');
-    info.className = "text-xs text-[#525B56]";
-    info.textContent = "Open this file directly in any browser on Android or Windows without Wi-Fi to collect farmer interviews.";
-    card.appendChild(h2);
-    card.appendChild(p);
-    card.appendChild(notice);
-    card.appendChild(info);
-    root.appendChild(card);
+    const STORAGE_KEY = 'ae_standalone_responses_' + window.AE_SURVEY.id;
+    function getSavedResponses() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) { return []; }
+    }
+    function renderStandaloneForm() {
+      const root = document.getElementById('app_root');
+      root.innerHTML = '';
+      const savedList = getSavedResponses();
+      const card = document.createElement('div');
+      card.className = "bg-white border border-[#E4E7E4] rounded-[10px] p-6 space-y-4";
+      const h2 = document.createElement('h2');
+      h2.className = "text-base font-semibold";
+      h2.textContent = window.AE_SURVEY.title || 'Untitled Survey';
+      const p = document.createElement('p');
+      p.className = "text-xs text-[#525B56]";
+      p.textContent = window.AE_SURVEY.description || 'Pre-loaded air-gapped survey questionnaire.';
+      const notice = document.createElement('div');
+      notice.className = "p-4 bg-[#DCFAE5] rounded-[6px] text-xs text-[#04250E] font-medium flex items-center justify-between gap-2";
+      notice.innerHTML = '<span><i class="fa-solid fa-check text-[#247B50]"></i> Standalone Field Collector active (' + savedList.length + ' saved locally)</span>';
+      if (savedList.length > 0) {
+        const expBtn = document.createElement('button');
+        expBtn.type = 'button';
+        expBtn.textContent = 'Export JSON Pack (' + savedList.length + ')';
+        expBtn.style.cssText = 'padding:6px 10px;border-radius:5px;background:#141A17;color:#fff;font-weight:600;cursor:pointer;';
+        expBtn.onclick = () => {
+          const bundle = {
+            manifest: { bundleType: 'AE_SURVEY_AIRGAP_PACK_V2', schemaVersion: 2, exportedAt: new Date().toISOString(), surveyId: window.AE_SURVEY.id, recordCount: savedList.length },
+            payload: { survey: window.AE_SURVEY, responses: savedList }
+          };
+          const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = window.AE_SURVEY.id + '_airgap_pack.json';
+          a.click();
+        };
+        notice.appendChild(expBtn);
+      }
+      card.appendChild(h2);
+      card.appendChild(p);
+      card.appendChild(notice);
+
+      const form = document.createElement('form');
+      form.className = 'space-y-4';
+      const allQs = (window.AE_SURVEY.pages || []).flatMap(pg => pg.questions || []);
+      allQs.forEach((q, idx) => {
+        const qWrap = document.createElement('div');
+        qWrap.style.cssText = 'padding:12px;border:1px solid #E4E7E4;border-radius:8px;background:#FAFBF9;';
+        const lbl = document.createElement('label');
+        lbl.className = 'text-xs font-semibold';
+        lbl.style.display = 'block';
+        lbl.style.marginBottom = '6px';
+        lbl.textContent = 'Q' + (idx + 1) + '. ' + q.title + (q.required ? ' *' : '');
+        qWrap.appendChild(lbl);
+        let input;
+        if (Array.isArray(q.options) && q.options.length > 0) {
+          input = document.createElement('select');
+          input.name = q.id;
+          input.required = Boolean(q.required);
+          input.style.cssText = 'width:100%;height:36px;padding:0 8px;border:1px solid #CFD5D0;border-radius:6px;background:#fff;font-size:12px;';
+          const defOpt = document.createElement('option');
+          defOpt.value = '';
+          defOpt.textContent = 'Select option...';
+          input.appendChild(defOpt);
+          q.options.forEach(opt => {
+            const o = document.createElement('option');
+            o.value = opt;
+            o.textContent = opt;
+            input.appendChild(o);
+          });
+        } else {
+          input = document.createElement('input');
+          input.type = (q.type === 'number_yield' || q.type === 'number') ? 'number' : (q.type === 'date' ? 'date' : 'text');
+          input.name = q.id;
+          input.required = Boolean(q.required);
+          input.placeholder = q.placeholder || 'Enter response...';
+          input.style.cssText = 'width:100%;height:36px;padding:0 10px;border:1px solid #CFD5D0;border-radius:6px;background:#fff;font-size:12px;';
+        }
+        qWrap.appendChild(input);
+        form.appendChild(qWrap);
+      });
+      const subBtn = document.createElement('button');
+      subBtn.type = 'submit';
+      subBtn.textContent = 'Save Offline Response';
+      subBtn.style.cssText = 'width:100%;height:40px;border-radius:8px;background:#247B50;color:#fff;font-weight:600;font-size:13px;cursor:pointer;';
+      form.appendChild(subBtn);
+      form.onsubmit = (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(form);
+        const answers = {};
+        allQs.forEach(q => { answers[q.id] = fd.get(q.id) || ''; });
+        const list = getSavedResponses();
+        const id = 'resp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+        list.push({ id, clientResponseId: id, surveyId: window.AE_SURVEY.id, surveyTitle: window.AE_SURVEY.title, enumerator: 'Standalone Air-Gap Collector', submittedAt: new Date().toISOString(), durationSec: 120, syncStatus: 'queued', answers });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        alert('Response saved offline (' + list.length + ' total). Use Export JSON Pack to import into AE Survey Studio.');
+        renderStandaloneForm();
+      };
+      card.appendChild(form);
+      root.appendChild(card);
+    }
+    renderStandaloneForm();
   <\/script>
 </body>
 </html>`;
@@ -4884,7 +4952,7 @@ window.AEApp = {
             if (!cleanResp) return;
             const key = cleanResp.clientResponseId || cleanResp.id;
             if (!existingIds.has(key)) {
-              window.aeStore.submitResponse(cleanResp);
+              window.aeStore.submitResponse({ ...cleanResp, _preserveMeta: true });
               importedCount++;
             }
           });

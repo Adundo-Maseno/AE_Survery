@@ -290,6 +290,36 @@
       color: #000000 !important;
       font-weight: 700 !important;
     }
+
+    .ae-toast-enter {
+      transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+    }
+
+    .ae-glass-toast-dark {
+      background-color: #141A17;
+      border: 1px solid #2A332E;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
+    }
+
+    .ae-glass-toast-warning {
+      background-color: #FFFBEB;
+      border: 1px solid #FDE68A;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
+    }
+
+    .ae-glass-toast-error {
+      background-color: #FFEDEA;
+      border: 1px solid #F5C2C0;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
+    }
+
+    .ae-receipt-card {
+      box-shadow: 0 4px 20px -2px rgba(20, 26, 23, 0.08);
+    }
+
+    .ae-row-hover {
+      transition: background-color 140ms var(--ease-out);
+    }
   </style>
 </head>
 
@@ -322,7 +352,7 @@
         <div class="flex items-center gap-1.5">
           <span class="text-xs sm:text-sm font-semibold tracking-tight text-white whitespace-nowrap">AE Field App</span>
           <span
-            class="text-[9px] sm:text-[10px] font-semibold px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded-[3px] bg-[#247B50] text-white shrink-0">PWA</span>
+            class="text-[9px] sm:text-[10px] font-semibold px-1 sm:px-1.5 py-0.5 sm:py-0.5 rounded-[3px] bg-[#247B50] text-white shrink-0">PWA</span>
           <span id="ae_hdr_role_badge" class="hidden shrink-0"></span>
         </div>
         <button type="button" onclick="AEFieldApp.openSurveyPicker()"
@@ -429,7 +459,7 @@
         <div class="relative">
           <i class="fa-solid fa-bullseye text-base mb-1 text-[#FBBF24]"></i>
           <span id="ae_bnav_pacing_badge"
-            class="hidden absolute -top-1.5 -right-3 text-[9px] font-bold px-1 py-0.2 rounded-full bg-[#247B50] text-white tabular-nums leading-tight"></span>
+            class="hidden absolute -top-1.5 -right-3 text-[9px] font-bold px-1 py-0.5 rounded-full bg-[#247B50] text-white tabular-nums leading-tight"></span>
         </div>
         <span class="text-[10px] font-medium tracking-tight truncate max-w-[68px]" id="ae_bnav_pacing_lbl">Pacing</span>
       </button>
@@ -440,7 +470,7 @@
         <div class="relative">
           <i id="ae_bnav_sync_icon" class="fa-solid fa-cloud-arrow-up text-base mb-1 text-[#3FC07A]"></i>
           <span id="ae_bnav_sync_badge"
-            class="hidden absolute -top-1.5 -right-3 text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-[#D97706] text-white tabular-nums leading-tight"></span>
+            class="hidden absolute -top-1.5 -right-3 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-[#D97706] text-white tabular-nums leading-tight"></span>
         </div>
         <span class="text-[10px] font-medium tracking-tight truncate max-w-[68px]" id="ae_bnav_sync_lbl">Sync</span>
       </button>

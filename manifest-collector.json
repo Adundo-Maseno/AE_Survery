@@ -2,8 +2,8 @@
   "name": "AE Field Collector · Agri Experience Limited",
   "short_name": "AE Collector",
   "description": "Dedicated offline field data collection application for Agri Experience enumerators, featuring satellite GPS, agronomic converters, and Google Sheets cloud sync.",
-  "id": "./field",
-  "start_url": "./field",
+  "id": "./field.html",
+  "start_url": "./field.html",
   "scope": "./",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
@@ -58,14 +58,14 @@
       "name": "Start New Survey",
       "short_name": "New Survey",
       "description": "Open field collector directly to questionnaire",
-      "url": "./field#new",
+      "url": "./field.html#new",
       "icons": [{ "src": "./icons/field-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Sync Offline Outbox",
       "short_name": "Sync Data",
       "description": "Trigger instant cloud sync with Google Sheets",
-      "url": "./field#sync",
+      "url": "./field.html#sync",
       "icons": [{ "src": "./icons/field-192.png", "sizes": "192x192" }]
     }
   ]

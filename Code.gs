@@ -113,12 +113,12 @@ function isCallerAdmin_(callerId) {
 }
 
 /**
- * Checks whether the caller has administrative rights either via a valid AE_SYNC_TOKEN
- * or via verified personnel ID.
+ * Checks whether the caller has administrative rights via both a valid AE_SYNC_TOKEN
+ * (when configured) and a verified Admin personnel ID.
  */
 function isAuthorizedAdmin_(callerId, syncToken) {
-  if (verifySyncToken_(syncToken)) {
-    return true;
+  if (!verifySyncToken_(syncToken)) {
+    return false;
   }
   return isCallerAdmin_(callerId);
 }
@@ -374,6 +374,15 @@ function doPost(e) {
       surveysUpserted++;
     }
 
+    var deletedSurveyIds = (isCallerAdmin && Array.isArray(payload.deletedSurveyIds))
+      ? payload.deletedSurveyIds.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
+      : [];
+    for (var dIdx = 0; dIdx < deletedSurveyIds.length; dIdx++) {
+      if (deletedSurveyIds[dIdx]) {
+        deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(deletedSurveyIds[dIdx]));
+      }
+    }
+
     for (var j = 0; j < collectors.length; j++) {
       upsertCollectorRow_(collectors[j]);
     }
@@ -490,7 +499,8 @@ function ensureDatabaseInitialized_() {
     'AssignedSurveys',
     'Status',
     'PinCode',
-    'UpdatedAt'
+    'UpdatedAt',
+    'TaskQuotasJSON'
   ]);
 
   ensureSheetWithHeaders_(ss, DB_CONFIG.SHEETS.SYNC_LOG, [
@@ -635,6 +645,14 @@ function upsertSurveyRow_(survey) {
 
   var rowIndex = findRowIndexByValue_(sheet, 1, String(survey.id));
   if (rowIndex > 1) {
+    if (!survey.forceOverwrite && survey.updatedAt) {
+      var existingUpdatedAt = String(sheet.getRange(rowIndex, 7).getValue() || '').trim();
+      var incomingMs = Date.parse(String(survey.updatedAt));
+      var existingMs = Date.parse(existingUpdatedAt);
+      if (!isNaN(incomingMs) && !isNaN(existingMs) && incomingMs < existingMs) {
+        return;
+      }
+    }
     sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
   } else {
     sheet.appendRow(rowValues);
@@ -674,6 +692,10 @@ function upsertPersonnelRow_(person) {
   var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.PERSONNEL);
   if (!sheet) return;
 
+  var quotasJson = (person.taskQuotas && typeof person.taskQuotas === 'object')
+    ? JSON.stringify(person.taskQuotas)
+    : '{}';
+
   var rowValues = [
     sanitizeSheetCell_(String(person.id)),
     sanitizeSheetCell_(String(person.fullName || '')),
@@ -686,7 +708,8 @@ function upsertPersonnelRow_(person) {
     sanitizeSheetCell_(Array.isArray(person.assignedSurveys) ? person.assignedSurveys.join(', ') : ''),
     sanitizeSheetCell_(person.active !== false ? 'Active' : 'Inactive'),
     "'" + String(person.pinCode || '1234').replace(/^'+/, '').trim(),
-    sanitizeSheetCell_(String(person.updatedAt || new Date().toISOString()))
+    sanitizeSheetCell_(String(person.updatedAt || new Date().toISOString())),
+    sanitizeSheetCell_(quotasJson)
   ];
 
   var rowIndex = findRowIndexByValue_(sheet, 1, String(person.id));
@@ -701,7 +724,8 @@ function readPersonnelRows_(ss) {
   var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.PERSONNEL);
   if (!sheet || sheet.getLastRow() <= 1) return [];
 
-  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 12).getValues();
+  var numCols = Math.max(12, Math.min(13, sheet.getLastColumn()));
+  var rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, numCols).getValues();
   var personnel = [];
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -711,6 +735,18 @@ function readPersonnelRows_(ss) {
       .split(',')
       .map(function(s) { return s.trim(); })
       .filter(function(s) { return s.length > 0; });
+
+    var taskQuotas = {};
+    if (r[12]) {
+      try {
+        var rawQuotas = String(r[12]).replace(/^'+/, '').trim();
+        if (rawQuotas.charAt(0) === '{') {
+          taskQuotas = JSON.parse(rawQuotas);
+        }
+      } catch (e) {
+        taskQuotas = {};
+      }
+    }
 
     personnel.push({
       id: id,
@@ -724,7 +760,8 @@ function readPersonnelRows_(ss) {
       assignedSurveys: assignedSurveys,
       active: String(r[9] || 'Active').toLowerCase() === 'active',
       pinCode: String(r[10] || '1234').replace(/^'+/, '').trim(),
-      updatedAt: r[11] ? String(r[11]).trim() : ''
+      updatedAt: r[11] ? String(r[11]).trim() : '',
+      taskQuotas: taskQuotas
     });
   }
   return personnel;
@@ -784,8 +821,38 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     if (!r) continue;
     var clientRespId = String(r.clientResponseId || r.id || Utilities.getUuid());
 
+    var gps = r.gps || {};
+    var qaFlagsStr = Array.isArray(r.qaFlags) ? r.qaFlags.join(', ') : (r.qaFlags || '');
+    var supervisorId = r.audit
+      ? (r.audit.verifiedBy || r.audit.flaggedBy || r.audit.rejectedBy || r.supervisorId || '')
+      : (r.supervisorId || '');
+    var npsCat = r.calculated ? (r.calculated.npsCategory || '') : '';
+    var calcPayload = Object.assign({}, r.calculated || {}, {
+      _meta: {
+        audit: r.audit || null,
+        auditTrail: Array.isArray(r.auditTrail) ? r.auditTrail : [],
+        submittedByUserId: r.submittedByUserId || '',
+        submittedByUserRole: r.submittedByUserRole || '',
+        gpsLabel: gps.label || '',
+        gpsAltitude: gps.altitude !== undefined ? gps.altitude : null,
+        gpsMethod: gps.method || '',
+        gpsManual: Boolean(gps.manual)
+      }
+    });
+    var calcJson = JSON.stringify(calcPayload);
+
     if (existingIds[clientRespId]) {
-      // Ensure row is mirrored to the per-survey dedicated sheet if not already there
+      var existingRowIdx = findRowIndexByValue_(respSheet, 1, clientRespId);
+      if (existingRowIdx > 1) {
+        respSheet.getRange(existingRowIdx, 12, 1, 6).setValues([[
+          sanitizeSheetCell_(String(r.reviewStatus || 'pending_review')),
+          sanitizeSheetCell_(qaFlagsStr),
+          sanitizeSheetCell_(supervisorId),
+          sanitizeSheetCell_(npsCat),
+          sanitizeSheetCell_(String(r.recordHash || '')),
+          sanitizeSheetCell_(calcJson)
+        ]]);
+      }
       var existingSurvey = surveyMap[r.surveyId] || null;
       if (existingSurvey && r.answers && Object.keys(r.answers).length > 0) {
         appendToSurveyDedicatedSheet_(existingSurvey, r, clientRespId, nowIso);
@@ -797,14 +864,10 @@ function appendResponsesIdempotent_(responses, surveyMap) {
 
     var survey = surveyMap[r.surveyId] || null;
     var surveyTitle = survey ? survey.title : (r.surveyTitle || r.surveyId || 'Survey');
-    var gps = r.gps || {};
-    var qaFlagsStr = Array.isArray(r.qaFlags) ? r.qaFlags.join(', ') : (r.qaFlags || '');
-    var supervisorId = r.audit ? (r.audit.verifiedBy || r.audit.flaggedBy || '') : '';
-    var npsCat = r.calculated ? (r.calculated.npsCategory || '') : '';
-    var calcJson = r.calculated ? JSON.stringify(r.calculated) : '';
     var administeredLang = String(r.language || 'en').toLowerCase();
 
-    // Process open text translations for non-English responses
+    // Process open text translations for human-readable per-survey sheet only,
+    // while keeping canonical answers intact in AnswersJSON so SHA-256 recordHash stays valid.
     var processedAnswers = {};
     if (r.answers && typeof r.answers === 'object') {
       var questionsList = survey ? getFlattenedQuestions_(survey) : [];
@@ -826,7 +889,7 @@ function appendResponsesIdempotent_(responses, surveyMap) {
       }
     }
 
-    var cleanAnswersJson = prepareAnswersJsonForSheet_(processedAnswers);
+    var cleanAnswersJson = prepareAnswersJsonForSheet_(r.answers || {});
 
     var masterRow = [
       sanitizeSheetCell_(clientRespId),
@@ -1002,13 +1065,23 @@ function prepareAnswersJsonForSheet_(answers) {
     if (typeof v === 'string' && v.indexOf('data:image/') === 0) {
       clean[k] = '[Digital Signature/Image Recorded]';
     } else if (v && typeof v === 'object' && v.dataUrl) {
-      clean[k] = {
-        capturedAt: v.capturedAt || '',
-        width: v.width || 0,
-        height: v.height || 0,
-        sizeKb: v.sizeKb || 0,
-        summary: 'Photo proof attached (' + (v.sizeKb || 0) + ' KB)'
-      };
+      if (v.durationSec !== undefined || (v.mimeType && String(v.mimeType).indexOf('audio/') === 0)) {
+        clean[k] = {
+          capturedAt: v.capturedAt || '',
+          durationSec: v.durationSec || 0,
+          mimeType: v.mimeType || 'audio/webm',
+          transcript: v.transcript || '',
+          summary: 'Audio note (' + (v.durationSec || 0) + 's)'
+        };
+      } else {
+        clean[k] = {
+          capturedAt: v.capturedAt || '',
+          width: v.width || 0,
+          height: v.height || 0,
+          sizeKb: v.sizeKb || 0,
+          summary: 'Photo proof attached (' + (v.sizeKb || 0) + ' KB)'
+        };
+      }
     } else {
       clean[k] = v;
     }
@@ -1020,19 +1093,12 @@ function readAnswersFromDedicatedSheet_(ss, surveyId, clientRespId) {
   try {
     var sheets = ss.getSheets();
     var targetSheet = null;
+    var shortId = String(surveyId || '').replace(/[^a-zA-Z0-9]/g, '').slice(-6);
     for (var i = 0; i < sheets.length; i++) {
       var sName = sheets[i].getName();
-      if (sName.indexOf('Resp_') === 0 && (sName.indexOf(String(surveyId).substring(0, 10)) !== -1 || sName.indexOf('2026') !== -1)) {
+      if (sName.indexOf('Resp_') === 0 && ((shortId && sName.slice(-shortId.length) === shortId) || sName.indexOf(String(surveyId).substring(0, 10)) !== -1)) {
         targetSheet = sheets[i];
         break;
-      }
-    }
-    if (!targetSheet) {
-      for (var j = 0; j < sheets.length; j++) {
-        if (sheets[j].getName().indexOf('Resp_') === 0) {
-          targetSheet = sheets[j];
-          break;
-        }
       }
     }
     if (!targetSheet || targetSheet.getLastRow() <= 1) return null;
@@ -1175,6 +1241,11 @@ function readAllDatabaseData_() {
         }
       }
 
+      var metaObj = (calculated && calculated._meta && typeof calculated._meta === 'object') ? calculated._meta : {};
+      if (calculated && calculated._meta) {
+        delete calculated._meta;
+      }
+
       responses.push({
         id: String(row[0]),
         clientResponseId: String(row[0]),
@@ -1182,18 +1253,26 @@ function readAllDatabaseData_() {
         surveyTitle: String(row[2]),
         collectorId: String(row[3]),
         enumerator: String(row[4]),
+        submittedByUserId: metaObj.submittedByUserId || '',
+        submittedByUserRole: metaObj.submittedByUserRole || '',
         language: language || 'en',
         submittedAt: String(row[5]),
         durationSec: Number(row[6] || 0),
         gps: (row[7] !== '' && row[8] !== '') ? {
           lat: Number(row[7]),
           lng: Number(row[8]),
-          accuracy: Number(row[9] || 0)
+          accuracy: Number(row[9] || 0),
+          label: metaObj.gpsLabel || '',
+          altitude: metaObj.gpsAltitude !== undefined ? metaObj.gpsAltitude : null,
+          method: metaObj.gpsMethod || '',
+          manual: Boolean(metaObj.gpsManual)
         } : null,
         status: String(row[10] || 'complete'),
         reviewStatus: reviewStatus,
         qaFlags: qaFlags,
         supervisorId: String(row[13] || ''),
+        audit: metaObj.audit || null,
+        auditTrail: Array.isArray(metaObj.auditTrail) ? metaObj.auditTrail : [],
         npsCategory: String(row[14] || ''),
         recordHash: String(row[15] || ''),
         calculated: calculated,

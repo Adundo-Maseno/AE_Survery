@@ -12,7 +12,7 @@ Without cryptographic controls, offline records in IndexedDB or localStorage cou
 
 ## Decision
 
-We implement a client-side **Cryptographic Anti-Tamper Seal** (SHA-256 hash using the Web Crypto API) coupled with a sequential **Merkle Tree Audit Trail** that chains each collected record to its predecessor.
+We implement a client-side **Cryptographic Anti-Tamper Seal** (`AEIntegrityEngine` in `js/db.js`, computing a SHA-256 hash using the Web Crypto API over a canonicalized, cloud-scrubbed digest payload with a synchronous `fnv1a-256:` fallback) coupled with an immutable **Audit Trail** (`audit` and `auditTrail`) persisted across IndexedDB and Google Sheets (`CalculatedJSON._meta`).
 
 ## Consequences
 

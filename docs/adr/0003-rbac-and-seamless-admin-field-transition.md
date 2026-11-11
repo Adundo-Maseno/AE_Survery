@@ -15,10 +15,11 @@ Previously, when an Admin navigated from the Operations Studio to the Field App 
 
 ## Decision
 
-We formalized a 3-tier Role-Based Access Control (RBAC) system in `js/db.js` (`AESession`):
-1. **Persistent Role Capabilities**: Enforces granular permissions (`canDesign`, `canManageUsers`, `canSyncSheets`, `canReviewResponses`, `canCollectData`).
-2. **Superuser Field Transition**: When an authenticated Admin opens `field.html`, the Field App recognizes the Admin identity, renders an `HQ Admin` audit badge, bypasses redundant PIN challenges, and tags any submitted pilot records with `ADMIN_PILOT_AUDIT` metadata.
-3. **Tablet Handover Protocol**: Provides an explicit "Handover Tablet to Enumerator" action that purges Admin session credentials and locks the device into restricted Enumerator mode before handing the device to field personnel.
+We formalized a 3-tier Role-Based Access Control (RBAC) system plus Self-Administered Respondent Mode in `js/db.js` (`AESession`):
+1. **Persistent Role Capabilities (`ROLE_CAPABILITIES`)**: Enforces granular permissions (`CREATE_SURVEY`, `EDIT_SURVEY`, `DELETE_SURVEY`, `MANAGE_COLLECTORS`, `VIEW_ANALYTICS`, `EXPORT_DATA`, `APPROVE_RESPONSES`, `SYNC_SHEETS`, `CONFIGURE_BACKEND`, `COLLECT_FIELD_DATA`, `LOCK_KIOSK`).
+2. **Self-Administered Respondent Mode (`collectionMode: 'self_administered' | 'hybrid' | 'enumerator'`)**: Supports zero-login public respondent links (`field.html?survey=...&mode=respondent`) with strict UI isolation hiding staff/admin controls.
+3. **Superuser Field Transition**: When an authenticated Admin opens `field.html`, the Field App recognizes the Admin identity, renders an `HQ Admin` audit badge, bypasses redundant PIN challenges, and tags any submitted pilot records with `ADMIN_PILOT_AUDIT` metadata.
+4. **Tablet Handover Protocol**: Provides an explicit "Handover Tablet to Enumerator" action that purges Admin session credentials and locks the device into restricted Enumerator mode before handing the device to field personnel.
 
 ## Consequences
 

@@ -833,26 +833,41 @@ window.AECollector = {
       return `
         <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 space-y-2.5">
           <div class="flex items-center justify-between text-xs text-[#525B56]">
-            <span>Digital consent signature pad (Farmer / Agro-Dealer)</span>
+            <span>Digital consent signature / typed endorsement (Farmer / Agro-Dealer)</span>
             ${hasSig ? `<span class="text-[#247B50] font-medium"><i class="fa-solid fa-circle-check"></i> Signature saved</span>` : ''}
           </div>
-          <div class="bg-white rounded-[6px] border border-[#CFD5D0] h-28 flex items-center justify-center p-2">
-            ${hasSig ? `<img src="${AEApp.escapeAttr(val)}" alt="Signature" class="max-h-24 object-contain" />` : `<span class="text-xs text-[#A3ACA6]"><i class="fa-solid fa-signature mr-1"></i> Interactive touch canvas active in Field App</span>`}
+          <div class="flex items-center gap-2">
+            <input type="text"
+              maxlength="120"
+              value="${AEApp.escapeAttr(typeof val === 'string' && !val.startsWith('data:') ? val : (hasSig ? 'Signed Electronically' : ''))}"
+              oninput="AEApp.setRunnerAnswerSilent('${q.id}', this.value)"
+              placeholder="Type full name to sign electronically or open in Field App for touch canvas…"
+              class="flex-1 h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613] focus:border-[#247B50] focus:outline-none" />
+            <button type="button" onclick="AEApp.setRunnerAnswer('${q.id}', 'Signed: ' + new Date().toISOString().slice(0, 10))"
+              class="h-9 px-3 rounded-[6px] bg-[#247B50] text-white text-xs font-semibold ae-press shrink-0">
+              <i class="fa-solid fa-signature mr-1"></i> Stamp Consent
+            </button>
           </div>
         </div>
       `;
     }
 
     if (q.type === 'photo_proof') {
-      const hasPhoto = Boolean(val && val.dataUrl);
+      const hasPhoto = Boolean(val && (val.dataUrl || val.summary || typeof val === 'string'));
       return `
         <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 space-y-2.5">
           <div class="flex items-center justify-between text-xs text-[#525B56]">
             <span>Camera photo proof (Auto-compressed to &le;150KB JPEG)</span>
-            ${hasPhoto ? `<span class="text-[#247B50] font-medium"><i class="fa-solid fa-circle-check"></i> Image attached (${val.sizeKb || 120} KB)</span>` : ''}
+            ${hasPhoto ? `<span class="text-[#247B50] font-medium"><i class="fa-solid fa-circle-check"></i> Image attached</span>` : ''}
           </div>
-          <div class="bg-white rounded-[6px] border border-[#CFD5D0] h-32 flex items-center justify-center p-2">
-            ${hasPhoto ? `<img src="${AEApp.escapeAttr(val.dataUrl)}" alt="Photo Proof" class="max-h-28 object-contain rounded-[4px]" />` : `<span class="text-xs text-[#A3ACA6]"><i class="fa-solid fa-camera mr-1"></i> Rear camera capture active in Field App</span>`}
+          <div class="flex items-center justify-between gap-2 bg-white rounded-[6px] border border-[#CFD5D0] p-3">
+            ${hasPhoto && val.dataUrl
+              ? `<img src="${AEApp.escapeAttr(val.dataUrl)}" alt="Photo Proof" class="max-h-24 object-contain rounded-[4px]" />`
+              : `<span class="text-xs text-[#525B56]"><i class="fa-solid fa-camera mr-1.5 text-[#247B50]"></i> ${hasPhoto ? 'Photo reference recorded' : 'Attach field photo or open in Field App'}</span>`}
+            <button type="button" onclick="AEApp.setRunnerAnswer('${q.id}', { summary: 'Photo proof attached', sizeKb: 95, capturedAt: new Date().toISOString() })"
+              class="h-8 px-3 rounded-[5px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#EAECE9] text-xs font-medium text-[#111613] ae-press shrink-0">
+              ${hasPhoto ? 'Update Photo' : 'Attach Sample Proof'}
+            </button>
           </div>
         </div>
       `;
@@ -860,37 +875,75 @@ window.AECollector = {
 
     if (q.type === 'cascading_dropdown') {
       const levels = Array.isArray(q.levels) ? q.levels : ['County', 'Sub-County', 'Ward'];
+      const curObj = val && typeof val === 'object' ? val : { level1: '', level2: '', level3: '' };
+      const counties = ['Nakuru', 'Uasin Gishu', 'Trans Nzoia', 'Bungoma', 'Kakamega', 'Machakos', 'Meru', 'Kiambu', 'Kisumu', 'Nyeri'];
       return `
-        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] text-xs text-[#525B56] flex items-center justify-between">
-          <span class="font-medium text-[#111613]"><i class="fa-solid fa-sitemap text-[#247B50] mr-1.5"></i> ${levels.join(' › ')} Cascading Filter</span>
-          <span class="text-[#247B50] font-semibold">Active in Field App</span>
+        <div class="p-3.5 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+          <div>
+            <label class="block text-[11px] font-medium text-[#525B56] mb-1">${AEApp.escapeHtml(levels[0] || 'Level 1')}</label>
+            <select onchange="AEApp.setRunnerAnswer('${q.id}', { level1: this.value, level2: '', level3: '' })"
+              class="w-full h-9 rounded-[6px] border border-[#CFD5D0] bg-white px-2.5 text-xs text-[#111613]">
+              <option value="">Select ${AEApp.escapeHtml(levels[0] || 'County')}…</option>
+              ${counties.map((c) => `<option value="${AEApp.escapeAttr(c)}" ${curObj.level1 === c ? 'selected' : ''}>${AEApp.escapeHtml(c)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-medium text-[#525B56] mb-1">${AEApp.escapeHtml(levels[1] || 'Level 2')}</label>
+            <input type="text" value="${AEApp.escapeAttr(curObj.level2 || '')}"
+              placeholder="Enter ${AEApp.escapeAttr(levels[1] || 'Sub-County')}…"
+              oninput="AEApp.setRunnerAnswerSilent('${q.id}', { level1: '${AEApp.escapeJs(curObj.level1 || '')}', level2: this.value, level3: '${AEApp.escapeJs(curObj.level3 || '')}' })"
+              class="w-full h-9 rounded-[6px] border border-[#CFD5D0] bg-white px-2.5 text-xs text-[#111613]" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-medium text-[#525B56] mb-1">${AEApp.escapeHtml(levels[2] || 'Level 3')}</label>
+            <input type="text" value="${AEApp.escapeAttr(curObj.level3 || '')}"
+              placeholder="Enter ${AEApp.escapeAttr(levels[2] || 'Ward')}…"
+              oninput="AEApp.setRunnerAnswerSilent('${q.id}', { level1: '${AEApp.escapeJs(curObj.level1 || '')}', level2: '${AEApp.escapeJs(curObj.level2 || '')}', level3: this.value })"
+              class="w-full h-9 rounded-[6px] border border-[#CFD5D0] bg-white px-2.5 text-xs text-[#111613]" />
+          </div>
         </div>
       `;
     }
 
     if (q.type === 'barcode_scanner') {
       return `
-        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] text-xs text-[#525B56] flex items-center justify-between">
-          <span class="font-medium text-[#111613]"><i class="fa-solid fa-barcode text-[#247B50] mr-1.5"></i> KEPHIS Barcode & QR Authentication</span>
-          <span class="text-[#247B50] font-semibold">Active in Field App</span>
+        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] flex items-center gap-2">
+          <i class="fa-solid fa-barcode text-[#247B50] text-sm shrink-0"></i>
+          <input type="text" maxlength="120" value="${AEApp.escapeAttr(val || '')}"
+            oninput="AEApp.setRunnerAnswerSilent('${q.id}', this.value)"
+            placeholder="Scan or enter KEPHIS lot / barcode number (e.g., KEPHIS-LOT-2026-8841)…"
+            class="flex-1 h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613] font-mono focus:border-[#247B50] focus:outline-none" />
         </div>
       `;
     }
 
     if (q.type === 'audio_note') {
+      const noteText = val && typeof val === 'object' ? (val.transcript || val.summary || '') : (val || '');
       return `
-        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] text-xs text-[#525B56] flex items-center justify-between">
-          <span class="font-medium text-[#111613]"><i class="fa-solid fa-microphone text-[#247B50] mr-1.5"></i> Farmer Voice Testimony Memo</span>
-          <span class="text-[#247B50] font-semibold">Active in Field App</span>
+        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] space-y-2">
+          <div class="flex items-center justify-between text-xs text-[#525B56]">
+            <span><i class="fa-solid fa-microphone text-[#247B50] mr-1.5"></i> Farmer Voice Testimony / Summary Note</span>
+            <button type="button" onclick="AEApp.setRunnerAnswer('${q.id}', { durationSec: 15, mimeType: 'audio/webm', summary: 'Audio note (15s)', capturedAt: new Date().toISOString() })"
+              class="text-[#247B50] font-semibold hover:underline">Attach 15s Audio Clip</button>
+          </div>
+          <input type="text" maxlength="240" value="${AEApp.escapeAttr(noteText)}"
+            oninput="AEApp.setRunnerAnswerSilent('${q.id}', { durationSec: 15, mimeType: 'audio/webm', transcript: this.value, summary: 'Audio note (15s)' })"
+            placeholder="Optional testimony summary or transcript…"
+            class="w-full h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613] focus:border-[#247B50] focus:outline-none" />
         </div>
       `;
     }
 
     if (q.type === 'repeat_group') {
+      const rows = Array.isArray(val) && val.length > 0 ? val : [{ item_1: '' }];
+      const firstVal = rows[0] && typeof rows[0] === 'object' ? (Object.values(rows[0])[0] || '') : '';
       return `
-        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] text-xs text-[#525B56] flex items-center justify-between">
-          <span class="font-medium text-[#111613]"><i class="fa-solid fa-layer-group text-[#247B50] mr-1.5"></i> Multi-Item Inventory Roster Grid</span>
-          <span class="text-[#247B50] font-semibold">Active in Field App</span>
+        <div class="p-3 bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] space-y-2">
+          <div class="text-xs font-medium text-[#111613]"><i class="fa-solid fa-layer-group text-[#247B50] mr-1.5"></i> Multi-Item Inventory Roster Entry</div>
+          <input type="text" maxlength="200" value="${AEApp.escapeAttr(firstVal)}"
+            oninput="AEApp.setRunnerAnswerSilent('${q.id}', [{ variety_name: this.value }])"
+            placeholder="Enter primary roster item (e.g., DH04 Hybrid — 40 packs @ KES 650)…"
+            class="w-full h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613] focus:border-[#247B50] focus:outline-none" />
         </div>
       `;
     }
@@ -1027,6 +1080,7 @@ window.AECollector = {
           </div>
 
           <!-- 1. Self-Administered Respondent Link -->
+          ${allowsSelfAdmin ? `
           <div class="space-y-1.5">
             <div class="flex items-center justify-between text-xs">
               <span class="font-semibold text-[#111613] flex items-center gap-1.5">
@@ -1049,6 +1103,15 @@ window.AECollector = {
               </button>
             </div>
           </div>
+          ` : `
+          <div class="p-3 rounded-[6px] bg-[#FFFBEB] border border-[#FDE68A] text-xs text-[#92400E] space-y-2">
+            <div class="font-semibold flex items-center gap-1.5">
+              <i class="fa-solid fa-lock text-[11px]"></i>
+              <span>Public Respondent Links Disabled (Enumerator-Only Mode)</span>
+            </div>
+            <p class="text-[11px] leading-relaxed">This survey currently requires authenticated field staff. Switch Administration Mode above to <strong>Hybrid</strong> or <strong>Self-Administered</strong> to enable public respondent links.</p>
+          </div>
+          `}
 
           <!-- 2. Field Enumerator Link -->
           <div class="space-y-1.5 pt-2 border-t border-[#EFEFEF]">
@@ -1122,7 +1185,7 @@ window.AECollector = {
           margin: 2,
           foreground: '#141A17',
           background: '#FFFFFF',
-          level: 'M'
+          level: String(text || '').length > 160 ? 'L' : 'M'
         });
         return;
       } catch (e) {

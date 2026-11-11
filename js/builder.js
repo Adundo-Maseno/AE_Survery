@@ -1132,9 +1132,10 @@ window.AEBuilder = {
                     class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] focus:outline-none focus:border-[#247B50]">
                     <option value="">Select target page</option>
                     ${survey.pages
-                      .map(
-                        (p, idx) =>
-                          `<option value="${p.id}" ${logic.target === p.id ? 'selected' : ''}>Page ${idx + 1}: ${AEApp.escapeHtml(p.title.substring(0, 25))}</option>`
+                      .map((p, idx) =>
+                        idx > this.activePageIndex || logic.target === p.id
+                          ? `<option value="${p.id}" ${logic.target === p.id ? 'selected' : ''}>Page ${idx + 1}: ${AEApp.escapeHtml(p.title.substring(0, 25))}</option>`
+                          : ''
                       )
                       .join('')}
                     <option value="END_SURVEY" ${logic.target === 'END_SURVEY' ? 'selected' : ''}>End of Survey (Submit)</option>
@@ -1203,13 +1204,13 @@ window.AEBuilder = {
             <label for="ae_q_rows_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Row statements (one per line)</label>
             <textarea id="ae_q_rows_${q.id}" rows="4"
               onchange="AEApp.updateQuestionLines('${q.id}', 'rows', this.value)"
-              class="w-full text-xs bg-white border border-[#CFD5D0] rounded-[6px] p-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">${rows.join('\n')}</textarea>
+              class="w-full text-xs bg-white border border-[#CFD5D0] rounded-[6px] p-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">${AEApp.escapeHtml(rows.join('\n'))}</textarea>
           </div>
           <div>
             <label for="ae_q_cols_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Scale columns (one per line)</label>
             <textarea id="ae_q_cols_${q.id}" rows="4"
               onchange="AEApp.updateQuestionLines('${q.id}', 'columns', this.value)"
-              class="w-full text-xs bg-white border border-[#CFD5D0] rounded-[6px] p-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">${cols.join('\n')}</textarea>
+              class="w-full text-xs bg-white border border-[#CFD5D0] rounded-[6px] p-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">${AEApp.escapeHtml(cols.join('\n'))}</textarea>
           </div>
         </div>
       `;

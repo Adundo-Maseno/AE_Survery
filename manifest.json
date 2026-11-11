@@ -58,7 +58,7 @@
       "name": "Launch Field App",
       "short_name": "Field App",
       "description": "Launch dedicated offline enumerator application",
-      "url": "./field",
+      "url": "./field.html",
       "icons": [{ "src": "./icons/field-192.png", "sizes": "192x192" }]
     },
     {

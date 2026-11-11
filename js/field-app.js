@@ -93,9 +93,16 @@ window.AEFieldApp = {
       this.activeCollectorId = paramCollector;
     }
 
-    // Hydrate survey schema from Google Sheets when a direct survey link is opened
-    if (paramSurvey && window.aeStore.isEffectivelyOnline() && window.aeStore.settings.gasWebAppUrl) {
-      if (!window.aeStore.getSurveyById(paramSurvey)) {
+    // Hydrate survey schema & collectors from Google Sheets when a direct survey/collector link is opened
+    if ((paramSurvey || paramCollector) && window.aeStore.isEffectivelyOnline() && window.aeStore.settings.gasWebAppUrl) {
+      const localSurvey = paramSurvey ? window.aeStore.getSurveyById(paramSurvey) : null;
+      const localCol = paramCollector ? (window.aeStore.collectors || []).find((c) => c.id === paramCollector) : null;
+      const needsBlockingPull =
+        (paramSurvey && !localSurvey) ||
+        (paramCollector && !localCol) ||
+        isExplicitRespondent ||
+        (localSurvey && localSurvey.status !== 'Active');
+      if (needsBlockingPull) {
         try {
           await window.aeStore.pullFromGoogleSheets();
         } catch (pullErr) {
@@ -213,8 +220,15 @@ window.AEFieldApp = {
     });
 
     // Listen for background auto-sync state changes
-    window.addEventListener('ae-sync-state-change', () => {
+    window.addEventListener('ae-sync-state-change', (ev) => {
       this.renderHeader();
+      if (this.justSubmittedReceipt && ev && ev.detail && ev.detail.syncing === false) {
+        const isOnline = window.aeStore.isEffectivelyOnline();
+        if (!this.isRespondentMode) {
+          this.justSubmittedReceipt.title = `${this.t('interviewLogged')} (${isOnline ? this.t('syncedDirectly') : this.t('storedLocallyPending')})`;
+          this.render();
+        }
+      }
     });
 
     window.addEventListener('online', () => {
@@ -385,7 +399,8 @@ window.AEFieldApp = {
     return String(str ?? '')
       .replace(/\\/g, '\\\\')
       .replace(/'/g, "\\'")
-      .replace(/"/g, '\\"')
+      .replace(/"/g, '\\x22')
+      .replace(/&/g, '\\x26')
       .replace(/</g, '\\x3c')
       .replace(/>/g, '\\x3e')
       .replace(/\r/g, '\\r')
@@ -511,12 +526,14 @@ window.AEFieldApp = {
         if (enumEl.parentElement) {
           enumEl.parentElement.title = 'Self-Administered Survey Link (No Login Required)';
           enumEl.parentElement.style.pointerEvents = 'none';
+          enumEl.parentElement.disabled = true;
         }
       } else {
         enumEl.textContent = this.enumeratorName;
         if (enumEl.parentElement) {
           enumEl.parentElement.title = `Active Enumerator: ${this.enumeratorName} (Click to switch)`;
           enumEl.parentElement.style.pointerEvents = '';
+          enumEl.parentElement.disabled = false;
         }
       }
     }
@@ -525,9 +542,11 @@ window.AEFieldApp = {
       const chevron = titleEl.parentElement.querySelector('i.fa-chevron-down');
       if (this.isRespondentMode) {
         titleEl.parentElement.style.pointerEvents = 'none';
+        titleEl.parentElement.disabled = true;
         if (chevron) chevron.style.display = 'none';
       } else {
         titleEl.parentElement.style.pointerEvents = '';
+        titleEl.parentElement.disabled = false;
         if (chevron) chevron.style.display = '';
       }
     }
@@ -608,36 +627,49 @@ window.AEFieldApp = {
     const adminBtn = document.getElementById('ae_hdr_admin_btn');
     const mobileMenuBtn = document.getElementById('ae_hdr_mobile_menu_btn');
     const dlBtn = document.getElementById('ae_hdr_dl_btn');
+    const sunBtn = document.getElementById('ae_hdr_sunlight_btn');
     if (this.isRespondentMode) {
-      if (adminBtn) adminBtn.className = 'hidden';
-      if (mobileMenuBtn) mobileMenuBtn.className = 'hidden';
-      if (dlBtn) dlBtn.className = 'hidden';
-      if (installBtn) installBtn.className = 'hidden';
-    } else if (adminBtn) {
-      if (currentUser && currentUser.role === 'admin') {
-        adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 ae-press';
-        adminBtn.title = `${this.t('returnToOperations')} (${currentUser.fullName})`;
-        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToOperations'));
-        adminBtn.innerHTML = `
-          <i class="fa-solid fa-gauge-high text-xs text-white"></i>
-          <span class="hidden md:inline">${this.t('operationsStudio')}</span>
-        `;
-      } else if (currentUser && currentUser.role === 'supervisor') {
-        adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#1E40AF] hover:bg-[#172554] text-xs font-semibold text-white items-center gap-1.5 ae-press';
-        adminBtn.title = `${this.t('returnToSupervisor')} (${currentUser.fullName})`;
-        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToSupervisor'));
-        adminBtn.innerHTML = `
-          <i class="fa-solid fa-arrow-left text-xs text-white"></i>
-          <span class="hidden md:inline">${this.t('supervisorPortal')}</span>
-        `;
-      } else {
-        adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white items-center gap-1.5 ae-press';
-        adminBtn.title = this.t('adminRequiresPin');
-        if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('adminRequiresPin'));
-        adminBtn.innerHTML = `
-          <i class="fa-solid fa-lock text-xs text-[#A3ACA6]"></i>
-          <span class="hidden md:inline">${this.t('adminStudio')}</span>
-        `;
+      if (adminBtn) { adminBtn.className = 'hidden'; adminBtn.style.display = 'none'; }
+      if (mobileMenuBtn) { mobileMenuBtn.className = 'hidden'; mobileMenuBtn.style.display = 'none'; }
+      if (dlBtn) { dlBtn.className = 'hidden'; dlBtn.style.display = 'none'; }
+      if (installBtn) { installBtn.className = 'hidden'; installBtn.style.display = 'none'; }
+      if (syncBtn) { syncBtn.className = 'hidden'; syncBtn.style.display = 'none'; }
+      if (focusBtn) { focusBtn.className = 'hidden'; focusBtn.style.display = 'none'; }
+      if (sunBtn) { sunBtn.style.display = 'none'; }
+    } else {
+      if (adminBtn) adminBtn.style.display = '';
+      if (mobileMenuBtn) mobileMenuBtn.style.display = '';
+      if (dlBtn) dlBtn.style.display = '';
+      if (installBtn) installBtn.style.display = '';
+      if (syncBtn) syncBtn.style.display = '';
+      if (focusBtn) focusBtn.style.display = '';
+      if (sunBtn) sunBtn.style.display = '';
+      if (adminBtn) {
+        if (currentUser && currentUser.role === 'admin') {
+          adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 ae-press';
+          adminBtn.title = `${this.t('returnToOperations')} (${currentUser.fullName})`;
+          if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToOperations'));
+          adminBtn.innerHTML = `
+            <i class="fa-solid fa-gauge-high text-xs text-white"></i>
+            <span class="hidden md:inline">${this.t('operationsStudio')}</span>
+          `;
+        } else if (currentUser && currentUser.role === 'supervisor') {
+          adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#1E40AF] hover:bg-[#172554] text-xs font-semibold text-white items-center gap-1.5 ae-press';
+          adminBtn.title = `${this.t('returnToSupervisor')} (${currentUser.fullName})`;
+          if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('returnToSupervisor'));
+          adminBtn.innerHTML = `
+            <i class="fa-solid fa-arrow-left text-xs text-white"></i>
+            <span class="hidden md:inline">${this.t('supervisorPortal')}</span>
+          `;
+        } else {
+          adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 rounded-[6px] border border-white/20 bg-transparent hover:bg-white/10 text-xs font-medium text-white items-center gap-1.5 ae-press';
+          adminBtn.title = this.t('adminRequiresPin');
+          if (typeof adminBtn.setAttribute === 'function') adminBtn.setAttribute('aria-label', this.t('adminRequiresPin'));
+          adminBtn.innerHTML = `
+            <i class="fa-solid fa-lock text-xs text-[#A3ACA6]"></i>
+            <span class="hidden md:inline">${this.t('adminStudio')}</span>
+          `;
+        }
       }
     }
 
@@ -663,12 +695,13 @@ window.AEFieldApp = {
           <i class="fa-solid fa-clipboard-question text-3xl text-[#525B56]"></i>
           <h2 class="text-base font-semibold text-[#111613]">${this.t('noActiveSurveyAssigned')}</h2>
           <p class="text-xs text-[#525B56] max-w-sm mx-auto">
-            ${this.t('connectWifiPrompt')}
+            ${this.isRespondentMode ? 'This survey link is unavailable or has been closed by the survey administrator.' : this.t('connectWifiPrompt')}
           </p>
+          ${this.isRespondentMode ? '' : `
           <button onclick="AEFieldApp.openSurveyPicker()"
             class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
             ${this.t('selectDeployedSurvey')}
-          </button>
+          </button>`}
         </div>
       `;
       this.renderModals();
@@ -1456,9 +1489,27 @@ window.AEFieldApp = {
           return;
         } else if (q.type === 'matrix') {
           const rows = q.rows || [];
-          const answeredRows = Object.keys(val || {}).length;
+          const answeredRows = rows.filter((rName) => val && typeof val === 'object' && val[rName] !== undefined && val[rName] !== '').length;
           if (answeredRows < rows.length) {
             errors[q.id] = `Please rate all ${rows.length} dimensions.`;
+            return;
+          }
+        } else if (q.type === 'gps_location') {
+          if (!val || typeof val !== 'object' || val.lat === '' || val.lng === '' || val.lat === undefined || val.lng === undefined) {
+            errors[q.id] = 'Please capture or enter GPS coordinates.';
+            return;
+          }
+        } else if (q.type === 'cascading_dropdown') {
+          if (!val || typeof val !== 'object' || !val.level1) {
+            errors[q.id] = 'Please select a primary location.';
+            return;
+          }
+        } else if (q.type === 'repeat_group') {
+          const nonEmptyRows = Array.isArray(val)
+            ? val.filter((row) => row && typeof row === 'object' && Object.values(row).some((v) => String(v ?? '').trim() !== ''))
+            : [];
+          if (nonEmptyRows.length === 0) {
+            errors[q.id] = 'Please add at least one item to the roster.';
             return;
           }
         }
@@ -1504,6 +1555,13 @@ window.AEFieldApp = {
   },
 
   prevPage() {
+    if (this._pageHistory && this._pageHistory.length > 0) {
+      this.currentPageIndex = this._pageHistory.pop();
+      this.persistDraft();
+      this.render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     if (this.currentPageIndex > 0) {
       this.currentPageIndex--;
       this.persistDraft();
@@ -1523,20 +1581,36 @@ window.AEFieldApp = {
       return;
     }
 
-    // Evaluate Conditional Skip Logic
+    if (!this._pageHistory) this._pageHistory = [];
+
+    // Evaluate Conditional Skip Logic (with canonical English normalization across languages)
     for (const q of page.questions || []) {
       if (q.logic && q.logic.enabled && q.logic.target) {
-        const ans = this.draftAnswers[q.id];
-        const matches = Array.isArray(ans)
-          ? ans.includes(q.logic.value)
-          : String(ans ?? '') === String(q.logic.value);
+        const rawAns = this.draftAnswers[q.id];
+        const canonicalAns = (window.AEI18n && typeof window.AEI18n.getCanonicalEnglishAnswer === 'function')
+          ? window.AEI18n.getCanonicalEnglishAnswer(survey, q.id, rawAns, this.currentLang || 'en')
+          : rawAns;
+        const matches = Array.isArray(canonicalAns)
+          ? canonicalAns.includes(q.logic.value) || (Array.isArray(rawAns) && rawAns.includes(q.logic.value))
+          : String(canonicalAns ?? '') === String(q.logic.value) || String(rawAns ?? '') === String(q.logic.value);
         if (matches) {
           if (q.logic.target === 'END_SURVEY') {
+            for (let sIdx = this.currentPageIndex + 1; sIdx < survey.pages.length; sIdx++) {
+              (survey.pages[sIdx].questions || []).forEach((sq) => {
+                delete this.draftAnswers[sq.id];
+              });
+            }
             this.submitResponse(true);
             return;
           }
           const targetIdx = survey.pages.findIndex((p) => p.id === q.logic.target);
-          if (targetIdx >= 0) {
+          if (targetIdx > this.currentPageIndex) {
+            for (let sIdx = this.currentPageIndex + 1; sIdx < targetIdx; sIdx++) {
+              (survey.pages[sIdx].questions || []).forEach((sq) => {
+                delete this.draftAnswers[sq.id];
+              });
+            }
+            this._pageHistory.push(this.currentPageIndex);
             this.currentPageIndex = targetIdx;
             this.persistDraft();
             this.showToast(`Branching rule jumped to Section ${targetIdx + 1}.`, 'success');
@@ -1548,6 +1622,7 @@ window.AEFieldApp = {
       }
     }
 
+    this._pageHistory.push(this.currentPageIndex);
     this.currentPageIndex++;
     this.persistDraft();
     this.render();
@@ -1672,11 +1747,6 @@ window.AEFieldApp = {
           });
         });
       }
-
-      // If online, flush to Google Sheets in background
-      if (window.aeStore.isEffectivelyOnline() && window.aeStore.settings.gasWebAppUrl) {
-        setTimeout(() => this.triggerCloudSync(false), 300);
-      }
     } finally {
       this.isSubmitting = false;
     }
@@ -1797,9 +1867,16 @@ window.AEFieldApp = {
   },
 
   switchToEnumeratorMode() {
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (!currentUser) {
+      window.location.href = './index.html';
+      return;
+    }
     this.isRespondentMode = false;
     const savedEnum = localStorage.getItem('ae_active_enumerator');
-    this.enumeratorName = savedEnum || (window.aeStore && window.aeStore.settings.defaultEnumerator) || 'Grace Wanjiku (ENUM-04)';
+    this.enumeratorName = savedEnum || `${currentUser.fullName} (${currentUser.id})`;
     this.openEnumeratorPicker();
     this.render();
   },
@@ -2172,6 +2249,9 @@ window.AEFieldApp = {
   },
 
   renderConversationalRunner(rawSurvey) {
+    if (this.justSubmittedReceipt) {
+      return this.renderSurveyRunner(rawSurvey);
+    }
     const survey = window.AEI18n ? window.AEI18n.localizeSurvey(rawSurvey, this.currentLang) : rawSurvey;
     const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
     if (this.focusQuestionIndex >= allQuestions.length) this.focusQuestionIndex = 0;
@@ -2300,12 +2380,26 @@ window.AEFieldApp = {
     const rawSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!rawSurvey) return;
     const allQuestions = window.aeStore.getQuestionsForSurvey(rawSurvey);
+    const currentQ = allQuestions[this.focusQuestionIndex];
+    if (currentQ && !this.validatePage({ questions: [currentQ] })) {
+      this.showToast('Please complete this required question before continuing.', 'error');
+      this.render();
+      return;
+    }
     if (this.focusQuestionIndex < allQuestions.length - 1) {
       this.focusQuestionIndex++;
       this.render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      this.submitResponse();
+      if (!this.validatePage({ questions: allQuestions })) {
+        const firstErrId = Object.keys(this.validationErrors)[0];
+        const errIdx = allQuestions.findIndex((q) => q.id === firstErrId);
+        if (errIdx >= 0) this.focusQuestionIndex = errIdx;
+        this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
+        this.render();
+        return;
+      }
+      this.submitResponse(true);
     }
   },
 
@@ -3730,7 +3824,7 @@ window.AEFieldApp = {
                               ${
                                 isAssigned
                                   ? `<div class="flex items-center gap-2 mt-1">
-                                      <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1">
+                                      <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1">
                                         <i class="fa-solid fa-list-check text-[9px]"></i> ${this.t('assignedPlots')}: ${task.completed}/${task.target} ${this.t('plots')}
                                       </span>
                                       ${task.deadline ? `<span class="text-[10px] text-[#525B56]">Due ${this.escapeHtml(task.deadline)}</span>` : ''}

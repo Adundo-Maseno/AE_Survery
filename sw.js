@@ -3,7 +3,7 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.60';
+const CACHE_NAME = 'ae-survey-prod-v3.61';
 
 const APP_SHELL_ASSETS = [
   './',
@@ -26,6 +26,9 @@ const APP_SHELL_ASSETS = [
   './icons/field-512.png',
   './icons/field-maskable-192.png',
   './icons/field-maskable-512.png',
+  './icons/apple-touch-icon.png',
+  './icons/field-apple-touch-icon.png',
+  './icons/favicon-48.png',
   './icons/favicon-32.png',
   './icons/field-favicon-32.png',
   './favicon.ico',
@@ -49,10 +52,18 @@ const APP_SHELL_ASSETS = [
 ];
 
 const ALLOWED_CDN_HOSTS = new Set([
-  'cdn.tailwindcss.com',
   'cdnjs.cloudflare.com',
   'fonts.googleapis.com',
-  'fonts.gstatic.com'
+  'fonts.gstatic.com',
+  'basemaps.cartocdn.com',
+  'a.basemaps.cartocdn.com',
+  'b.basemaps.cartocdn.com',
+  'c.basemaps.cartocdn.com',
+  'd.basemaps.cartocdn.com',
+  'tile.openstreetmap.org',
+  'a.tile.openstreetmap.org',
+  'b.tile.openstreetmap.org',
+  'c.tile.openstreetmap.org'
 ]);
 
 function isGoogleAppsScriptHost(hostname) {

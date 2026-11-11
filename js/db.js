@@ -1798,6 +1798,12 @@ window.AEIntegrityEngine = {
   },
 
   buildRecordDigestPayload(record) {
+    const cleanAnswers =
+      typeof window !== 'undefined' &&
+      window.aeStore &&
+      typeof window.aeStore.cleanAnswersForCloudSync === 'function'
+        ? window.aeStore.cleanAnswersForCloudSync(record.answers || {})
+        : record.answers || {};
     return {
       clientResponseId: record.clientResponseId || record.id,
       surveyId: record.surveyId,
@@ -1805,7 +1811,7 @@ window.AEIntegrityEngine = {
       enumerator: record.enumerator,
       submittedAt: record.submittedAt,
       durationSec: record.durationSec,
-      answers: record.answers || {},
+      answers: cleanAnswers,
       gps: record.gps
         ? {
           lat: record.gps.lat,
@@ -1816,17 +1822,8 @@ window.AEIntegrityEngine = {
     };
   },
 
-  async computeRecordHash(record) {
+  computeSyncFallbackHash(record) {
     const canonical = this.canonicalStringify(this.buildRecordDigestPayload(record));
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
-      try {
-        const enc = new TextEncoder().encode(canonical);
-        const buf = await window.crypto.subtle.digest('SHA-256', enc);
-        const arr = Array.from(new Uint8Array(buf));
-        return arr.map((b) => (b < 16 ? '0' : '') + b.toString(16)).join('');
-      } catch (e) { }
-    }
-    // Fallback deterministic digest for non-crypto environments
     let h1 = 0xdeadbeef ^ 0,
       h2 = 0x41c6ce57 ^ 0;
     for (let i = 0; i < canonical.length; i++) {
@@ -1840,8 +1837,24 @@ window.AEIntegrityEngine = {
     return 'sha256_compat_' + hex.padStart(16, '0');
   },
 
+  async computeRecordHash(record) {
+    const canonical = this.canonicalStringify(this.buildRecordDigestPayload(record));
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
+      try {
+        const enc = new TextEncoder().encode(canonical);
+        const buf = await window.crypto.subtle.digest('SHA-256', enc);
+        const arr = Array.from(new Uint8Array(buf));
+        return arr.map((b) => (b < 16 ? '0' : '') + b.toString(16)).join('');
+      } catch (e) { }
+    }
+    return this.computeSyncFallbackHash(record);
+  },
+
   async verifyRecordHash(record) {
     if (!record || !record.recordHash) return false;
+    if (String(record.recordHash).startsWith('sha256_compat_')) {
+      return this.computeSyncFallbackHash(record) === record.recordHash;
+    }
     const computed = await this.computeRecordHash(record);
     return computed === record.recordHash;
   }
@@ -2337,13 +2350,23 @@ class AESurveyStore {
       if (typeof v === 'string' && v.startsWith('data:image/')) {
         clean[k] = '[Digital Signature/Image Recorded]';
       } else if (v && typeof v === 'object' && v.dataUrl) {
-        clean[k] = {
-          capturedAt: v.capturedAt || '',
-          width: v.width || 0,
-          height: v.height || 0,
-          sizeKb: v.sizeKb || 0,
-          summary: `Photo proof attached (${v.sizeKb || 0} KB)`
-        };
+        if (v.durationSec !== undefined || (v.mimeType && String(v.mimeType).startsWith('audio/'))) {
+          clean[k] = {
+            capturedAt: v.capturedAt || '',
+            durationSec: v.durationSec || 0,
+            mimeType: v.mimeType || 'audio/webm',
+            transcript: v.transcript || '',
+            summary: `Audio note (${v.durationSec || 0}s)`
+          };
+        } else {
+          clean[k] = {
+            capturedAt: v.capturedAt || '',
+            width: v.width || 0,
+            height: v.height || 0,
+            sizeKb: v.sizeKb || 0,
+            summary: `Photo proof attached (${v.sizeKb || 0} KB)`
+          };
+        }
       } else {
         clean[k] = v;
       }
@@ -2352,59 +2375,27 @@ class AESurveyStore {
   }
 
   /**
-   * Restores rich question answers if responses were stripped or damaged by prior column mismatch
+   * Restores seed question answers ONLY for genuine seed response IDs whose answers object was stripped
+   * by legacy column mismatches. Never modifies real enumerator or self-administered responses.
    */
   healResponsesAnswers() {
     const seedResponses = (typeof getInitialSeedData === 'function' ? getInitialSeedData().responses : []) || [];
     const seedMap = new Map();
-    const surveySeedGroups = {};
 
     seedResponses.forEach((sr) => {
       if (sr.id) seedMap.set(sr.id, sr);
       if (sr.clientResponseId) seedMap.set(sr.clientResponseId, sr);
-      if (sr.submittedAt && sr.enumerator) {
-        seedMap.set(`${sr.submittedAt}_${sr.enumerator}`, sr);
-        seedMap.set(`${String(sr.submittedAt).slice(0, 16)}_${sr.enumerator}`, sr);
-      }
-      if (sr.surveyId) {
-        if (!surveySeedGroups[sr.surveyId]) surveySeedGroups[sr.surveyId] = [];
-        surveySeedGroups[sr.surveyId].push(sr);
-      }
     });
 
     let healed = 0;
-    (this.responses || []).forEach((r, idx) => {
-      // 1. Direct ID / clientResponseId match
-      let match = seedMap.get(r.id) || seedMap.get(r.clientResponseId);
-
-      // 2. Enumerator + timestamp prefix match
-      if (!match && r.submittedAt && r.enumerator) {
-        match = seedMap.get(`${r.submittedAt}_${r.enumerator}`) ||
-          seedMap.get(`${String(r.submittedAt).slice(0, 16)}_${r.enumerator}`);
-      }
-
-      // 3. Heuristic match: enumerator + duration / date proximity
-      if (!match && r.enumerator) {
-        match = seedResponses.find((sr) => {
-          if (sr.enumerator !== r.enumerator) return false;
-          if (r.durationSec && sr.durationSec && Math.abs(r.durationSec - sr.durationSec) <= 5) return true;
-          if (r.submittedAt && sr.submittedAt && String(r.submittedAt).slice(0, 10) === String(sr.submittedAt).slice(0, 10)) return true;
-          return false;
-        });
-      }
-
-      // 4. Survey group fallback
-      if (!match && r.surveyId && surveySeedGroups[r.surveyId]) {
-        const group = surveySeedGroups[r.surveyId];
-        match = group[idx % group.length];
-      }
-
+    (this.responses || []).forEach((r) => {
+      // Strictly match only known seed response IDs
+      const match = seedMap.get(r.id) || seedMap.get(r.clientResponseId);
       const currentAnswers = (r.answers && typeof r.answers === 'object') ? r.answers : {};
       const answerKeys = Object.keys(currentAnswers);
-      const isDamaged = answerKeys.length === 0 || (match && match.answers && Object.keys(match.answers).length > answerKeys.length);
 
-      if (isDamaged && match && match.answers) {
-        r.answers = { ...JSON.parse(JSON.stringify(match.answers)), ...currentAnswers };
+      if (match && match.answers && answerKeys.length === 0) {
+        r.answers = JSON.parse(JSON.stringify(match.answers));
         if (match.reviewStatus && !r.reviewStatus) r.reviewStatus = match.reviewStatus;
         if (match.qaFlags && (!r.qaFlags || !r.qaFlags.length)) r.qaFlags = match.qaFlags;
         healed++;
@@ -3060,6 +3051,14 @@ class AESurveyStore {
             existing.active = rp.active;
             changed = true;
           }
+          if (rp.supervisorId !== undefined && rp.supervisorId !== existing.supervisorId) {
+            existing.supervisorId = rp.supervisorId;
+            changed = true;
+          }
+          if (rp.taskQuotas && typeof rp.taskQuotas === 'object' && Object.keys(rp.taskQuotas).length > 0) {
+            existing.taskQuotas = { ...(existing.taskQuotas || {}), ...rp.taskQuotas };
+            changed = true;
+          }
           if (Array.isArray(rp.assignedSurveys)) {
             existing.assignedSurveys = Array.from(
               new Set(
@@ -3412,10 +3411,14 @@ class AESurveyStore {
     };
     resp.auditTrail = Array.isArray(resp.auditTrail) ? resp.auditTrail : [];
     resp.auditTrail.push(auditEntry);
+    resp.updatedAt = new Date().toISOString();
     resp.syncStatus = 'queued';
 
     this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Approved (${supervisorPersonnelId}) -> ${resp.id}`);
     this.saveToLocalStorage();
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.triggerBackgroundSyncNow(400);
+    }
     return resp;
   }
 
@@ -3441,8 +3444,14 @@ class AESurveyStore {
     };
     resp.auditTrail = Array.isArray(resp.auditTrail) ? resp.auditTrail : [];
     resp.auditTrail.push(auditEntry);
+    resp.updatedAt = new Date().toISOString();
+    resp.syncStatus = 'queued';
 
+    this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Flagged (${supervisorPersonnelId}) -> ${resp.id}`);
     this.saveToLocalStorage();
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.triggerBackgroundSyncNow(400);
+    }
     return resp;
   }
 
@@ -3468,8 +3477,14 @@ class AESurveyStore {
     };
     resp.auditTrail = Array.isArray(resp.auditTrail) ? resp.auditTrail : [];
     resp.auditTrail.push(auditEntry);
+    resp.updatedAt = new Date().toISOString();
+    resp.syncStatus = 'queued';
 
+    this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Rejected (${supervisorPersonnelId}) -> ${resp.id}`);
     this.saveToLocalStorage();
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.triggerBackgroundSyncNow(400);
+    }
     return resp;
   }
 
@@ -3707,11 +3722,21 @@ class AESurveyStore {
 
   deleteSurvey(surveyId) {
     this._surveysDirty = true;
+    this.deletedSurveyIds = Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : [];
+    if (surveyId && !this.deletedSurveyIds.includes(surveyId)) {
+      this.deletedSurveyIds.push(surveyId);
+    }
     this.surveys = this.surveys.filter((s) => s.id !== surveyId);
     this.responses = this.responses.filter((r) => r.surveyId !== surveyId);
     this.collectors = this.collectors.filter((c) => c.surveyId !== surveyId);
     this.syncQueue = this.syncQueue.filter((q) => q.recordId !== surveyId);
+    if (surveyId) {
+      this.enqueueSyncItem('DELETE_SURVEY', surveyId, `Delete Survey -> ${surveyId}`);
+    }
     this.saveToLocalStorage();
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.triggerBackgroundSyncNow(400);
+    }
   }
 
   /**
@@ -3978,7 +4003,13 @@ class AESurveyStore {
     const combinedFlags = Array.from(new Set([...rawFlags, ...autoCodes]));
 
     const calculated = this.calculateResponseMetrics(survey, cleanPayload.answers || {});
-    const reviewStatus = combinedFlags.some((c) => c.includes('OUTLIER') || c === 'SPEEDER') ? 'flagged' : 'pending_review';
+    const defaultReviewStatus = combinedFlags.some((c) => c.includes('OUTLIER') || c === 'SPEEDER') ? 'flagged' : 'pending_review';
+    const reviewStatus = (responsePayload._preserveMeta && cleanPayload.reviewStatus)
+      ? cleanPayload.reviewStatus
+      : defaultReviewStatus;
+    const submittedAt = (responsePayload._preserveMeta && cleanPayload.submittedAt)
+      ? cleanPayload.submittedAt
+      : nowIso;
 
     const record = {
       id,
@@ -3994,11 +4025,11 @@ class AESurveyStore {
       reviewStatus,
       qaFlags: combinedFlags,
       calculated,
-      audit: null,
-      auditTrail: [],
+      audit: responsePayload._preserveMeta ? (cleanPayload.audit || null) : null,
+      auditTrail: responsePayload._preserveMeta && Array.isArray(cleanPayload.auditTrail) ? cleanPayload.auditTrail : [],
       recordHash: '',
-      startedAt: responsePayload.startedAt || nowIso,
-      submittedAt: nowIso,
+      startedAt: responsePayload.startedAt || submittedAt,
+      submittedAt,
       durationSec,
       gps: responsePayload.gps || null,
       answers: cleanPayload.answers || {},
@@ -4006,12 +4037,18 @@ class AESurveyStore {
       syncedAt: null
     };
 
-    // Calculate deterministic SHA-256 seal asynchronously
-    if (window.AEIntegrityEngine && typeof window.AEIntegrityEngine.computeRecordHash === 'function') {
-      window.AEIntegrityEngine.computeRecordHash(record).then((hash) => {
-        record.recordHash = hash;
-        this.saveToLocalStorage();
-      });
+    // Set synchronous deterministic hash immediately so fast background syncs never send an empty hash,
+    // then upgrade to WebCrypto SHA-256 asynchronously when available.
+    if (window.AEIntegrityEngine) {
+      if (typeof window.AEIntegrityEngine.computeSyncFallbackHash === 'function') {
+        record.recordHash = window.AEIntegrityEngine.computeSyncFallbackHash(record);
+      }
+      if (typeof window.AEIntegrityEngine.computeRecordHash === 'function') {
+        window.AEIntegrityEngine.computeRecordHash(record).then((hash) => {
+          record.recordHash = hash;
+          this.saveToLocalStorage();
+        });
+      }
     }
 
     this.responses.unshift(record);
@@ -4116,27 +4153,47 @@ class AESurveyStore {
       ? window.AESession.getCurrentUser()
       : null;
 
-    // Send survey schemas if forced, dirty, first connect, or manual sync
+    const isCallerAdmin = Boolean(
+      (currentSessionUser && currentSessionUser.role === 'admin') ||
+      (!currentSessionUser && (options.forceAll || options.syncSurveys || this._surveysDirty))
+    );
+
+    // Send survey schemas if forced, dirty, first connect, or manual sync (when authorized)
     const shouldSyncSurveys = Boolean(
-      options.forceAll || options.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt || options.manual
+      isCallerAdmin && (options.forceAll || options.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt || options.manual)
     );
     const surveysPayload = shouldSyncSurveys ? this.surveys : [];
+    const deletedSurveyIds = isCallerAdmin
+      ? Array.from(
+          new Set([
+            ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
+            ...this.syncQueue.filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
+          ])
+        )
+      : [];
 
-    const defaultCallerId = (this.personnel && this.personnel[0] && this.personnel[0].id) ? this.personnel[0].id : 'ADM-01';
+    const callerId = currentSessionUser
+      ? currentSessionUser.id
+      : (isCallerAdmin ? 'ADM-01' : 'PUBLIC_RESPONDENT');
     const cloudResponses = unsyncedResponses.map((r) => ({
       ...r,
       answers: this.cleanAnswersForCloudSync(r.answers)
     }));
 
+    const personnelPayload = isCallerAdmin
+      ? this.personnel
+      : (currentSessionUser ? this.personnel.filter((p) => p.id === currentSessionUser.id) : []);
+
     const payload = {
       action: 'BATCH_SYNC',
       syncToken: this.settings.syncToken || '',
       deviceId: this.settings.deviceId,
-      callerId: currentSessionUser ? currentSessionUser.id : defaultCallerId,
+      callerId,
       surveys: surveysPayload,
-      collectors: this.collectors,
+      deletedSurveyIds,
+      collectors: isCallerAdmin ? this.collectors : [],
       responses: cloudResponses,
-      personnel: this.personnel
+      personnel: personnelPayload
     };
 
     const gasUrl = (this.settings.gasWebAppUrl || '').trim();
@@ -4201,6 +4258,7 @@ class AESurveyStore {
           throw new Error(data.error || 'Google Apps Script returned an error');
         }
         this.syncQueue = [];
+        this.deletedSurveyIds = [];
         if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
           this.mergePersonnelFromCloud(data.personnel);
         }
@@ -4352,12 +4410,31 @@ class AESurveyStore {
         throw new Error(data.error || 'Failed to pull from Google Sheets');
       }
 
-      // Merge remote surveys (sanitized against DOM XSS / invalid IDs)
+      // Merge remote surveys (sanitized against DOM XSS / invalid IDs, preserving newer local edits)
       if (Array.isArray(data.surveys) && data.surveys.length > 0) {
         const localMap = new Map(this.surveys.map((s) => [s.id, s]));
+        const pendingSurveyIds = new Set(
+          (this.syncQueue || []).filter((q) => q.action === 'UPSERT_SURVEY').map((q) => q.recordId)
+        );
+        const deletedIds = new Set([
+          ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
+          ...(this.syncQueue || []).filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
+        ]);
         data.surveys.forEach((remoteSurvey) => {
           const clean = this.sanitizeSurveyRecord(remoteSurvey);
-          if (clean) localMap.set(clean.id, clean);
+          if (!clean || deletedIds.has(clean.id)) return;
+          const existing = localMap.get(clean.id);
+          if (existing) {
+            if (pendingSurveyIds.has(clean.id)) {
+              return;
+            }
+            const localTime = Date.parse(existing.updatedAt || '') || 0;
+            const remoteTime = Date.parse(clean.updatedAt || '') || 0;
+            if (localTime > 0 && remoteTime > 0 && localTime > remoteTime) {
+              return;
+            }
+          }
+          localMap.set(clean.id, clean);
         });
         this.surveys = Array.from(localMap.values());
       }
@@ -4387,7 +4464,7 @@ class AESurveyStore {
           if (!respMap.has(key)) {
             respMap.set(key, localResp);
           } else {
-            // Preserve rich local answers if remote answers were empty or stripped
+            // Preserve rich local answers and pending supervisor review state
             const remoteItem = respMap.get(key);
             const remoteHasAnswers = remoteItem && remoteItem.answers && Object.keys(remoteItem.answers).length > 0;
             const localHasAnswers = localResp && localResp.answers && Object.keys(localResp.answers).length > 0;
@@ -4395,6 +4472,17 @@ class AESurveyStore {
               remoteItem.answers = { ...localResp.answers };
             } else if (!remoteHasAnswers && seedMap.has(key)) {
               remoteItem.answers = JSON.parse(JSON.stringify(seedMap.get(key).answers || {}));
+            }
+            if (localResp.syncStatus === 'queued') {
+              remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
+              remoteItem.qaFlags = Array.isArray(localResp.qaFlags) && localResp.qaFlags.length ? localResp.qaFlags : remoteItem.qaFlags;
+              remoteItem.audit = localResp.audit || remoteItem.audit;
+              remoteItem.auditTrail = Array.isArray(localResp.auditTrail) && localResp.auditTrail.length ? localResp.auditTrail : remoteItem.auditTrail;
+              remoteItem.syncStatus = 'queued';
+            } else if (localResp.audit && !remoteItem.audit) {
+              remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
+              remoteItem.audit = localResp.audit;
+              remoteItem.auditTrail = Array.isArray(localResp.auditTrail) ? localResp.auditTrail : [];
             }
           }
         });
