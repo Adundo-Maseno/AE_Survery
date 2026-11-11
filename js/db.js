@@ -348,7 +348,7 @@ function getInitialSeedData() {
       type: 'kiosk',
       status: 'Open',
       pinCode: '1234',
-      enumeratorDefault: 'Grace Wanjiku (Enum-04)',
+      enumeratorDefault: '',
       createdAt: daysAgo(12)
     },
     {
@@ -2103,7 +2103,7 @@ class AESurveyStore {
       autoSyncOnOnline: true,
       simulateOffline: false,
       deviceId: 'AE-TAB-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
-      defaultEnumerator: 'Grace Wanjiku (Enum-04)',
+      defaultEnumerator: '',
       lastSyncedAt: null
     };
     this.listeners = [];
@@ -2533,6 +2533,18 @@ class AESurveyStore {
       this.syncLogs = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.SYNC_LOGS) || '[]');
       const savedSettings = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.SETTINGS) || '{}');
       this.settings = { ...this.settings, ...savedSettings };
+      // Sanitize legacy defaultEnumerator if it still holds hardcoded Grace Wanjiku
+      if (this.settings.defaultEnumerator && typeof this.settings.defaultEnumerator === 'string' && this.settings.defaultEnumerator.includes('Grace Wanjiku')) {
+        this.settings.defaultEnumerator = '';
+      }
+      // Sanitize existing collectors if they were seeded with hardcoded Grace Wanjiku
+      if (Array.isArray(this.collectors)) {
+        this.collectors.forEach((c) => {
+          if (c && c.enumeratorDefault && typeof c.enumeratorDefault === 'string' && c.enumeratorDefault.includes('Grace Wanjiku')) {
+            c.enumeratorDefault = '';
+          }
+        });
+      }
       // Fall back to pre-configured production credentials if empty
       if (!this.settings.gasWebAppUrl) {
         this.settings.gasWebAppUrl = AE_DEFAULT_GAS_CONFIG.gasWebAppUrl;
@@ -2541,6 +2553,13 @@ class AESurveyStore {
         this.settings.syncToken = AE_DEFAULT_GAS_CONFIG.syncToken;
       }
       this.runnerDrafts = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.RUNNER_DRAFTS) || '{}');
+      if (this.runnerDrafts && typeof this.runnerDrafts === 'object') {
+        Object.keys(this.runnerDrafts).forEach((k) => {
+          if (this.runnerDrafts[k] && this.runnerDrafts[k].enumeratorName && typeof this.runnerDrafts[k].enumeratorName === 'string' && this.runnerDrafts[k].enumeratorName.includes('Grace Wanjiku')) {
+            delete this.runnerDrafts[k].enumeratorName;
+          }
+        });
+      }
     } catch (e) {
       const seed = getInitialSeedData();
       this.surveys = seed.surveys;
@@ -3704,7 +3723,7 @@ class AESurveyStore {
           type: 'kiosk',
           status: 'Open',
           pinCode: '1234',
-          enumeratorDefault: this.settings.defaultEnumerator || 'Field Enumerator',
+          enumeratorDefault: '',
           createdAt: new Date().toISOString()
         });
       }

@@ -462,6 +462,13 @@ window.AEApp = {
     const res = await window.AESession.login(personId, pin, remember);
     if (res.ok) {
       this.loginError = '';
+      if (window.AECollector) {
+        const activeSrv = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+        window.AECollector.enumeratorName = window.AECollector.resolveEnumeratorName(activeSrv);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('ae_active_enumerator', window.AECollector.enumeratorName);
+        }
+      }
       this.showToast(`Welcome, ${res.user.fullName} (${res.user.role.toUpperCase()})`, 'success');
       this.render();
     } else {
@@ -473,6 +480,12 @@ window.AEApp = {
   handleLogout() {
     if (window.AESession) {
       window.AESession.logout();
+    }
+    if (window.AECollector) {
+      window.AECollector.enumeratorName = '';
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('ae_active_enumerator');
+      }
     }
     this.showToast('Signed out of Agri Experience Operations.', 'success');
     this.currentStage = 'dashboard';
@@ -4090,6 +4103,13 @@ window.AEApp = {
     window.AECollector.kioskLocked = true;
     window.AECollector.showPinPrompt = false;
     window.AECollector.activeSubTab = 'runner';
+    const activeSurvey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+    if (
+      !window.AECollector.enumeratorName ||
+      (window.AECollector.isLegacyHardcodedDefault && window.AECollector.isLegacyHardcodedDefault(window.AECollector.enumeratorName))
+    ) {
+      window.AECollector.enumeratorName = window.AECollector.resolveEnumeratorName(activeSurvey);
+    }
     this.showToast('Tablet Kiosk Mode locked.', 'success');
     this.render();
   },
@@ -4167,7 +4187,11 @@ window.AEApp = {
   setRunnerCollector(collectorId) {
     window.AECollector.activeCollectorId = collectorId;
     const col = window.aeStore.collectors.find((c) => c.id === collectorId);
-    if (col && col.enumeratorDefault) {
+    if (
+      col &&
+      col.enumeratorDefault &&
+      (!window.AECollector.isLegacyHardcodedDefault || !window.AECollector.isLegacyHardcodedDefault(col.enumeratorDefault))
+    ) {
       window.AECollector.enumeratorName = col.enumeratorDefault;
     }
     window.AECollector.persistDraft(this.activeSurveyId);

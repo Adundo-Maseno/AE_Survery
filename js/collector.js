@@ -27,15 +27,90 @@ window.AECollector = {
   validationErrors: {},
   justSubmittedBanner: null,
 
+  isLegacyHardcodedDefault(val) {
+    if (!val || typeof val !== 'string') return true;
+    const currentUser =
+      window.AESession && typeof window.AESession.getCurrentUser === 'function'
+        ? window.AESession.getCurrentUser()
+        : null;
+    if (currentUser && currentUser.fullName && val.includes(currentUser.fullName)) {
+      return false; // Valid currently authenticated user!
+    }
+    const lower = val.toLowerCase().trim();
+    return (
+      lower.includes('grace wanjiku') ||
+      lower.includes('enum-04') ||
+      lower === 'field enumerator' ||
+      lower === 'unassigned field enumerator'
+    );
+  },
+
+  resolveEnumeratorName(survey = null) {
+    // 1. If self-administered respondent mode or web link
+    if (
+      survey &&
+      (survey.collectionMode === 'self_administered' ||
+        (survey.collectors && survey.collectors.some((c) => c.id === this.activeCollectorId && c.type === 'weblink')))
+    ) {
+      return 'Self-Administered (Web Link)';
+    }
+
+    // 2. Currently authenticated staff member in AESession
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (currentUser) {
+      if (currentUser.role === 'admin') {
+        return `${currentUser.fullName} (HQ Admin)`;
+      } else if (currentUser.role === 'supervisor') {
+        return `${currentUser.fullName} (Supervisor)`;
+      } else {
+        return `${currentUser.fullName} (${currentUser.id})`;
+      }
+    }
+
+    // 3. User-customized enumerator in current session (if not the old hardcoded legacy default)
+    if (this.enumeratorName && !this.isLegacyHardcodedDefault(this.enumeratorName)) {
+      return this.enumeratorName;
+    }
+
+    // 4. Stored local operator preference
+    const savedEnum = typeof localStorage !== 'undefined' ? localStorage.getItem('ae_active_enumerator') : null;
+    if (savedEnum && !this.isLegacyHardcodedDefault(savedEnum)) {
+      return savedEnum;
+    }
+
+    // 5. Collector-specific assignment if explicitly set and not legacy
+    if (survey && window.aeStore) {
+      const cols = window.aeStore.getCollectorsForSurvey(survey.id);
+      const activeCol = cols.find((c) => c.id === this.activeCollectorId) || cols[0];
+      if (activeCol && activeCol.enumeratorDefault && !this.isLegacyHardcodedDefault(activeCol.enumeratorDefault)) {
+        return activeCol.enumeratorDefault;
+      }
+    }
+
+    // 6. Settings default if customized
+    const globalDefault = (window.aeStore && window.aeStore.settings) ? window.aeStore.settings.defaultEnumerator : null;
+    if (globalDefault && !this.isLegacyHardcodedDefault(globalDefault)) {
+      return globalDefault;
+    }
+
+    // 7. Dynamic lookup of first active enumerator in personnel
+    if (window.aeStore && typeof window.aeStore.getPersonnel === 'function') {
+      const activeEnums = window.aeStore.getPersonnel({ role: 'enumerator' }).filter((p) => p.active !== false);
+      if (activeEnums.length > 0) {
+        return `${activeEnums[0].fullName} (${activeEnums[0].id})`;
+      }
+    }
+
+    return 'Unassigned Field Enumerator';
+  },
+
   initRunnerForSurvey(survey, forceReset = false) {
     if (!survey) return;
     const cols = window.aeStore.getCollectorsForSurvey(survey.id);
     const defaultColId = cols.length > 0 ? cols[0].id : 'col_kiosk_rift';
-    const defaultEnum =
-      this.enumeratorName ||
-      (cols.length > 0 && cols[0].enumeratorDefault) ||
-      window.aeStore.settings.defaultEnumerator ||
-      'Grace Wanjiku (Enum-04)';
+    const resolvedEnum = this.resolveEnumeratorName(survey);
 
     // Restore saved draft from localStorage if switching back to this survey and not forcing reset
     if (!forceReset) {
@@ -49,7 +124,10 @@ window.AECollector = {
         this.startedAtIso = savedDraft.startedAtIso || new Date().toISOString();
         this.startedAtMs = savedDraft.startedAtMs || Date.now();
         this.draftAnswers = { ...savedDraft.draftAnswers };
-        this.enumeratorName = savedDraft.enumeratorName || defaultEnum;
+        this.enumeratorName =
+          !savedDraft.enumeratorName || this.isLegacyHardcodedDefault(savedDraft.enumeratorName)
+            ? resolvedEnum
+            : savedDraft.enumeratorName;
         this.activeCollectorId = savedDraft.activeCollectorId || defaultColId;
         this.validationErrors = {};
         return;
@@ -68,9 +146,7 @@ window.AECollector = {
     if (!cols.some((c) => c.id === this.activeCollectorId)) {
       this.activeCollectorId = defaultColId;
     }
-    if (!this.enumeratorName) {
-      this.enumeratorName = defaultEnum;
-    }
+    this.enumeratorName = resolvedEnum;
   },
 
   persistDraft(surveyId) {
@@ -118,6 +194,25 @@ window.AECollector = {
 
     if (!this.startedAtIso || this.activeSurveyId !== survey.id) {
       this.initRunnerForSurvey(survey, false);
+    }
+
+    // Always keep enumeratorName synchronized with the authenticated user unless deliberately overridden
+    const resolvedExpectedEnum = this.resolveEnumeratorName(survey);
+    if (!this.enumeratorName || this.isLegacyHardcodedDefault(this.enumeratorName)) {
+      this.enumeratorName = resolvedExpectedEnum;
+    } else if (currentUser) {
+      const userExpected =
+        currentUser.role === 'admin'
+          ? `${currentUser.fullName} (HQ Admin)`
+          : currentUser.role === 'supervisor'
+          ? `${currentUser.fullName} (Supervisor)`
+          : `${currentUser.fullName} (${currentUser.id})`;
+      if (
+        this.isLegacyHardcodedDefault(this.enumeratorName) ||
+        (this.enumeratorName.includes('Grace Wanjiku') && currentUser.fullName !== 'Grace Wanjiku')
+      ) {
+        this.enumeratorName = userExpected;
+      }
     }
 
     const allSurveys = window.aeStore.getSurveysForUser

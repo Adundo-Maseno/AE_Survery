@@ -170,10 +170,13 @@ window.AEFieldApp = {
         this.enumeratorName = adm ? `${adm.fullName} (HQ Admin)` : 'Moses Adundo (HQ Admin)';
         localStorage.setItem('ae_active_enumerator', this.enumeratorName);
       } else {
+        const firstActive = (window.aeStore && typeof window.aeStore.getPersonnel === 'function')
+          ? window.aeStore.getPersonnel({ role: 'enumerator' }).find((p) => p.active !== false)
+          : null;
         this.enumeratorName =
           savedEnum ||
-          window.aeStore.settings.defaultEnumerator ||
-          'Grace Wanjiku (ENUM-04)';
+          (window.aeStore && window.aeStore.settings ? window.aeStore.settings.defaultEnumerator : '') ||
+          (firstActive ? `${firstActive.fullName} (${firstActive.id})` : 'Unassigned Field Enumerator');
       }
 
       if (window.AESession && window.aeStore) {

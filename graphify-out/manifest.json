@@ -6,20 +6,20 @@
     "semantic_hash": ""
   },
   "js/analytics.js": {
-    "mtime": 1794396308.3444767,
-    "seen": 1794396354.323772,
+    "mtime": 1794396625.1158848,
+    "seen": 1794398018.1856608,
     "ast_hash": "b488e52a60debfc1725bb7f4b9ef4ebd",
     "semantic_hash": ""
   },
   "js/app.js": {
-    "mtime": 1794395580.884701,
-    "seen": 1794396354.323805,
-    "ast_hash": "5859ccf3cabf6bab5a5821a0bbc4f24e",
+    "mtime": 1794397890.6716263,
+    "seen": 1794398018.1856651,
+    "ast_hash": "001d31d79bd1b1e622686f92d1d384e0",
     "semantic_hash": ""
   },
   "js/builder.js": {
-    "mtime": 1794395372.4453998,
-    "seen": 1794396354.3238156,
+    "mtime": 1794396626.068682,
+    "seen": 1794398018.185667,
     "ast_hash": "46de15bce7ac8dd16a128ea37b61f0b5",
     "semantic_hash": ""
   },
@@ -30,26 +30,26 @@
     "semantic_hash": ""
   },
   "js/collector.js": {
-    "mtime": 1794395648.897907,
-    "seen": 1794396354.3238308,
-    "ast_hash": "484e8ea71274f3b5e107f57b0571700e",
+    "mtime": 1794397846.639918,
+    "seen": 1794398018.1856709,
+    "ast_hash": "baebfe29f9f7fa5ed10ad9d964d08c1c",
     "semantic_hash": ""
   },
   "js/db.js": {
-    "mtime": 1794394712.2187696,
-    "seen": 1794396354.3238363,
-    "ast_hash": "6a6d4a7fb840643ba920a57e4e33e1a5",
+    "mtime": 1794397930.4390438,
+    "seen": 1794398018.1856725,
+    "ast_hash": "861f5e5f891af3af1fc03143f5216b97",
     "semantic_hash": ""
   },
   "js/field-app.js": {
-    "mtime": 1794395916.7051065,
-    "seen": 1794396354.323842,
-    "ast_hash": "139e63000c8ff599d0e51fa93e6b4c1c",
+    "mtime": 1794397940.4370847,
+    "seen": 1794398018.185674,
+    "ast_hash": "1cac1bca51b22cce99c69532d03044b2",
     "semantic_hash": ""
   },
   "js/i18n.js": {
-    "mtime": 1794395006.0799768,
-    "seen": 1794396354.3238475,
+    "mtime": 1794396627.0844586,
+    "seen": 1794398018.1856754,
     "ast_hash": "4b0b56c067ef6afdcfbe052398c23c54",
     "semantic_hash": ""
   },
@@ -60,20 +60,20 @@
     "semantic_hash": ""
   },
   "manifest-collector.json": {
-    "mtime": 1794394817.1235178,
-    "seen": 1794396354.3238583,
+    "mtime": 1794396627.210606,
+    "seen": 1794398018.185678,
     "ast_hash": "2b14434905af16e2ea517dda067e67fe",
     "semantic_hash": ""
   },
   "manifest.json": {
-    "mtime": 1794394812.269231,
-    "seen": 1794396354.3238935,
+    "mtime": 1794396636.7171493,
+    "seen": 1794398018.1856794,
     "ast_hash": "ca8f4431e9c737e5481722e76495d56f",
     "semantic_hash": ""
   },
   "sw.js": {
-    "mtime": 1794394806.7443378,
-    "seen": 1794396354.3239217,
+    "mtime": 1794396636.7925186,
+    "seen": 1794398018.1856804,
     "ast_hash": "eb1d255eb20808b70965cd815787bff2",
     "semantic_hash": ""
   },
@@ -108,20 +108,20 @@
     "semantic_hash": ""
   },
   "docs/adr/0002-client-side-merkle-audit-and-sha256-seals.md": {
-    "mtime": 1794395852.9600394,
-    "seen": 1794396354.32394,
+    "mtime": 1794396622.689339,
+    "seen": 1794398018.1856887,
     "ast_hash": "83ea4c39fd8d07349466ef4498d8ede1",
     "semantic_hash": ""
   },
   "docs/adr/0003-rbac-and-seamless-admin-field-transition.md": {
-    "mtime": 1794395856.2539966,
-    "seen": 1794396354.3239422,
+    "mtime": 1794396623.0628817,
+    "seen": 1794398018.18569,
     "ast_hash": "0e78fe6820fb778990a6f97b790e2ac5",
     "semantic_hash": ""
   },
   "docs/adr/0004-offline-first-pwa-service-worker-storage.md": {
-    "mtime": 1794395859.2191474,
-    "seen": 1794396354.3239443,
+    "mtime": 1794396623.3926194,
+    "seen": 1794398018.185691,
     "ast_hash": "ac421411b6743e7fbe056892d422bda2",
     "semantic_hash": ""
   },
@@ -132,14 +132,14 @@
     "semantic_hash": ""
   },
   "field.html": {
-    "mtime": 1794394803.5305498,
-    "seen": 1794396354.3239489,
+    "mtime": 1794396623.9929674,
+    "seen": 1794398018.1856935,
     "ast_hash": "283386c71a1163183dccac5bc9c86c8a",
     "semantic_hash": ""
   },
   "index.html": {
-    "mtime": 1794394798.3308408,
-    "seen": 1794396354.3239508,
+    "mtime": 1794396624.4071712,
+    "seen": 1794398018.1856947,
     "ast_hash": "bf340797b05327473ad1f0a75164d890",
     "semantic_hash": ""
   },
