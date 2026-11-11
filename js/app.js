@@ -2202,8 +2202,10 @@ window.AEApp = {
     }
     if (!this.showResetPinPersonnel) return;
     const personName = this.showResetPinPersonnel.fullName;
-    this.showResetPinPersonnel.pinCode = newPin;
-    const updated = window.aeStore.upsertPersonnel(this.showResetPinPersonnel);
+    const updated = window.aeStore.upsertPersonnel({
+      ...this.showResetPinPersonnel,
+      pinCode: newPin
+    });
     if (window.AEPinSecurity && typeof window.AEPinSecurity.clearLockout === 'function') {
       window.AEPinSecurity.clearLockout();
     }
@@ -4168,6 +4170,25 @@ window.AEApp = {
     const collectors = activeSurvey ? window.aeStore.getCollectorsForSurvey(activeSurvey.id) : [];
     const activeCol = collectors.find((c) => c.id === window.AECollector.activeCollectorId) || collectors[0];
     const expectedPin = (activeCol && activeCol.pinCode) ? String(activeCol.pinCode).trim() : '';
+
+    // Also allow the active logged-in user's or any supervisor/admin's current personnel PIN
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (window.aeStore && typeof window.aeStore.verifyPersonnelPin === 'function') {
+      const staffCheck = window.aeStore.verifyPersonnelPin(currentUser ? currentUser.id : null, pin);
+      if (staffCheck && staffCheck.ok) {
+        if (window.AEPinSecurity && typeof window.AEPinSecurity.clearLockout === 'function') {
+          window.AEPinSecurity.clearLockout();
+        }
+        window.AECollector.kioskLocked = false;
+        window.AECollector.showPinPrompt = false;
+        window.AECollector.pinPromptError = '';
+        this.showToast('Exited Field Kiosk Mode.', 'success');
+        this.render();
+        return;
+      }
+    }
 
     if (window.AEPinSecurity && typeof window.AEPinSecurity.verify === 'function') {
       const check = window.AEPinSecurity.verify(pin, expectedPin);

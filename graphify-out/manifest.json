@@ -12,9 +12,9 @@
     "semantic_hash": ""
   },
   "js/app.js": {
-    "mtime": 1794389763.652081,
-    "seen": 1794390003.1557603,
-    "ast_hash": "b0b4a219a91db26386669f91ec608459",
+    "mtime": 1794391114.715037,
+    "seen": 1794391226.6089106,
+    "ast_hash": "e73da0f74d990205b4b8923385df341b",
     "semantic_hash": ""
   },
   "js/builder.js": {
@@ -30,20 +30,20 @@
     "semantic_hash": ""
   },
   "js/collector.js": {
-    "mtime": 1794389718.635632,
-    "seen": 1794390003.1557662,
+    "mtime": 1794390121.0208807,
+    "seen": 1794391226.608945,
     "ast_hash": "171c2597eeecbbaf9c6164ccd19f33bc",
     "semantic_hash": ""
   },
   "js/db.js": {
-    "mtime": 1794388941.9310193,
-    "seen": 1794390003.1557674,
-    "ast_hash": "a994187a0af2cbf5afe8fe69472e5449",
+    "mtime": 1794391023.901265,
+    "seen": 1794391226.6089494,
+    "ast_hash": "97ca336274dafd34c7085c9da1178c7d",
     "semantic_hash": ""
   },
   "js/field-app.js": {
-    "mtime": 1794389324.5448892,
-    "seen": 1794390003.1557693,
+    "mtime": 1794390121.6974938,
+    "seen": 1794391226.6089528,
     "ast_hash": "e67aedb2df362cbb06fd61abfd58a76c",
     "semantic_hash": ""
   },
@@ -72,9 +72,9 @@
     "semantic_hash": ""
   },
   "sw.js": {
-    "mtime": 1794243372.3939116,
-    "seen": 1794387672.5978081,
-    "ast_hash": "fc1b94f3e17f350c350d414bc50a0346",
+    "mtime": 1794391215.770771,
+    "seen": 1794391226.6089826,
+    "ast_hash": "6c6f120ad1c3fe7f00f7f9e8eaf22803",
     "semantic_hash": ""
   },
   "tailwind.config.js": {

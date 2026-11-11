@@ -13,7 +13,8 @@ const AE_STORAGE_KEYS = {
   SYNC_LOGS: 'ae_sm_sync_logs_v2',
   SETTINGS: 'ae_sm_settings_v2',
   RUNNER_DRAFTS: 'ae_sm_runner_drafts_v2',
-  PERSONNEL: 'ae_sm_personnel_v2'
+  PERSONNEL: 'ae_sm_personnel_v2',
+  PIN_OVERRIDES: 'ae_sm_pin_overrides_v2'
 };
 
 const IDB_NAME = 'AESurveyMonkeyDB'; // Retained for backwards compatibility with offline field responses
@@ -2074,6 +2075,7 @@ class AESurveyStore {
     this.collectors = [];
     this.responses = [];
     this.personnel = [];
+    this.pinOverrides = {};
     this.syncQueue = [];
     this.syncLogs = [];
     this.runnerDrafts = {};
@@ -2124,9 +2126,16 @@ class AESurveyStore {
     } catch (e) {
       console.warn('IndexedDB unavailable, using synchronous localStorage engine:', e);
     }
-    // Refresh personnel roster from Google Sheets in background so cross-device PIN changes take effect immediately
+    // If there are queued local personnel/survey/response changes, flush them BEFORE pulling remote personnel
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
-      this.refreshPersonnelFromCloud().catch(() => { });
+      const hasPendingPersonnel = Array.isArray(this.syncQueue) && this.syncQueue.some((q) => q && q.action === 'UPSERT_PERSONNEL');
+      if (hasPendingPersonnel) {
+        this.syncWithGoogleSheets({ forceAll: false, isBackground: true })
+          .then(() => this.refreshPersonnelFromCloud())
+          .catch(() => { });
+      } else {
+        this.refreshPersonnelFromCloud().catch(() => { });
+      }
     }
     // Launch continuous background auto-sync daemon
     this.startBackgroundSyncDaemon();
@@ -2200,20 +2209,122 @@ class AESurveyStore {
     if (idbSurveys.length === 0 && this.surveys.length > 0) {
       await this.persistAllToIDB();
     } else if (idbSurveys.length > 0) {
-      this.surveys = idbSurveys;
+      // Reconcile surveys by updatedAt timestamp so newer localStorage edits are not overwritten
+      const surveyMap = new Map(idbSurveys.map((s) => [s.id, s]));
+      (this.surveys || []).forEach((lsSurvey) => {
+        if (!lsSurvey || !lsSurvey.id) return;
+        const idbItem = surveyMap.get(lsSurvey.id);
+        const lsTime = lsSurvey.updatedAt ? Date.parse(lsSurvey.updatedAt) || 0 : 0;
+        const idbTime = idbItem && idbItem.updatedAt ? Date.parse(idbItem.updatedAt) || 0 : 0;
+        if (!idbItem || lsTime >= idbTime) {
+          surveyMap.set(lsSurvey.id, lsSurvey);
+        }
+      });
+      this.surveys = Array.from(surveyMap.values());
+
       const cols = await this.readStoreAll('collectors');
-      if (cols.length) this.collectors = cols;
+      if (cols.length) {
+        const colMap = new Map(cols.map((c) => [c.id, c]));
+        (this.collectors || []).forEach((lsCol) => {
+          if (lsCol && lsCol.id) colMap.set(lsCol.id, lsCol);
+        });
+        this.collectors = Array.from(colMap.values());
+      }
+
       const resps = await this.readStoreAll('responses');
       if (resps.length) {
-        this.responses = resps;
+        const respMap = new Map(resps.map((r) => [r.id || r.clientResponseId, r]));
+        (this.responses || []).forEach((lsResp) => {
+          const key = lsResp && (lsResp.id || lsResp.clientResponseId);
+          if (key && !respMap.has(key)) respMap.set(key, lsResp);
+        });
+        this.responses = Array.from(respMap.values());
         this.healResponsesAnswers();
       }
+
+      // Reconcile personnel by updatedAt / pinUpdatedAt + pinOverrides ledger so PIN changes never revert
+      const metaEntries = await this.readStoreAll('meta');
+      const idbPinMeta = (metaEntries || []).find((m) => m && m.id === 'pinOverrides');
+      if (idbPinMeta && idbPinMeta.overrides && typeof idbPinMeta.overrides === 'object') {
+        this.pinOverrides = this.mergePinOverrides(this.pinOverrides, idbPinMeta.overrides);
+      }
+
       const staff = await this.readStoreAll('personnel');
-      if (staff.length) this.personnel = staff;
+      if (staff.length) {
+        const staffMap = new Map(staff.map((p) => [p.id, p]));
+        (this.personnel || []).forEach((lsPerson) => {
+          if (!lsPerson || !lsPerson.id) return;
+          const idbPerson = staffMap.get(lsPerson.id);
+          if (!idbPerson) {
+            staffMap.set(lsPerson.id, lsPerson);
+            return;
+          }
+          const lsTime = Math.max(
+            Date.parse(lsPerson.pinUpdatedAt || 0) || 0,
+            Date.parse(lsPerson.updatedAt || 0) || 0
+          );
+          const idbTime = Math.max(
+            Date.parse(idbPerson.pinUpdatedAt || 0) || 0,
+            Date.parse(idbPerson.updatedAt || 0) || 0
+          );
+          if (lsTime >= idbTime) {
+            staffMap.set(lsPerson.id, lsPerson);
+          }
+        });
+        this.personnel = Array.from(staffMap.values());
+      }
+      this.applyPinOverridesToPersonnel();
+
       const queue = await this.readStoreAll('syncQueue');
-      this.syncQueue = queue;
+      if (queue.length || (this.syncQueue && this.syncQueue.length)) {
+        const qMap = new Map(queue.map((q) => [`${q.action}_${q.recordId}`, q]));
+        (this.syncQueue || []).forEach((lsQ) => {
+          if (lsQ && lsQ.action && lsQ.recordId) {
+            qMap.set(`${lsQ.action}_${lsQ.recordId}`, lsQ);
+          }
+        });
+        this.syncQueue = Array.from(qMap.values());
+      }
+      await this.persistAllToIDB();
       this.saveToLocalStorage();
     }
+  }
+
+  mergePinOverrides(a = {}, b = {}) {
+    const merged = { ...(a && typeof a === 'object' ? a : {}) };
+    if (b && typeof b === 'object') {
+      for (const [id, entry] of Object.entries(b)) {
+        if (!entry || !entry.pinCode) continue;
+        const existing = merged[id];
+        const tNew = Date.parse(entry.updatedAt || 0) || 0;
+        const tOld = existing ? (Date.parse(existing.updatedAt || 0) || 0) : 0;
+        if (!existing || tNew >= tOld) {
+          merged[id] = {
+            pinCode: String(entry.pinCode).trim(),
+            updatedAt: entry.updatedAt || new Date().toISOString()
+          };
+        }
+      }
+    }
+    return merged;
+  }
+
+  applyPinOverridesToPersonnel() {
+    if (!this.pinOverrides || typeof this.pinOverrides !== 'object' || !Array.isArray(this.personnel)) return;
+    this.personnel.forEach((p) => {
+      if (!p || !p.id) return;
+      const ov = this.pinOverrides[p.id];
+      if (!ov || !ov.pinCode) return;
+      const ovTime = Date.parse(ov.updatedAt || 0) || 0;
+      const pTime = Math.max(Date.parse(p.pinUpdatedAt || 0) || 0, Date.parse(p.updatedAt || 0) || 0);
+      if (ovTime >= pTime) {
+        p.pinCode = String(ov.pinCode).trim();
+        p.pinUpdatedAt = ov.updatedAt;
+        if (ovTime > (Date.parse(p.updatedAt || 0) || 0)) {
+          p.updatedAt = ov.updatedAt;
+        }
+      }
+    });
   }
 
   /**
@@ -2373,11 +2484,18 @@ class AESurveyStore {
       writeCollection('collectors', this.collectors),
       writeCollection('responses', this.responses),
       writeCollection('personnel', this.personnel),
-      writeCollection('syncQueue', this.syncQueue)
+      writeCollection('syncQueue', this.syncQueue),
+      this.writeStore('meta', { id: 'pinOverrides', overrides: this.pinOverrides || {}, updatedAt: new Date().toISOString() })
     ]);
   }
 
   loadFromLocalStorage() {
+    try {
+      const rawPinOverrides = localStorage.getItem(AE_STORAGE_KEYS.PIN_OVERRIDES);
+      this.pinOverrides = rawPinOverrides ? JSON.parse(rawPinOverrides) : {};
+    } catch (e) {
+      this.pinOverrides = {};
+    }
     const rawSurveys = localStorage.getItem(AE_STORAGE_KEYS.SURVEYS);
     if (!rawSurveys) {
       const seed = getInitialSeedData();
@@ -2385,6 +2503,7 @@ class AESurveyStore {
       this.collectors = seed.collectors;
       this.responses = seed.responses;
       this.personnel = seed.personnel || getInitialPersonnelSeed();
+      this.applyPinOverridesToPersonnel();
       this.syncQueue = seed.syncQueue;
       this.syncLogs = seed.syncLogs;
       this.settings.lastSyncedAt = new Date(Date.now() - 7200000).toISOString();
@@ -2418,6 +2537,7 @@ class AESurveyStore {
       });
       const rawPersonnel = localStorage.getItem(AE_STORAGE_KEYS.PERSONNEL);
       this.personnel = rawPersonnel ? JSON.parse(rawPersonnel) : getInitialPersonnelSeed();
+      this.applyPinOverridesToPersonnel();
       this.syncQueue = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.SYNC_QUEUE) || '[]');
       this.syncLogs = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.SYNC_LOGS) || '[]');
       const savedSettings = JSON.parse(localStorage.getItem(AE_STORAGE_KEYS.SETTINGS) || '{}');
@@ -2436,6 +2556,7 @@ class AESurveyStore {
       this.collectors = seed.collectors;
       this.responses = seed.responses;
       this.personnel = seed.personnel || getInitialPersonnelSeed();
+      this.applyPinOverridesToPersonnel();
       this.syncQueue = seed.syncQueue;
       this.syncLogs = seed.syncLogs;
     }
@@ -2446,6 +2567,7 @@ class AESurveyStore {
     localStorage.setItem(AE_STORAGE_KEYS.COLLECTORS, JSON.stringify(this.collectors));
     localStorage.setItem(AE_STORAGE_KEYS.RESPONSES, JSON.stringify(this.responses));
     localStorage.setItem(AE_STORAGE_KEYS.PERSONNEL, JSON.stringify(this.personnel || []));
+    localStorage.setItem(AE_STORAGE_KEYS.PIN_OVERRIDES, JSON.stringify(this.pinOverrides || {}));
     localStorage.setItem(AE_STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(this.syncQueue));
     localStorage.setItem(AE_STORAGE_KEYS.SYNC_LOGS, JSON.stringify(this.syncLogs.slice(0, 40)));
     localStorage.setItem(AE_STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
@@ -2543,6 +2665,29 @@ class AESurveyStore {
       id = `${prefix}-${existingCount}`;
     }
 
+    const nowIso = new Date().toISOString();
+    const existingIdx = this.personnel.findIndex((p) => p.id === id);
+    const existingPerson = existingIdx >= 0 ? this.personnel[existingIdx] : null;
+    const seedRoster = typeof getInitialPersonnelSeed === 'function' ? getInitialPersonnelSeed() : [];
+    const seedPerson = seedRoster.find((sp) => sp.id === id);
+    const seedPin = seedPerson ? String(seedPerson.pinCode || '').trim() : '';
+
+    const cleanPin = String(person.pinCode || (existingPerson && existingPerson.pinCode) || '1234').replace(/^'+/, '').trim().slice(0, 8);
+    this.pinOverrides = (this.pinOverrides && typeof this.pinOverrides === 'object') ? this.pinOverrides : {};
+    const prevOv = this.pinOverrides[id];
+    const priorPin = (existingPerson && existingPerson.pinCode && existingPerson.pinCode !== cleanPin)
+      ? String(existingPerson.pinCode).trim()
+      : (prevOv && prevOv.previousPin ? prevOv.previousPin : seedPin);
+
+    // Record PIN in persistent local override ledger so stale cloud pulls or IDB race conditions never revert it
+    this.pinOverrides[id] = {
+      pinCode: cleanPin,
+      previousPin: priorPin || seedPin || '',
+      seedPin: seedPin || '',
+      updatedAt: nowIso,
+      cloudConfirmed: false
+    };
+
     const clean = {
       id,
       fullName: String(person.fullName).trim().slice(0, 100),
@@ -2552,7 +2697,8 @@ class AESurveyStore {
       phone: String(person.phone || '').trim().slice(0, 30),
       email: String(person.email || '').trim().slice(0, 80),
       supervisorId: person.supervisorId ? String(person.supervisorId).trim() : null,
-      pinCode: String(person.pinCode || '1234').trim().slice(0, 8),
+      pinCode: cleanPin,
+      pinUpdatedAt: nowIso,
       assignedSurveys: Array.isArray(person.assignedSurveys)
         ? Array.from(
           new Set(
@@ -2566,19 +2712,22 @@ class AESurveyStore {
         : [],
       taskQuotas: person.taskQuotas && typeof person.taskQuotas === 'object' ? person.taskQuotas : {},
       active: person.active !== false,
-      createdAt: person.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: person.createdAt || (existingPerson && existingPerson.createdAt) || nowIso,
+      updatedAt: nowIso
     };
 
-    const idx = this.personnel.findIndex((p) => p.id === clean.id);
-    if (idx >= 0) {
-      this.personnel[idx] = clean;
+    if (existingIdx >= 0) {
+      this.personnel[existingIdx] = clean;
     } else {
       this.personnel.unshift(clean);
     }
 
     this.enqueueSyncItem('UPSERT_PERSONNEL', clean.id, `Personnel (${clean.role}): ${clean.fullName}`);
     this.saveToLocalStorage();
+    if (this.idb) {
+      this.writeStore('personnel', clean).catch(() => { });
+      this.writeStore('meta', { id: 'pinOverrides', overrides: this.pinOverrides, updatedAt: nowIso }).catch(() => { });
+    }
     if (window.AESession && typeof window.AESession.syncCurrentUser === 'function') {
       window.AESession.syncCurrentUser(clean);
     }
@@ -2678,8 +2827,52 @@ class AESurveyStore {
       clearTimeout(timer);
 
       if (res && res.ok) {
-        const data = await res.json();
+        let data = await res.json();
         if (data && data.ok) {
+          // Verify whether the GAS deployment updated the PIN in Google Sheets.
+          // If the deployed GAS script is an older version that only handles BATCH_SYNC (expecting an array),
+          // automatically send a fallback BATCH_SYNC request with the full personnel array.
+          const remoteMatch = Array.isArray(data.personnel)
+            ? data.personnel.find((rp) => rp && rp.id === person.id)
+            : null;
+          const remotePin = remoteMatch && remoteMatch.pinCode ? String(remoteMatch.pinCode).replace(/^'+/, '').trim() : '';
+
+          if (remoteMatch && remotePin !== String(person.pinCode).trim()) {
+            try {
+              const fallbackPayload = {
+                action: 'BATCH_SYNC',
+                syncToken: this.settings.syncToken || '',
+                deviceId: this.settings.deviceId,
+                callerId: 'ADM-01',
+                surveys: [],
+                collectors: [],
+                responses: [],
+                personnel: this.personnel
+              };
+              const fbRes = await fetch(gasUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(fallbackPayload),
+                redirect: 'follow'
+              });
+              if (fbRes && fbRes.ok) {
+                const fbData = await fbRes.json();
+                if (fbData && fbData.ok && Array.isArray(fbData.personnel)) {
+                  data = fbData;
+                }
+              }
+            } catch (fbErr) { }
+          }
+
+          const confirmedMatch = Array.isArray(data.personnel)
+            ? data.personnel.find((rp) => rp && rp.id === person.id)
+            : null;
+          if (confirmedMatch && String(confirmedMatch.pinCode || '').replace(/^'+/, '').trim() === String(person.pinCode).trim()) {
+            if (this.pinOverrides && this.pinOverrides[person.id]) {
+              this.pinOverrides[person.id].cloudConfirmed = true;
+            }
+          }
+
           if (Array.isArray(data.personnel) && data.personnel.length > 0) {
             this.mergePersonnelFromCloud(data.personnel);
           }
@@ -2745,16 +2938,28 @@ class AESurveyStore {
 
   /**
    * Merges remote staff credentials and PINs into local IndexedDB/localStorage.
+   * Respects local PIN overrides (`this.pinOverrides`), pending outbox items (`this.syncQueue`),
+   * and `pinUpdatedAt` / `updatedAt` timestamps so stale cloud rows never revert a changed PIN.
    */
   mergePersonnelFromCloud(remotePersonnel) {
     if (!Array.isArray(remotePersonnel) || remotePersonnel.length === 0) return;
     const perMap = new Map((this.personnel || []).map((p) => [p.id, p]));
+    const seedRoster = typeof getInitialPersonnelSeed === 'function' ? getInitialPersonnelSeed() : [];
+    const seedMap = new Map(seedRoster.map((sp) => [sp.id, sp]));
+    this.pinOverrides = (this.pinOverrides && typeof this.pinOverrides === 'object') ? this.pinOverrides : {};
     let changed = false;
 
     remotePersonnel.forEach((rp) => {
       if (!rp || !rp.id) return;
       const existing = perMap.get(rp.id);
+      const remotePin = String(rp.pinCode || '1234').replace(/^'+/, '').trim();
+      const ov = this.pinOverrides[rp.id];
+      const hasPendingSync = Array.isArray(this.syncQueue) && this.syncQueue.some(
+        (q) => q && q.action === 'UPSERT_PERSONNEL' && q.recordId === rp.id
+      );
+
       if (!existing) {
+        const effectivePin = (ov && ov.pinCode) ? String(ov.pinCode).trim() : remotePin;
         perMap.set(rp.id, {
           id: rp.id,
           fullName: rp.fullName || 'Staff Member',
@@ -2767,57 +2972,112 @@ class AESurveyStore {
           assignedSurveys: Array.isArray(rp.assignedSurveys) ? rp.assignedSurveys : [],
           taskQuotas: rp.taskQuotas || {},
           active: rp.active !== false,
-          pinCode: String(rp.pinCode || '1234').trim(),
+          pinCode: effectivePin,
+          pinUpdatedAt: (ov && ov.updatedAt) || rp.updatedAt || '',
           createdAt: rp.createdAt || new Date().toISOString(),
           updatedAt: rp.updatedAt || new Date().toISOString()
         });
         changed = true;
       } else {
-        if (rp.pinCode && String(rp.pinCode).trim() !== existing.pinCode) {
-          existing.pinCode = String(rp.pinCode).trim();
-          changed = true;
-        }
-        if (rp.fullName && rp.fullName !== existing.fullName) {
-          existing.fullName = rp.fullName;
-          changed = true;
-        }
-        if (rp.role && rp.role !== existing.role) {
-          existing.role = rp.role;
-          changed = true;
-        }
-        if (rp.county && rp.county !== existing.county) {
-          existing.county = rp.county;
-          changed = true;
-        }
-        if (rp.subCounty && rp.subCounty !== existing.subCounty) {
-          existing.subCounty = rp.subCounty;
-          changed = true;
-        }
-        if (rp.phone && rp.phone !== existing.phone) {
-          existing.phone = rp.phone;
-          changed = true;
-        }
-        if (rp.email && rp.email !== existing.email) {
-          existing.email = rp.email;
-          changed = true;
-        }
-        if (rp.active !== undefined && rp.active !== existing.active) {
-          existing.active = rp.active;
-          changed = true;
-        }
-        if (Array.isArray(rp.assignedSurveys)) {
-          existing.assignedSurveys = Array.from(
-            new Set(
-              rp.assignedSurveys.map((sId) => {
-                if (sId === 'srv_agro_dealer_2026') return 'srv_agrodealer_2026';
-                if (sId === 'srv_chd_agro_dealer_stock') return 'srv_extension_pulse';
-                return sId;
-              })
-            )
+        // Determine whether remotePin is newer and authoritative or a stale revert
+        if (remotePin && remotePin !== existing.pinCode) {
+          const seedItem = seedMap.get(rp.id);
+          const seedPin = seedItem ? String(seedItem.pinCode || '').trim() : '';
+          const remoteTime = rp.updatedAt ? (Date.parse(rp.updatedAt) || 0) : 0;
+          const localTime = Math.max(
+            Date.parse(existing.pinUpdatedAt || 0) || 0,
+            Date.parse(existing.updatedAt || 0) || 0,
+            ov && ov.updatedAt ? (Date.parse(ov.updatedAt) || 0) : 0
           );
+
+          if (ov && ov.pinCode) {
+            if (remotePin === ov.pinCode) {
+              existing.pinCode = ov.pinCode;
+              ov.cloudConfirmed = true;
+              changed = true;
+            } else {
+              const isStaleSeedOrFormerPin =
+                remotePin === ov.previousPin ||
+                remotePin === ov.seedPin ||
+                (seedPin && remotePin === seedPin && ov.pinCode !== seedPin);
+
+              if (hasPendingSync || !ov.cloudConfirmed || isStaleSeedOrFormerPin || (localTime > 0 && remoteTime <= localTime)) {
+                // Keep locally changed PIN protected by pinOverrides ledger
+                if (existing.pinCode !== ov.pinCode) {
+                  existing.pinCode = ov.pinCode;
+                  changed = true;
+                }
+              } else {
+                // Cloud confirmed our earlier change and now has a genuinely newer cross-device PIN
+                existing.pinCode = remotePin;
+                existing.pinUpdatedAt = rp.updatedAt || new Date().toISOString();
+                this.pinOverrides[rp.id] = {
+                  pinCode: remotePin,
+                  previousPin: ov.pinCode,
+                  seedPin: ov.seedPin || seedPin,
+                  updatedAt: existing.pinUpdatedAt,
+                  cloudConfirmed: true
+                };
+                changed = true;
+              }
+            }
+          } else if (!hasPendingSync && (remoteTime === 0 || remoteTime > localTime)) {
+            existing.pinCode = remotePin;
+            if (rp.updatedAt) existing.pinUpdatedAt = rp.updatedAt;
+            changed = true;
+          }
+        } else if (ov && ov.pinCode && remotePin === ov.pinCode && !ov.cloudConfirmed) {
+          ov.cloudConfirmed = true;
+          changed = true;
         }
-        if (rp.updatedAt) {
-          existing.updatedAt = rp.updatedAt;
+
+        if (!hasPendingSync) {
+          if (rp.fullName && rp.fullName !== existing.fullName) {
+            existing.fullName = rp.fullName;
+            changed = true;
+          }
+          if (rp.role && rp.role !== existing.role) {
+            existing.role = rp.role;
+            changed = true;
+          }
+          if (rp.county && rp.county !== existing.county) {
+            existing.county = rp.county;
+            changed = true;
+          }
+          if (rp.subCounty && rp.subCounty !== existing.subCounty) {
+            existing.subCounty = rp.subCounty;
+            changed = true;
+          }
+          if (rp.phone && rp.phone !== existing.phone) {
+            existing.phone = rp.phone;
+            changed = true;
+          }
+          if (rp.email && rp.email !== existing.email) {
+            existing.email = rp.email;
+            changed = true;
+          }
+          if (rp.active !== undefined && rp.active !== existing.active) {
+            existing.active = rp.active;
+            changed = true;
+          }
+          if (Array.isArray(rp.assignedSurveys)) {
+            existing.assignedSurveys = Array.from(
+              new Set(
+                rp.assignedSurveys.map((sId) => {
+                  if (sId === 'srv_agro_dealer_2026') return 'srv_agrodealer_2026';
+                  if (sId === 'srv_chd_agro_dealer_stock') return 'srv_extension_pulse';
+                  return sId;
+                })
+              )
+            );
+          }
+          if (rp.updatedAt) {
+            const rTime = Date.parse(rp.updatedAt) || 0;
+            const eTime = Date.parse(existing.updatedAt || 0) || 0;
+            if (rTime > eTime) {
+              existing.updatedAt = rp.updatedAt;
+            }
+          }
         }
       }
     });
@@ -3940,6 +4200,7 @@ class AESurveyStore {
         if (!data.ok) {
           throw new Error(data.error || 'Google Apps Script returned an error');
         }
+        this.syncQueue = [];
         if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
           this.mergePersonnelFromCloud(data.personnel);
         }
@@ -3974,6 +4235,7 @@ class AESurveyStore {
       });
 
       this.syncQueue = [];
+      this.applyPinOverridesToPersonnel();
       this.settings.lastSyncedAt = nowIso;
       this.lastSyncError = null;
 

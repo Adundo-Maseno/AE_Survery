@@ -303,18 +303,19 @@ function doPost(e) {
       });
     }
 
-    if (action === 'UPSERT_PERSONNEL' && payload.personnel) {
-      var isSelf = payload.callerId && String(payload.callerId).trim() === String(payload.personnel.id || '').trim();
+    if (action === 'UPSERT_PERSONNEL' && (payload.personnel || payload.person)) {
+      var targetPerson = Array.isArray(payload.personnel) ? payload.personnel[0] : (payload.personnel || payload.person);
+      var isSelf = payload.callerId && String(payload.callerId).trim() === String(targetPerson.id || '').trim();
       if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken) && !isSelf) {
         return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' }, 403);
       }
-      upsertPersonnelRow_(payload.personnel);
+      upsertPersonnelRow_(targetPerson);
       logSyncEvent_('UPSERT_PERSONNEL', deviceId, 0, 0, 0, 'OK');
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       return jsonResponse_({
         ok: true,
         action: action,
-        personnelId: String(payload.personnel.id || ''),
+        personnelId: String(targetPerson.id || ''),
         personnel: readPersonnelRows_(ss),
         serverTime: new Date().toISOString()
       });
@@ -357,7 +358,14 @@ function doPost(e) {
     var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
     var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
     var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-    var personnel = (isCallerAdmin && Array.isArray(payload.personnel)) ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+    var rawPersonnel = Array.isArray(payload.personnel)
+      ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
+      : (payload.personnel && typeof payload.personnel === 'object' ? [payload.personnel] : []);
+    var personnel = isCallerAdmin
+      ? rawPersonnel
+      : rawPersonnel.filter(function(p) {
+          return p && payload.callerId && String(p.id || '').trim() === String(payload.callerId).trim();
+        });
 
     var surveysUpserted = 0;
     for (var i = 0; i < surveys.length; i++) {
@@ -677,7 +685,7 @@ function upsertPersonnelRow_(person) {
     sanitizeSheetCell_(String(person.supervisorId || '')),
     sanitizeSheetCell_(Array.isArray(person.assignedSurveys) ? person.assignedSurveys.join(', ') : ''),
     sanitizeSheetCell_(person.active !== false ? 'Active' : 'Inactive'),
-    sanitizeSheetCell_(String(person.pinCode || '1234')),
+    "'" + String(person.pinCode || '1234').replace(/^'+/, '').trim(),
     sanitizeSheetCell_(String(person.updatedAt || new Date().toISOString()))
   ];
 
@@ -715,8 +723,8 @@ function readPersonnelRows_(ss) {
       supervisorId: r[7] ? String(r[7]) : null,
       assignedSurveys: assignedSurveys,
       active: String(r[9] || 'Active').toLowerCase() === 'active',
-      pinCode: String(r[10] || '1234'),
-      updatedAt: String(r[11] || new Date().toISOString())
+      pinCode: String(r[10] || '1234').replace(/^'+/, '').trim(),
+      updatedAt: r[11] ? String(r[11]).trim() : ''
     });
   }
   return personnel;
