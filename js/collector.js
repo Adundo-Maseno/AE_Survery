@@ -826,8 +826,9 @@ window.AECollector = {
     }
 
     if (q.type === 'number_yield') {
+      const curLang = (window.AEApp && window.AEApp.runnerLang) || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
       const rawUnit = q.unit || 'units';
-      const unitStr = window.AEI18n ? window.AEI18n.translatePhrase(rawUnit, lang) : rawUnit;
+      const unitStr = (window.AEI18n && curLang !== 'en') ? window.AEI18n.translatePhrase(rawUnit, curLang) : rawUnit;
       const isKgAcre = rawUnit.toLowerCase().includes('kg');
       const minVal = q.min ?? 0;
       const maxVal = q.max ?? 100000;

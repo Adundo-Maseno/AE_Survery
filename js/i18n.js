@@ -1933,6 +1933,86 @@
       sw: 'Weka miaka iliyokamilika.',
       fr: 'Entrez les années révolues.',
       pt: 'Insira os anos completos.'
+    },
+    'Farmer / Respondent Full Name': {
+      sw: 'Jina Kamili la Mkulima / Mhojiwa',
+      fr: 'Nom complet du producteur / répondant',
+      pt: 'Nome completo do agricultor / entrevistado'
+    },
+    'What is your age': {
+      sw: 'Una umri gani?',
+      fr: 'Quel est votre âge ?',
+      pt: 'Qual é a sua idade?'
+    },
+    'What is your age?': {
+      sw: 'Una umri gani?',
+      fr: 'Quel est votre âge ?',
+      pt: 'Qual é a sua idade?'
+    },
+    'Please select your sex': {
+      sw: 'Tafadhali chagua jinsia yako',
+      fr: 'Veuillez sélectionner votre sexe',
+      pt: 'Por favor selecione o seu sexo'
+    },
+    'Select your sex': {
+      sw: 'Chagua jinsia yako',
+      fr: 'Sélectionnez votre sexe',
+      pt: 'Selecione o seu sexo'
+    },
+    'Enter respondent name or ID...': {
+      sw: 'Weka jina la mhojiwa au nambari ya kitambulisho...',
+      fr: 'Entrez le nom ou l’identifiant du répondant...',
+      pt: 'Insira o nome ou ID do entrevistado...'
+    },
+    'Enter respondent name or ID': {
+      sw: 'Weka jina la mhojiwa au nambari ya kitambulisho',
+      fr: 'Entrez le nom ou l’identifiant du répondant',
+      pt: 'Insira o nome ou ID do entrevistado'
+    },
+    'Enter numeric value': {
+      sw: 'Weka nambari',
+      fr: 'Entrez une valeur numérique',
+      pt: 'Insira um valor numérico'
+    },
+    'Select one option': {
+      sw: 'Chagua jibu moja',
+      fr: 'Sélectionnez une option',
+      pt: 'Selecione uma opção'
+    },
+    'Test Public Surveys': {
+      sw: 'Jaribu Tafiti za Umma',
+      fr: 'Tester les enquêtes publiques',
+      pt: 'Testar pesquisas públicas'
+    },
+    'Add survey description and enumerator instructions here.': {
+      sw: 'Ongeza maelezo ya utafiti na maagizo ya mhojaji hapa.',
+      fr: 'Ajoutez la description de l’enquête et les instructions pour les enquêteurs ici.',
+      pt: 'Adicione a descrição da pesquisa e as instruções do entrevistador aqui.'
+    },
+    'Respondent & Plot Information': {
+      sw: 'Taarifa za Mhojiwa na Shamba',
+      fr: 'Informations sur le répondant et la parcelle',
+      pt: 'Informações do respondente e da parcela'
+    },
+    'Section 1: Respondent & Plot Information': {
+      sw: 'Sehemu ya 1: Taarifa za Mhojiwa na Shamba',
+      fr: 'Section 1 : Informations sur le répondant et la parcelle',
+      pt: 'Seção 1: Informações do respondente e da parcela'
+    },
+    'age': {
+      sw: 'umri',
+      fr: 'âge',
+      pt: 'idade'
+    },
+    'sex': {
+      sw: 'jinsia',
+      fr: 'sexe',
+      pt: 'sexo'
+    },
+    'gender': {
+      sw: 'jinsia',
+      fr: 'genre',
+      pt: 'gênero'
     }
   };
 
@@ -2100,21 +2180,22 @@
       };
     },
 
-    translatePhrase(phrase, lang = 'sw') {
+    translatePhrase(phrase, lang = null) {
       if (!phrase || typeof phrase !== 'string') return phrase;
-      if (lang === 'en') return phrase;
+      const targetLang = lang || this.getLanguage() || 'en';
+      if (targetLang === 'en') return phrase;
       const trimmed = phrase.trim();
       if (!trimmed) return phrase;
 
       // 1. Exact match in COMMON_DICTIONARY
-      if (COMMON_DICTIONARY[trimmed] && COMMON_DICTIONARY[trimmed][lang]) {
-        return COMMON_DICTIONARY[trimmed][lang];
+      if (COMMON_DICTIONARY[trimmed] && COMMON_DICTIONARY[trimmed][targetLang]) {
+        return COMMON_DICTIONARY[trimmed][targetLang];
       }
 
       // 2. Case-insensitive lookup
       const lower = trimmed.toLowerCase();
-      if (DICTIONARY_LOWER_MAP[lower] && DICTIONARY_LOWER_MAP[lower][lang]) {
-        return DICTIONARY_LOWER_MAP[lower][lang];
+      if (DICTIONARY_LOWER_MAP[lower] && DICTIONARY_LOWER_MAP[lower][targetLang]) {
+        return DICTIONARY_LOWER_MAP[lower][targetLang];
       }
 
       // 3. Extract trailing punctuation (e.g. '?', ':', '.', '!', '…', '...')
@@ -2123,15 +2204,15 @@
         const core = punctMatch[1].trim();
         const punct = punctMatch[2];
         const coreLower = core.toLowerCase();
-        if (DICTIONARY_LOWER_MAP[coreLower] && DICTIONARY_LOWER_MAP[coreLower][lang]) {
-          const rawTrans = DICTIONARY_LOWER_MAP[coreLower][lang];
+        if (DICTIONARY_LOWER_MAP[coreLower] && DICTIONARY_LOWER_MAP[coreLower][targetLang]) {
+          const rawTrans = DICTIONARY_LOWER_MAP[coreLower][targetLang];
           const cleanTrans = rawTrans.replace(/[\.\:\?]+$/, '');
           return cleanTrans + (punct === ':' ? ':' : punct === '?' ? '?' : punct);
         }
       }
 
       // 4. Swahili sentence pattern matchers for common question formats
-      if (lang === 'sw') {
+      if (targetLang === 'sw') {
         const swTr = this.translateSwahiliSentencePattern(trimmed);
         if (swTr && swTr !== trimmed) {
           return swTr;
@@ -2139,7 +2220,7 @@
       }
 
       // 5. Compound / Multi-word phrase replacement fallback for agricultural terms
-      const compoundTr = this.translateCompoundPhrase(trimmed, lang);
+      const compoundTr = this.translateCompoundPhrase(trimmed, targetLang);
       if (compoundTr && compoundTr !== trimmed) {
         return compoundTr;
       }
@@ -2151,6 +2232,23 @@
       const trimmed = phrase.trim();
       const hasQMark = trimmed.endsWith('?');
       const clean = trimmed.replace(/[\?\.\!]$/, '').trim();
+
+      // Natural common question idioms
+      if (/^(?:what is your|what's your|what is the)\s+age\??$/i.test(clean)) {
+        return 'Una umri gani?';
+      }
+      if (/^(?:what is your|what's your|what is the)\s+name\??$/i.test(clean)) {
+        return 'Jina lako ni nani?';
+      }
+      if (/^(?:what is your|what's your)\s+(?:phone|phone number|mobile|mobile number)\??$/i.test(clean)) {
+        return 'Nambari yako ya simu ni gani?';
+      }
+      if (/^(?:please\s+)?select\s+(?:your\s+)?(?:sex|gender)\??$/i.test(clean)) {
+        return 'Tafadhali chagua jinsia yako';
+      }
+      if (/^(?:farmer|respondent)\s*(?:\/\s*respondent)?\s*full\s*name$/i.test(clean)) {
+        return 'Jina Kamili la Mkulima / Mhojiwa';
+      }
 
       // "What is your / What is the [X]?" -> "Je, [X] yako ni nini?"
       let m = clean.match(/^(?:what is your|what's your|what is the)\s+(.+)$/i);

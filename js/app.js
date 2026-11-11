@@ -3876,31 +3876,48 @@ window.AEApp = {
       this.showToast('Text-to-speech hardware is not supported on this browser.', 'warning');
       return;
     }
-    const s = window.aeStore.getSurveyById(this.activeSurveyId);
-    if (!s) return;
-    const allQs = window.aeStore.getQuestionsForSurvey(s);
+    const rawSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!rawSurvey) return;
+
+    const lang = this.runnerLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+    const survey = (window.AEI18n && typeof window.AEI18n.localizeSurvey === 'function')
+      ? window.AEI18n.localizeSurvey(rawSurvey, lang)
+      : rawSurvey;
+
+    const allQs = window.aeStore.getQuestionsForSurvey(survey);
     const q = allQs.find((item) => item.id === questionId);
     if (!q) return;
 
     window.speechSynthesis.cancel();
-    const lang = this.runnerLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
-    const localizedTitle = window.AEI18n ? window.AEI18n.translatePhrase(q.title, lang) : q.title;
-    const localizedHelp = q.helpText ? (window.AEI18n ? window.AEI18n.translatePhrase(q.helpText, lang) : q.helpText) : '';
-    const textToSpeak = `${localizedTitle}. ${localizedHelp}`;
+    let textToSpeak = q.title || '';
+    if (q.helpText) {
+      textToSpeak += `. ${q.helpText}`;
+    }
+    if (Array.isArray(q.options) && q.options.length > 0 && (q.type === 'multiple_choice' || q.type === 'dropdown' || q.type === 'checkboxes')) {
+      const optionsPrefix = lang === 'sw' ? 'Chaguo ni:' : lang === 'fr' ? 'Les options sont:' : lang === 'pt' ? 'As opções são:' : 'Options:';
+      const optionsStr = q.options.map((opt, i) => `${i + 1}, ${opt}`).join('. ');
+      textToSpeak += `. ${optionsPrefix} ${optionsStr}.`;
+    }
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    const langVoiceMap = { sw: 'sw-KE', fr: 'fr-FR', pt: 'pt-BR', en: 'en-KE' };
-    utterance.lang = langVoiceMap[lang] || 'en-KE';
-    utterance.rate = 0.92;
+    const langVoiceMap = { sw: 'sw-KE', fr: 'fr-FR', pt: 'pt-BR', en: 'en-US' };
+    utterance.lang = langVoiceMap[lang] || 'en-US';
+    utterance.rate = 0.90;
     utterance.pitch = 1.0;
 
     const voices = window.speechSynthesis.getVoices();
-    const matchedVoice = voices.find((v) => v.lang.toLowerCase().startsWith(lang) || v.lang === utterance.lang);
+    const matchedVoice = voices.find((v) => v.lang === utterance.lang) ||
+                         voices.find((v) => v.lang.toLowerCase().startsWith(lang));
     if (matchedVoice) utterance.voice = matchedVoice;
 
     window.speechSynthesis.speak(utterance);
     const langLabel = lang === 'sw' ? 'Kiswahili' : lang === 'fr' ? 'Français' : lang === 'pt' ? 'Português' : 'English';
-    this.showToast(`Reading aloud (${langLabel})...`, 'info');
+    this.showToast(
+      lang === 'sw'
+        ? `Inasoma swali kwa sauti (${langLabel})...`
+        : `Reading question aloud (${langLabel})...`,
+      'info'
+    );
   },
 
   updateSurveyTranslationMeta(field, value) {

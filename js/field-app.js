@@ -450,6 +450,13 @@ window.AEFieldApp = {
     this.render();
   },
 
+  get lang() {
+    return this.currentLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+  },
+  set lang(val) {
+    this.currentLang = val;
+  },
+
   toggleSunlightMode() {
     this.sunlightMode = !this.sunlightMode;
     localStorage.setItem('ae_sunlight_mode', String(this.sunlightMode));
@@ -988,30 +995,54 @@ window.AEFieldApp = {
       this.showToast('Text-to-speech audio synthesis is not supported on this device.', 'warning');
       return;
     }
-    const currentSurvey = this.activeSurvey || (window.aeStore && window.aeStore.getSurveyById(this.activeSurveyId));
-    const allQs = (currentSurvey?.pages || []).flatMap((p) => p.questions || []);
+    const rawSurvey = this.activeSurvey || (window.aeStore && window.aeStore.getSurveyById(this.activeSurveyId));
+    if (!rawSurvey) return;
+
+    // Use current active language
+    const lang = this.currentLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+    const survey = (window.AEI18n && typeof window.AEI18n.localizeSurvey === 'function')
+      ? window.AEI18n.localizeSurvey(rawSurvey, lang)
+      : rawSurvey;
+
+    const allQs = (survey?.pages || []).flatMap((p) => p.questions || []);
     const q = allQs.find((item) => item.id === questionId);
     if (!q) return;
 
     window.speechSynthesis.cancel();
-    const lang = this.lang || 'sw';
-    const localizedTitle = window.AEI18n ? window.AEI18n.translatePhrase(q.title, lang) : q.title;
-    const localizedHelp = q.helpText ? (window.AEI18n ? window.AEI18n.translatePhrase(q.helpText, lang) : q.helpText) : '';
-    const textToSpeak = `${localizedTitle}. ${localizedHelp}`;
+    let textToSpeak = q.title || '';
+    if (q.helpText) {
+      textToSpeak += `. ${q.helpText}`;
+    }
+    if (Array.isArray(q.options) && q.options.length > 0 && (q.type === 'multiple_choice' || q.type === 'dropdown' || q.type === 'checkboxes')) {
+      const optionsPrefix = lang === 'sw' ? 'Chaguo ni:' : lang === 'fr' ? 'Les options sont:' : lang === 'pt' ? 'As opções são:' : 'Options:';
+      const optionsStr = q.options.map((opt, i) => `${i + 1}, ${opt}`).join('. ');
+      textToSpeak += `. ${optionsPrefix} ${optionsStr}.`;
+    }
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    const langVoiceMap = { sw: 'sw-KE', fr: 'fr-FR', pt: 'pt-BR', en: 'en-KE' };
-    utterance.lang = langVoiceMap[lang] || 'en-KE';
-    utterance.rate = 0.92;
+    const langVoiceMap = {
+      sw: 'sw-KE',
+      fr: 'fr-FR',
+      pt: 'pt-BR',
+      en: 'en-US'
+    };
+    utterance.lang = langVoiceMap[lang] || 'en-US';
+    utterance.rate = 0.90;
     utterance.pitch = 1.0;
 
     const voices = window.speechSynthesis.getVoices();
-    const matchedVoice = voices.find((v) => v.lang.toLowerCase().startsWith(lang) || v.lang === utterance.lang);
+    const matchedVoice = voices.find((v) => v.lang === utterance.lang) ||
+                         voices.find((v) => v.lang.toLowerCase().startsWith(lang));
     if (matchedVoice) utterance.voice = matchedVoice;
 
     window.speechSynthesis.speak(utterance);
     const langLabel = lang === 'sw' ? 'Kiswahili' : lang === 'fr' ? 'Français' : lang === 'pt' ? 'Português' : 'English';
-    this.showToast(`Inasoma kwa sauti (${langLabel})...`, 'info');
+    this.showToast(
+      lang === 'sw'
+        ? `Inasoma swali kwa sauti (${langLabel})...`
+        : `Reading question aloud (${langLabel})...`,
+      'info'
+    );
   },
 
   renderQuestionControl(q) {
@@ -1111,8 +1142,9 @@ window.AEFieldApp = {
     }
 
     if (q.type === 'number_yield') {
+      const curLang = this.currentLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
       const rawUnit = q.unit || 'kg/acre';
-      const unitStr = window.AEI18n ? window.AEI18n.translatePhrase(rawUnit, this.lang) : rawUnit;
+      const unitStr = (window.AEI18n && curLang !== 'en') ? window.AEI18n.translatePhrase(rawUnit, curLang) : rawUnit;
       const isKg = rawUnit.toLowerCase().includes('kg');
       const minVal = q.min ?? 0;
       const maxVal = q.max ?? 100000;
