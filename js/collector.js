@@ -909,14 +909,17 @@ window.AECollector = {
 
   renderCollectorsManager(survey, collectors) {
     const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-    const shareUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}`;
+    const respondentUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}&mode=respondent`;
+    const enumeratorUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}`;
+    const colMode = survey.collectionMode || 'hybrid';
+    const allowsSelfAdmin = colMode !== 'enumerator';
     return `
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div class="lg:col-span-7 bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 class="text-base font-semibold text-[#111613]">Active Survey Collectors</h3>
-              <p class="text-xs text-[#525B56]">Track field responses by enumerator team, tablet kiosk, or web link</p>
+              <p class="text-xs text-[#525B56]">Track responses by self-administered web link, enumerator team, or tablet kiosk</p>
             </div>
             <button onclick="AEApp.toggleNewCollectorForm()"
               class="h-8 px-3 rounded-[6px] bg-[#141A17] text-white text-xs font-medium hover:bg-[#232C27] inline-flex items-center gap-1.5 ae-press">
@@ -928,12 +931,12 @@ window.AECollector = {
             this.showNewCollectorForm
               ? `<form onsubmit="event.preventDefault(); AEApp.submitNewCollectorForm('${survey.id}');" class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-3.5 flex flex-wrap items-center gap-2">
                   <input id="ae_new_collector_name" type="text" maxlength="100" required
-                    placeholder="Collector name (e.g., Western Region Tablet Kiosk)…"
+                    placeholder="Collector name (e.g., WhatsApp Farmer Broadcast Link)…"
                     class="flex-1 min-w-[200px] h-8 rounded-[6px] border border-[#CFD5D0] bg-white px-2.5 text-xs text-[#111613] focus:outline-none focus:border-[#247B50]" />
                   <select id="ae_new_collector_type" aria-label="Collector channel type"
                     class="h-8 rounded-[6px] border border-[#CFD5D0] bg-white px-2 text-xs text-[#111613]">
-                    <option value="kiosk">Tablet Kiosk</option>
-                    <option value="weblink">Web Link</option>
+                    <option value="weblink">Web Link (Self-Administered)</option>
+                    <option value="kiosk">Tablet Kiosk (Enumerator)</option>
                   </select>
                   <input id="ae_new_collector_pin" type="password" maxlength="8" inputmode="numeric"
                     placeholder="PIN (optional)" autocomplete="new-password"
@@ -960,21 +963,29 @@ window.AECollector = {
                     const count = window.aeStore
                       .getResponsesForSurvey(survey.id)
                       .filter((r) => r.collectorId === c.id).length;
+                    const colShareUrl = c.type === 'weblink'
+                      ? `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}&collector=${encodeURIComponent(c.id)}&mode=respondent`
+                      : `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}&collector=${encodeURIComponent(c.id)}`;
                     return `
                       <tr class="ae-row-hover">
                         <td class="py-3 pl-4 pr-3 max-w-xs">
                           <div class="font-semibold text-[#111613] text-sm ae-break-words">${AEApp.escapeHtml(c.name)}</div>
-                          <div class="text-xs text-[#646E68] truncate"><code>${AEApp.escapeHtml(c.id)}</code> · ${AEApp.escapeHtml(c.enumeratorDefault || 'Field Team')}</div>
+                          <div class="text-xs text-[#646E68] truncate"><code>${AEApp.escapeHtml(c.id)}</code> · ${AEApp.escapeHtml(c.type === 'weblink' ? 'Public Respondent Link' : (c.enumeratorDefault || 'Field Team'))}</div>
                         </td>
                         <td class="py-3 px-3 whitespace-nowrap">
-                          <span class="px-2 py-0.5 rounded-[4px] bg-[#F8F9F8] border border-[#E4E7E4] text-[#525B56]">
-                            ${c.type === 'kiosk' ? 'Tablet Kiosk' : 'Web Link'}
+                          <span class="px-2 py-0.5 rounded-[4px] ${c.type === 'weblink' ? 'bg-[#DCFAE5] text-[#04250E] font-medium' : 'bg-[#F8F9F8] border border-[#E4E7E4] text-[#525B56]'}">
+                            ${c.type === 'kiosk' ? 'Tablet Kiosk' : 'Self-Administered Link'}
                           </span>
                         </td>
                         <td class="py-3 px-3 text-right tabular-nums font-semibold text-sm text-[#111613]">
                           ${count}
                         </td>
-                        <td class="py-3 pl-3 pr-4 text-right whitespace-nowrap">
+                        <td class="py-3 pl-3 pr-4 text-right whitespace-nowrap space-x-1">
+                          <button onclick="AEApp.copyText('${AEApp.escapeJs(colShareUrl)}', 'Collector link copied to clipboard.')"
+                            class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press"
+                            title="Copy direct link for this collector">
+                            <i class="fa-regular fa-copy"></i> Copy Link
+                          </button>
                           <button onclick="AEApp.launchCollectorRunner('${c.id}')"
                             class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
                             Open Runner
@@ -989,26 +1000,79 @@ window.AECollector = {
           </div>
         </div>
 
-        <!-- Shareable Web Link & Offline QR Poster Card (Joined input and action per app-screens.md §8.1) -->
+        <!-- Shareable Web Link & Offline QR Poster Card -->
         <div class="lg:col-span-5 bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
-          <div>
-            <h3 class="text-base font-semibold text-[#111613]">Direct Web Link &amp; Field QR Code</h3>
-            <p class="text-xs text-[#525B56]">Share this link or scan on field tablets to open this survey directly in respondent mode</p>
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h3 class="text-base font-semibold text-[#111613]">Self-Administered &amp; Field Links</h3>
+              <p class="text-xs text-[#525B56]">Send links directly to targeted respondents (no login required) or deploy to field enumerators</p>
+            </div>
+            <span class="px-2 py-0.5 rounded-[4px] text-[11px] font-semibold shrink-0 ${
+              allowsSelfAdmin ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'
+            }">
+              ${allowsSelfAdmin ? 'Public Link Active' : 'Enumerator Only'}
+            </span>
           </div>
 
-          <div class="flex items-center">
-            <input type="text" aria-label="Direct Survey Share URL" readonly value="${AEApp.escapeAttr(shareUrl)}"
-              class="flex-1 min-w-0 h-9 text-xs bg-[#F8F9F8] border border-[#CFD5D0] rounded-l-[6px] px-3 text-[#111613] focus:outline-none" />
-            <button onclick="AEApp.copyText('${AEApp.escapeJs(shareUrl)}', 'Survey Web Link copied to clipboard.')"
-              class="h-9 px-3.5 rounded-r-[6px] bg-[#141A17] text-white text-xs font-medium hover:bg-[#232C27] border border-l-0 border-[#141A17] ae-press shrink-0">
-              <i class="fa-regular fa-copy mr-1"></i> Copy
-            </button>
+          <!-- Collection Mode Selector -->
+          <div class="p-3 rounded-[6px] bg-[#F8F9F8] border border-[#E4E7E4] space-y-1.5">
+            <label for="ae_col_mode_select" class="block text-xs font-semibold text-[#111613]">Survey Administration Mode</label>
+            <select id="ae_col_mode_select"
+              onchange="AEApp.updateSurveyMeta('collectionMode', this.value)"
+              class="w-full h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">
+              <option value="hybrid" ${colMode === 'hybrid' ? 'selected' : ''}>Hybrid — Self-Administered Link + Assigned Enumerators</option>
+              <option value="self_administered" ${colMode === 'self_administered' ? 'selected' : ''}>Self-Administered Only — Public Respondent Link (No Login)</option>
+              <option value="enumerator" ${colMode === 'enumerator' ? 'selected' : ''}>Enumerator-Assisted Only — Strictly Authenticated Staff</option>
+            </select>
+          </div>
+
+          <!-- 1. Self-Administered Respondent Link -->
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold text-[#111613] flex items-center gap-1.5">
+                <i class="fa-solid fa-earth-africa text-[#247B50]"></i>
+                <span>Self-Administered Respondent Link</span>
+              </span>
+              <a href="${AEApp.escapeAttr(respondentUrl)}" target="_blank" rel="noopener"
+                class="text-[#247B50] hover:underline font-medium inline-flex items-center gap-1">
+                <span>Test Link</span>
+                <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+              </a>
+            </div>
+            <p class="text-[11px] text-[#525B56]">Zero login required. Share via WhatsApp, SMS, or Email with targeted respondents.</p>
+            <div class="flex items-center">
+              <input type="text" aria-label="Self-Administered Respondent URL" readonly value="${AEApp.escapeAttr(respondentUrl)}"
+                class="flex-1 min-w-0 h-9 text-xs bg-[#F8F9F8] border border-[#CFD5D0] rounded-l-[6px] px-3 text-[#111613] focus:outline-none" />
+              <button onclick="AEApp.copyText('${AEApp.escapeJs(respondentUrl)}', 'Self-Administered Respondent Link copied to clipboard.')"
+                class="h-9 px-3.5 rounded-r-[6px] bg-[#247B50] text-white text-xs font-semibold hover:bg-[#1F6A45] border border-l-0 border-[#247B50] ae-press shrink-0">
+                <i class="fa-regular fa-copy mr-1"></i> Copy Link
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Field Enumerator Link -->
+          <div class="space-y-1.5 pt-2 border-t border-[#EFEFEF]">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-semibold text-[#111613] flex items-center gap-1.5">
+                <i class="fa-solid fa-tablet-screen-button text-[#525B56]"></i>
+                <span>Field Enumerator App Link</span>
+              </span>
+              <span class="text-[11px] text-[#646E68]">Requires staff assignment</span>
+            </div>
+            <div class="flex items-center">
+              <input type="text" aria-label="Field Enumerator Share URL" readonly value="${AEApp.escapeAttr(enumeratorUrl)}"
+                class="flex-1 min-w-0 h-8 text-xs bg-[#F8F9F8] border border-[#CFD5D0] rounded-l-[6px] px-3 text-[#525B56] focus:outline-none" />
+              <button onclick="AEApp.copyText('${AEApp.escapeJs(enumeratorUrl)}', 'Field Enumerator Link copied to clipboard.')"
+                class="h-8 px-3 rounded-r-[6px] bg-[#141A17] text-white text-xs font-medium hover:bg-[#232C27] border border-l-0 border-[#141A17] ae-press shrink-0">
+                <i class="fa-regular fa-copy mr-1"></i> Copy
+              </button>
+            </div>
           </div>
 
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-5 flex flex-col items-center justify-center text-center">
             <canvas id="ae_qr_canvas" width="180" height="180" class="bg-white p-2 rounded-[6px] border border-[#E4E7E4]" role="img" aria-label="QR Code for ${AEApp.escapeAttr(survey.title)}"></canvas>
             <div class="text-xs font-semibold text-[#111613] mt-3 ae-break-words">${AEApp.escapeHtml(survey.title)}</div>
-            <div class="text-xs text-[#646E68] mt-0.5">Survey ID: <code>${survey.id}</code></div>
+            <div class="text-xs text-[#646E68] mt-0.5">Scan QR to open ${allowsSelfAdmin ? 'Self-Administered Survey' : 'Field Enumerator App'} · ID: <code>${survey.id}</code></div>
           </div>
         </div>
       </div>

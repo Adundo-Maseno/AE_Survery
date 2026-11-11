@@ -11,6 +11,7 @@ window.AEFieldApp = {
   activeSurveyId: null,
   activeCollectorId: null,
   enumeratorName: '',
+  isRespondentMode: false,
   currentPageIndex: 0,
   startedAtIso: null,
   startedAtMs: 0,
@@ -80,16 +81,56 @@ window.AEFieldApp = {
     const urlParams = new URLSearchParams(window.location.search);
     const paramSurvey = urlParams.get('survey');
     const paramCollector = urlParams.get('collector');
+    const paramMode = (urlParams.get('mode') || '').toLowerCase();
+    const isExplicitRespondent =
+      paramMode === 'respondent' ||
+      paramMode === 'self' ||
+      paramMode === 'public' ||
+      urlParams.get('respondent') === '1' ||
+      urlParams.get('self') === '1';
 
     if (paramCollector) {
       this.activeCollectorId = paramCollector;
+    }
+
+    // Hydrate survey schema from Google Sheets when a direct survey link is opened
+    if (paramSurvey && window.aeStore.isEffectivelyOnline() && window.aeStore.settings.gasWebAppUrl) {
+      if (!window.aeStore.getSurveyById(paramSurvey)) {
+        try {
+          await window.aeStore.pullFromGoogleSheets();
+        } catch (pullErr) {
+          console.warn('[FieldApp] Initial cloud survey pull warning:', pullErr);
+        }
+      } else {
+        window.aeStore.pullFromGoogleSheets().then(() => {
+          this.initRunnerForActiveSurvey(false);
+          this.render();
+        }).catch(() => {});
+      }
     }
 
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
       : null;
 
-    if (currentUser) {
+    const targetCol = paramCollector
+      ? (window.aeStore.collectors || []).find((c) => c.id === paramCollector)
+      : null;
+    const resolvedSurveyId = paramSurvey || (targetCol ? targetCol.surveyId : null);
+    const targetSurvey = resolvedSurveyId ? window.aeStore.getSurveyById(resolvedSurveyId) : null;
+
+    // Determine if this session is a Self-Administered Respondent Link (No Login Required)
+    this.isRespondentMode = Boolean(
+      isExplicitRespondent ||
+      (targetCol && targetCol.type === 'weblink') ||
+      (targetSurvey && targetSurvey.collectionMode === 'self_administered') ||
+      (!currentUser && resolvedSurveyId && (!targetSurvey || targetSurvey.collectionMode !== 'enumerator'))
+    );
+
+    if (this.isRespondentMode) {
+      this.enumeratorName = 'Self-Administered (Web Link)';
+      this.activeSurveyId = resolvedSurveyId || (window.aeStore.surveys && window.aeStore.surveys[0] ? window.aeStore.surveys[0].id : null);
+    } else if (currentUser) {
       const savedEnum = localStorage.getItem('ae_active_enumerator');
       if (currentUser.role === 'admin' || currentUser.role === 'supervisor') {
         const roleSuffix = currentUser.role === 'admin' ? 'HQ Admin' : 'Supervisor';
@@ -139,29 +180,31 @@ window.AEFieldApp = {
       }
     }
 
-    // Resolve active operator personnel profile
-    const activePerson = (window.aeStore.personnel || []).find(
-      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
-    ) || (window.AESession ? window.AESession.getCurrentUser() : null);
+    if (!this.isRespondentMode) {
+      // Resolve active operator personnel profile
+      const activePerson = (window.aeStore.personnel || []).find(
+        (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+      ) || (window.AESession ? window.AESession.getCurrentUser() : null);
 
-    const accessibleSurveys = window.aeStore.getSurveysForUser
-      ? window.aeStore.getSurveysForUser(activePerson)
-      : (window.aeStore.surveys || []).filter((s) => s.status === 'Active');
+      const accessibleSurveys = window.aeStore.getSurveysForUser
+        ? window.aeStore.getSurveysForUser(activePerson)
+        : (window.aeStore.surveys || []).filter((s) => s.status === 'Active');
 
-    if (paramSurvey && window.aeStore.getSurveyById(paramSurvey)) {
-      const check = window.aeStore.canUserCollectSurvey
-        ? window.aeStore.canUserCollectSurvey(activePerson, paramSurvey)
-        : { allowed: true };
-      if (check.allowed) {
-        this.activeSurveyId = paramSurvey;
+      if (resolvedSurveyId && window.aeStore.getSurveyById(resolvedSurveyId)) {
+        const check = window.aeStore.canUserCollectSurvey
+          ? window.aeStore.canUserCollectSurvey(activePerson, resolvedSurveyId)
+          : { allowed: true };
+        if (check.allowed) {
+          this.activeSurveyId = resolvedSurveyId;
+        } else {
+          this.showToast(check.reason || 'Requested survey is not assigned to your operator account.', 'warning');
+          this.activeSurveyId = resolvedSurveyId;
+        }
+      } else if (accessibleSurveys.length > 0) {
+        this.activeSurveyId = accessibleSurveys[0].id;
       } else {
-        this.showToast(check.reason || 'Requested survey is not assigned to your operator account.', 'warning');
-        this.activeSurveyId = accessibleSurveys.length > 0 ? accessibleSurveys[0].id : null;
+        this.activeSurveyId = null;
       }
-    } else if (accessibleSurveys.length > 0) {
-      this.activeSurveyId = accessibleSurveys[0].id;
-    } else {
-      this.activeSurveyId = null;
     }
 
     // Subscribe to store updates (so queue badge & sync logs stay live)
@@ -191,33 +234,47 @@ window.AEFieldApp = {
   },
 
   initRunnerForActiveSurvey(forceReset = false) {
-    const activePerson = (window.aeStore.personnel || []).find(
-      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
-    ) || (window.AESession ? window.AESession.getCurrentUser() : null);
-
-    const userSurveys = window.aeStore.getSurveysForUser ? window.aeStore.getSurveysForUser(activePerson) : [];
     let survey = this.activeSurveyId ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
 
-    if (survey && window.aeStore.canUserCollectSurvey) {
-      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
-      if (!check.allowed) {
-        if (userSurveys.length > 0) {
-          this.activeSurveyId = userSurveys[0].id;
-          survey = userSurveys[0];
-        } else {
-          this.activeSurveyId = null;
-          survey = null;
-        }
+    if (this.isRespondentMode) {
+      if (!survey) return;
+      const cols = window.aeStore.getCollectorsForSurvey(survey.id);
+      const webCol = cols.find((c) => c.type === 'weblink');
+      if (!this.activeCollectorId || !cols.some((c) => c.id === this.activeCollectorId)) {
+        this.activeCollectorId = webCol ? webCol.id : (cols.length > 0 ? cols[0].id : 'col_self_web');
       }
-    } else if (!survey && userSurveys.length > 0) {
-      this.activeSurveyId = userSurveys[0].id;
-      survey = userSurveys[0];
-    }
-    if (!survey) return;
+    } else {
+      const activePerson = (window.aeStore.personnel || []).find(
+        (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+      ) || (window.AESession ? window.AESession.getCurrentUser() : null);
 
-    const cols = window.aeStore.getCollectorsForSurvey(survey.id);
-    if (!this.activeCollectorId || !cols.some((c) => c.id === this.activeCollectorId)) {
-      this.activeCollectorId = cols.length > 0 ? cols[0].id : 'col_default';
+      const userSurveys = window.aeStore.getSurveysForUser ? window.aeStore.getSurveysForUser(activePerson) : [];
+
+      if (survey && window.aeStore.canUserCollectSurvey) {
+        const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
+        if (!check.allowed) {
+          // Keep activeSurveyId if explicitly requested in URL so render() can show the exact reason
+          const urlSurvey = new URLSearchParams(window.location.search).get('survey');
+          if (!urlSurvey || urlSurvey !== survey.id) {
+            if (userSurveys.length > 0) {
+              this.activeSurveyId = userSurveys[0].id;
+              survey = userSurveys[0];
+            } else {
+              this.activeSurveyId = null;
+              survey = null;
+            }
+          }
+        }
+      } else if (!survey && userSurveys.length > 0) {
+        this.activeSurveyId = userSurveys[0].id;
+        survey = userSurveys[0];
+      }
+      if (!survey) return;
+
+      const cols = window.aeStore.getCollectorsForSurvey(survey.id);
+      if (!this.activeCollectorId || !cols.some((c) => c.id === this.activeCollectorId)) {
+        this.activeCollectorId = cols.length > 0 ? cols[0].id : 'col_default';
+      }
     }
 
     if (!forceReset) {
@@ -420,7 +477,9 @@ window.AEFieldApp = {
       ? window.AESession.getCurrentUser()
       : null;
 
-    if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'supervisor')) {
+    if (this.isRespondentMode) {
+      this.enumeratorName = 'Self-Administered (Web Link)';
+    } else if (currentUser && (currentUser.role === 'admin' || currentUser.role === 'supervisor')) {
       const roleSuffix = currentUser.role === 'admin' ? 'HQ Admin' : 'Supervisor';
       if (this.enumeratorName.includes(roleSuffix) || this.enumeratorName.includes('Dr. John Mutua')) {
         const expected = `${currentUser.fullName} (${roleSuffix})`;
@@ -447,9 +506,29 @@ window.AEFieldApp = {
 
     const enumEl = document.getElementById('ae_hdr_enum_name');
     if (enumEl) {
-      enumEl.textContent = this.enumeratorName;
-      if (enumEl.parentElement) {
-        enumEl.parentElement.title = `Active Enumerator: ${this.enumeratorName} (Click to switch)`;
+      if (this.isRespondentMode) {
+        enumEl.textContent = 'Public Respondent';
+        if (enumEl.parentElement) {
+          enumEl.parentElement.title = 'Self-Administered Survey Link (No Login Required)';
+          enumEl.parentElement.style.pointerEvents = 'none';
+        }
+      } else {
+        enumEl.textContent = this.enumeratorName;
+        if (enumEl.parentElement) {
+          enumEl.parentElement.title = `Active Enumerator: ${this.enumeratorName} (Click to switch)`;
+          enumEl.parentElement.style.pointerEvents = '';
+        }
+      }
+    }
+
+    if (titleEl && titleEl.parentElement) {
+      const chevron = titleEl.parentElement.querySelector('i.fa-chevron-down');
+      if (this.isRespondentMode) {
+        titleEl.parentElement.style.pointerEvents = 'none';
+        if (chevron) chevron.style.display = 'none';
+      } else {
+        titleEl.parentElement.style.pointerEvents = '';
+        if (chevron) chevron.style.display = '';
       }
     }
 
@@ -511,7 +590,10 @@ window.AEFieldApp = {
 
     const roleBadge = document.getElementById('ae_hdr_role_badge');
     if (roleBadge) {
-      if (currentUser && currentUser.role === 'admin') {
+      if (this.isRespondentMode) {
+        roleBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1 shrink-0';
+        roleBadge.innerHTML = `<i class="fa-solid fa-earth-africa text-[9px] text-[#247B50]"></i><span>Self-Administered</span>`;
+      } else if (currentUser && currentUser.role === 'admin') {
         roleBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1 shrink-0';
         roleBadge.innerHTML = `<i class="fa-solid fa-shield-halved text-[9px] text-[#247B50]"></i><span>${this.t('adminAudit')}</span>`;
       } else if (currentUser && currentUser.role === 'supervisor') {
@@ -524,7 +606,14 @@ window.AEFieldApp = {
     }
 
     const adminBtn = document.getElementById('ae_hdr_admin_btn');
-    if (adminBtn) {
+    const mobileMenuBtn = document.getElementById('ae_hdr_mobile_menu_btn');
+    const dlBtn = document.getElementById('ae_hdr_dl_btn');
+    if (this.isRespondentMode) {
+      if (adminBtn) adminBtn.className = 'hidden';
+      if (mobileMenuBtn) mobileMenuBtn.className = 'hidden';
+      if (dlBtn) dlBtn.className = 'hidden';
+      if (installBtn) installBtn.className = 'hidden';
+    } else if (adminBtn) {
       if (currentUser && currentUser.role === 'admin') {
         adminBtn.className = 'hidden md:inline-flex h-8 px-2.5 sm:px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-xs font-semibold text-white items-center gap-1.5 ae-press';
         adminBtn.title = `${this.t('returnToOperations')} (${currentUser.fullName})`;
@@ -586,12 +675,16 @@ window.AEFieldApp = {
       return;
     }
 
-    const activePerson = (window.aeStore.personnel || []).find(
-      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
-    ) || (window.AESession ? window.AESession.getCurrentUser() : null);
+    const activePerson = this.isRespondentMode
+      ? { role: 'respondent', fullName: 'Public Respondent' }
+      : ((window.aeStore.personnel || []).find(
+          (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+        ) || (window.AESession ? window.AESession.getCurrentUser() : null));
 
     if (survey && window.aeStore.canUserCollectSurvey) {
-      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
+      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id, {
+        isSelfAdministered: this.isRespondentMode
+      });
       if (!check.allowed) {
         viewport.innerHTML = `
           <div class="bg-white border-2 border-[#C4242A] rounded-[12px] p-8 text-center space-y-4 max-w-md mx-auto my-6 shadow-sm">
@@ -605,14 +698,21 @@ window.AEFieldApp = {
               </p>
             </div>
             <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2">
-              <button onclick="AEFieldApp.openSurveyPicker()"
-                class="w-full sm:w-auto h-9 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
-                Switch to Assigned Survey
-              </button>
-              <button onclick="AEFieldApp.openEnumeratorPicker()"
-                class="w-full sm:w-auto h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
-                Switch Operator
-              </button>
+              ${
+                this.isRespondentMode
+                  ? `<button onclick="AEFieldApp.switchToEnumeratorMode()"
+                      class="w-full sm:w-auto h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
+                      <i class="fa-solid fa-user-check mr-1.5"></i> Authenticate as Field Enumerator
+                    </button>`
+                  : `<button onclick="AEFieldApp.openSurveyPicker()"
+                      class="w-full sm:w-auto h-9 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
+                      Switch to Assigned Survey
+                    </button>
+                    <button onclick="AEFieldApp.openEnumeratorPicker()"
+                      class="w-full sm:w-auto h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
+                      Switch Operator
+                    </button>`
+              }
             </div>
           </div>
         `;
@@ -651,8 +751,8 @@ window.AEFieldApp = {
 
     return `
       <div class="space-y-4">
-        <!-- CommCare Shift Pacing Bar -->
-        ${this.renderShiftPacingBar()}
+        <!-- CommCare Shift Pacing Bar (Hidden for Self-Administered Public Respondents) -->
+        ${this.isRespondentMode ? '' : this.renderShiftPacingBar()}
 
         ${
           this.justSubmittedReceipt
@@ -670,7 +770,7 @@ window.AEFieldApp = {
                     </div>
                   </div>
                   <div class="flex items-center gap-2 shrink-0">
-                    ${!this.isAppInstalled ? `
+                    ${!this.isAppInstalled && !this.isRespondentMode ? `
                       <button type="button" onclick="AEFieldApp.promptInstall()"
                         class="h-8 px-3 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white hover:bg-[#1F6A45] inline-flex items-center gap-1.5 ae-press">
                         <i class="fa-solid fa-mobile-screen-button text-xs"></i> ${this.t('installApp')}
@@ -682,7 +782,7 @@ window.AEFieldApp = {
                     </button>
                     <button type="button" onclick="AEFieldApp.startNextInterview()"
                       class="h-8 px-3.5 rounded-[6px] bg-[#141A17] text-xs font-medium text-white hover:bg-[#232C27] inline-flex items-center gap-1.5 ae-press">
-                      <i class="fa-solid fa-plus text-xs"></i> ${this.t('nextInterview')}
+                      <i class="fa-solid fa-plus text-xs"></i> ${this.isRespondentMode ? 'Submit Another Response' : this.t('nextInterview')}
                     </button>
                   </div>
                 </div>
@@ -697,7 +797,7 @@ window.AEFieldApp = {
 
         <!-- Respondent Header Greeting Card (Fraunces Serif Accent) -->
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-3 border-t-4" style="border-top-color: ${accent};">
-          <div class="flex items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0">
               <picture>
                 <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
@@ -711,11 +811,25 @@ window.AEFieldApp = {
               <div class="w-8 h-8 rounded-[6px] bg-[#247B50] text-white hidden items-center justify-center font-bold text-xs shrink-0">
                 <i class="fa-solid fa-seedling text-sm"></i>
               </div>
-              <span class="text-xs font-semibold text-[#247B50] truncate">${this.t('fieldCollector')}</span>
+              <span class="text-xs font-semibold text-[#247B50] truncate">${
+                this.isRespondentMode ? 'Self-Administered Survey' : this.t('fieldCollector')
+              }</span>
             </div>
-            <span class="text-xs text-[#525B56] tabular-nums shrink-0">
-              ${this.t('section')} <strong>${this.currentPageIndex + 1}</strong> ${this.t('of')} ${pages.length}
-            </span>
+            <div class="flex items-center gap-2.5 shrink-0">
+              ${
+                this.isRespondentMode && window.AEI18n
+                  ? window.AEI18n.renderLanguageSwitch(
+                      this.currentLang,
+                      'AEFieldApp.setLanguage',
+                      'light',
+                      (rawSurvey && Array.isArray(rawSurvey.supportedLanguages)) ? rawSurvey.supportedLanguages : null
+                    )
+                  : ''
+              }
+              <span class="text-xs text-[#525B56] tabular-nums shrink-0">
+                ${this.t('section')} <strong>${this.currentPageIndex + 1}</strong> ${this.t('of')} ${pages.length}
+              </span>
+            </div>
           </div>
           <h1 class="text-xl sm:text-2xl font-semibold font-display text-[#111613] leading-snug tracking-tight ae-break-words">
             ${this.escapeHtml(survey.title)}
@@ -747,7 +861,7 @@ window.AEFieldApp = {
         </div>
 
         <!-- Section Bottom Navigation & Submission Bar (Floating Card Dock) -->
-        <div data-ui="sticky-bar" class="sticky bottom-[4.25rem] md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[10px] p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
+        <div data-ui="sticky-bar" class="sticky ${this.isRespondentMode ? 'bottom-3' : 'bottom-[4.25rem]'} md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[10px] p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
           <div>
             ${
               this.currentPageIndex > 0
@@ -1456,11 +1570,15 @@ window.AEFieldApp = {
       return;
     }
 
-    const activePerson = (window.aeStore.personnel || []).find(
-      (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
-    );
+    const activePerson = this.isRespondentMode
+      ? { role: 'respondent', fullName: 'Public Respondent' }
+      : (window.aeStore.personnel || []).find(
+          (p) => this.enumeratorName.includes(p.fullName) || this.enumeratorName.includes(p.id)
+        );
     if (window.aeStore.canUserCollectSurvey) {
-      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id);
+      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id, {
+        isSelfAdministered: this.isRespondentMode
+      });
       if (!check.allowed) {
         this.showToast(check.reason, 'error');
         return;
@@ -1487,7 +1605,9 @@ window.AEFieldApp = {
         ? window.AESession.getCurrentUser()
         : null;
 
-      if (currentUser && currentUser.role === 'admin') {
+      if (this.isRespondentMode) {
+        qaFlags.push('SELF_ADMINISTERED');
+      } else if (currentUser && currentUser.role === 'admin') {
         qaFlags.push('ADMIN_PILOT_AUDIT');
       } else if (currentUser && currentUser.role === 'supervisor') {
         qaFlags.push('SUPERVISOR_FIELD_AUDIT');
@@ -1506,9 +1626,9 @@ window.AEFieldApp = {
         surveyId: survey.id,
         surveyTitle: survey.title,
         collectorId: this.activeCollectorId,
-        enumerator: this.enumeratorName,
-        submittedByUserId: currentUser ? currentUser.id : null,
-        submittedByUserRole: currentUser ? currentUser.role : 'enumerator',
+        enumerator: this.isRespondentMode ? 'Self-Administered (Web Link)' : this.enumeratorName,
+        submittedByUserId: this.isRespondentMode ? 'SELF_RESPONDENT' : (currentUser ? currentUser.id : null),
+        submittedByUserRole: this.isRespondentMode ? 'respondent' : (currentUser ? currentUser.role : 'enumerator'),
         language: this.currentLang || 'en',
         startedAt: this.startedAtIso,
         durationSec,
@@ -1523,11 +1643,15 @@ window.AEFieldApp = {
       const gpsLabel = gpsMeta
         ? `${gpsMeta.lat}, ${gpsMeta.lng}${gpsMeta.label ? ' (' + gpsMeta.label + ')' : ''} [${gpsMeta.manual ? 'Manual' : 'GNSS'}]`
         : 'Not Captured';
-      const receiptText = `AE-RECEIPT: ${saved.id} | Survey: ${survey.title} | Enumerator: ${saved.enumerator} | GPS: ${gpsLabel} | Language: ${(this.currentLang || 'en').toUpperCase()} | QA: ${isSpeeder ? 'FLAGGED_SPEEDER' : 'VERIFIED'} | Timestamp: ${saved.submittedAt}`;
+      const receiptText = `AE-RECEIPT: ${saved.id} | Survey: ${survey.title} | Mode: ${this.isRespondentMode ? 'SELF_ADMINISTERED' : saved.enumerator} | GPS: ${gpsLabel} | Language: ${(this.currentLang || 'en').toUpperCase()} | QA: ${isSpeeder ? 'FLAGGED_SPEEDER' : 'VERIFIED'} | Timestamp: ${saved.submittedAt}`;
 
       this.justSubmittedReceipt = {
-        title: `${this.t('interviewLogged')} (${window.aeStore.isEffectivelyOnline() ? this.t('syncedDirectly') : this.t('storedLocallyPending')})`,
-        subtitle: `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`,
+        title: this.isRespondentMode
+          ? 'Thank you! Your survey response has been submitted.'
+          : `${this.t('interviewLogged')} (${window.aeStore.isEffectivelyOnline() ? this.t('syncedDirectly') : this.t('storedLocallyPending')})`,
+        subtitle: this.isRespondentMode
+          ? `Self-Administered Web Link · Your response has been securely recorded.`
+          : `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`,
         receiptId: saved.id,
         duration: `${durationSec}s`,
         gps: gpsLabel,
@@ -1661,6 +1785,7 @@ window.AEFieldApp = {
   },
 
   openSurveyPicker() {
+    if (this.isRespondentMode) return;
     this.showMobileMenu = false;
     this.showPacingModal = false;
     this.showAdminPinModal = false;
@@ -1669,6 +1794,14 @@ window.AEFieldApp = {
     this.showIosInstallModal = false;
     this.showSurveyPickerModal = true;
     this.renderModals();
+  },
+
+  switchToEnumeratorMode() {
+    this.isRespondentMode = false;
+    const savedEnum = localStorage.getItem('ae_active_enumerator');
+    this.enumeratorName = savedEnum || (window.aeStore && window.aeStore.settings.defaultEnumerator) || 'Grace Wanjiku (ENUM-04)';
+    this.openEnumeratorPicker();
+    this.render();
   },
 
   selectSurvey(surveyId) {
@@ -1691,6 +1824,7 @@ window.AEFieldApp = {
   },
 
   openEnumeratorPicker() {
+    if (this.isRespondentMode) return;
     this.showMobileMenu = false;
     this.showPacingModal = false;
     this.showAdminPinModal = false;
@@ -1830,6 +1964,12 @@ window.AEFieldApp = {
   renderBottomNav() {
     const bottomNav = document.getElementById('ae_field_bottom_nav');
     if (!bottomNav) return;
+
+    if (this.isRespondentMode) {
+      bottomNav.classList.add('hidden');
+      return;
+    }
+    bottomNav.classList.remove('hidden');
 
     // 1. Localized Labels
     const runnerLbl = document.getElementById('ae_bnav_runner_lbl');
@@ -2045,7 +2185,7 @@ window.AEFieldApp = {
     return `
       <div class="space-y-4 max-w-2xl mx-auto py-2">
         <!-- CommCare Shift Pacing Bar -->
-        ${this.renderShiftPacingBar()}
+        ${this.isRespondentMode ? '' : this.renderShiftPacingBar()}
 
         <!-- Mode Bar & Question Counter -->
         <div class="flex items-center justify-between text-xs text-[#525B56]">

@@ -33,6 +33,7 @@ function getInitialSeedData() {
       description: 'Field enumeration evaluating seed variety performance, germination rates, fertilizer co-application, and farmer Net Promoter Score across rural counties.',
       category: 'Seed Systems & Yield',
       status: 'Active',
+      collectionMode: 'hybrid',
       version: 3,
       createdAt: daysAgo(14),
       updatedAt: daysAgo(1),
@@ -202,6 +203,7 @@ function getInitialSeedData() {
       description: 'Quarterly retail audit of rural agro-vet stockists assessing certified seed inventory, cold/dry storage compliance, and digital payment readiness.',
       category: 'Market & Retail Audit',
       status: 'Active',
+      collectionMode: 'hybrid',
       version: 2,
       createdAt: daysAgo(10),
       updatedAt: daysAgo(2),
@@ -284,6 +286,7 @@ function getInitialSeedData() {
       description: 'Post-event pulse survey measuring farmer learning outcomes, agronomic demo clarity, and extension officer effectiveness.',
       category: 'Training & Extension',
       status: 'Draft',
+      collectionMode: 'hybrid',
       version: 1,
       createdAt: daysAgo(4),
       updatedAt: daysAgo(1),
@@ -3316,7 +3319,8 @@ class AESurveyStore {
       title: String(survey.title || 'Untitled Field Survey').slice(0, 240),
       description: String(survey.description || '').slice(0, 800),
       category: String(survey.category || 'Field Assessment').slice(0, 120),
-      status: ['Active', 'Draft', 'Closed'].includes(survey.status) ? survey.status : 'Active',
+      status: ['Active', 'Draft', 'Closed', 'Archived'].includes(survey.status) ? survey.status : 'Active',
+      collectionMode: ['hybrid', 'self_administered', 'enumerator'].includes(survey.collectionMode) ? survey.collectionMode : 'hybrid',
       version: Math.max(1, Number(survey.version) || 1),
       theme: {
         ...theme,
@@ -3433,6 +3437,9 @@ class AESurveyStore {
 
     if (queueForCloud) {
       this.enqueueSyncItem('UPSERT_SURVEY', cleanSurvey.id, `Survey Schema: ${cleanSurvey.title}`);
+      if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+        this.triggerBackgroundSyncNow(400);
+      }
     }
     this.saveToLocalStorage();
     return cleanSurvey;
@@ -3484,20 +3491,43 @@ class AESurveyStore {
   }
 
   /**
-   * Evaluates if a given user/personnel is permitted to collect data for this survey.
-   * Returns { allowed: boolean, reason: string }
+   * Evaluates if a given user/personnel (or self-administered respondent) is permitted to collect data for this survey.
+   * Returns { allowed: boolean, reason: string, isSelfAdministered?: boolean }
    */
-  canUserCollectSurvey(personnelOrUser, surveyId) {
+  canUserCollectSurvey(personnelOrUser, surveyId, options = {}) {
     const survey = this.getSurveyById(surveyId);
     if (!survey) {
       return { allowed: false, reason: 'Survey instrument not found.' };
     }
     if (survey.status === 'Archived') {
-      return { allowed: false, reason: 'This survey has been archived by HQ and no longer accepts field responses.' };
+      return { allowed: false, reason: 'This survey has been archived by HQ and no longer accepts responses.' };
     }
     if (survey.status === 'Closed') {
       return { allowed: false, reason: 'This survey is closed. New submissions are disabled.' };
     }
+
+    const isSelfAdmin = Boolean(
+      options.isSelfAdministered ||
+      (personnelOrUser && String(personnelOrUser.role || '').toLowerCase() === 'respondent')
+    );
+
+    if (isSelfAdmin) {
+      const mode = survey.collectionMode || 'hybrid';
+      if (mode === 'enumerator') {
+        return {
+          allowed: false,
+          reason: 'This survey is restricted to authenticated field enumerators and does not accept self-administered public link submissions.'
+        };
+      }
+      if (survey.status !== 'Active') {
+        return {
+          allowed: false,
+          reason: `This survey is currently in ${survey.status} status and is not accepting public responses yet.`
+        };
+      }
+      return { allowed: true, reason: '', isSelfAdministered: true };
+    }
+
     if (!personnelOrUser) {
       return { allowed: false, reason: 'Operator profile required. Please select or authenticate an active operator.' };
     }
@@ -3647,7 +3677,7 @@ class AESurveyStore {
     return changed;
   }
 
-  upsertCollector(collector) {
+  upsertCollector(collector, queueForCloud = true) {
     const cleanCol = this.sanitizeCollectorRecord(collector);
     if (!cleanCol) return null;
     const idx = this.collectors.findIndex((c) => c.id === cleanCol.id);
@@ -3655,6 +3685,12 @@ class AESurveyStore {
       this.collectors[idx] = cleanCol;
     } else {
       this.collectors.push(cleanCol);
+    }
+    if (queueForCloud) {
+      this.enqueueSyncItem('UPSERT_COLLECTOR', cleanCol.id, `Collector: ${cleanCol.name}`);
+      if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+        this.triggerBackgroundSyncNow(400);
+      }
     }
     this.saveToLocalStorage();
     return cleanCol;

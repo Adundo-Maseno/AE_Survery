@@ -255,6 +255,15 @@ window.AEBuilder = {
               <option value="Archived" ${survey.status === 'Archived' ? 'selected' : ''}>Status: Archived (Field Locked)</option>
             </select>
 
+            <!-- Collection Mode Dropdown (Self-Administered vs Enumerator) -->
+            <select onchange="AEApp.updateSurveyMeta('collectionMode', this.value)"
+              aria-label="Collection Mode"
+              class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">
+              <option value="hybrid" ${(survey.collectionMode || 'hybrid') === 'hybrid' ? 'selected' : ''}>Mode: Hybrid (Enumerators + Public Link)</option>
+              <option value="self_administered" ${survey.collectionMode === 'self_administered' ? 'selected' : ''}>Mode: Self-Administered (Public Link Only)</option>
+              <option value="enumerator" ${survey.collectionMode === 'enumerator' ? 'selected' : ''}>Mode: Enumerator-Assisted Only</option>
+            </select>
+
             <!-- Assign Field Team -->
             <button onclick="AEApp.openAssignTeamModal('${survey.id}')"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
@@ -731,6 +740,24 @@ window.AEBuilder = {
             value="${AEApp.escapeAttr(survey.category || 'Field Survey')}"
             onchange="AEApp.updateSurveyMeta('category', this.value)"
             class="w-full h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+        </div>
+
+        <div class="pt-3 border-t border-[#EFEFEF] space-y-2">
+          <label for="ae_builder_col_mode" class="block text-xs font-medium text-[#111613]">Administration &amp; Access Mode</label>
+          <select id="ae_builder_col_mode"
+            onchange="AEApp.updateSurveyMeta('collectionMode', this.value)"
+            class="w-full h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">
+            <option value="hybrid" ${(survey.collectionMode || 'hybrid') === 'hybrid' ? 'selected' : ''}>Hybrid (Enumerators + Self-Administered Link)</option>
+            <option value="self_administered" ${survey.collectionMode === 'self_administered' ? 'selected' : ''}>Self-Administered Only (Public Link, No Login)</option>
+            <option value="enumerator" ${survey.collectionMode === 'enumerator' ? 'selected' : ''}>Enumerator-Assisted Only (Assigned Staff)</option>
+          </select>
+          <p class="text-[11px] text-[#525B56] leading-relaxed">
+            ${
+              survey.collectionMode === 'enumerator'
+                ? 'Requires an authenticated field enumerator assigned to this survey.'
+                : 'Respondents can complete this survey directly via web link with zero login required.'
+            }
+          </p>
         </div>
 
         <div>

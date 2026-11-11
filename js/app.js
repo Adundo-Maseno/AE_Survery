@@ -56,13 +56,20 @@ window.AEApp = {
     // Check URL query param `?survey=srv_...` for direct respondent link
     const params = new URLSearchParams(window.location.search);
     const linkedSurveyId = params.get('survey');
-    if (linkedSurveyId && window.aeStore.getSurveyById(linkedSurveyId)) {
-      if (!currentUser || currentUser.role === 'admin' || (currentUser.assignedSurveys && currentUser.assignedSurveys.includes(linkedSurveyId))) {
-        this.activeSurveyId = linkedSurveyId;
-        this.currentStage = 'collect';
-        window.AECollector.initRunnerForSurvey(window.aeStore.getSurveyById(linkedSurveyId));
-      } else {
-        this.activeSurveyId = accessibleSurveys.length > 0 ? accessibleSurveys[0].id : null;
+    const linkedMode = (params.get('mode') || '').toLowerCase();
+    if (linkedSurveyId) {
+      if (!currentUser || linkedMode === 'respondent' || linkedMode === 'self') {
+        window.location.replace(`./field.html?survey=${encodeURIComponent(linkedSurveyId)}&mode=respondent`);
+        return;
+      }
+      if (window.aeStore.getSurveyById(linkedSurveyId)) {
+        if (currentUser.role === 'admin' || (currentUser.assignedSurveys && currentUser.assignedSurveys.includes(linkedSurveyId))) {
+          this.activeSurveyId = linkedSurveyId;
+          this.currentStage = 'collect';
+          window.AECollector.initRunnerForSurvey(window.aeStore.getSurveyById(linkedSurveyId));
+        } else {
+          this.activeSurveyId = accessibleSurveys.length > 0 ? accessibleSurveys[0].id : null;
+        }
       }
     } else if (accessibleSurveys.length > 0) {
       if (!this.activeSurveyId || !accessibleSurveys.some((s) => s.id === this.activeSurveyId)) {
@@ -716,7 +723,8 @@ window.AEApp = {
       main.innerHTML = window.AECollector.renderCollectStage(activeSurvey);
       if (window.AECollector.activeSubTab === 'collectors' && activeSurvey) {
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
-        const shareUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(activeSurvey.id)}`;
+        const modeParam = (activeSurvey.collectionMode || 'hybrid') !== 'enumerator' ? '&mode=respondent' : '';
+        const shareUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(activeSurvey.id)}${modeParam}`;
         setTimeout(() => window.AECollector.drawQRCode(shareUrl), 30);
       }
     } else if (this.currentStage === 'analyze') {
@@ -1915,12 +1923,19 @@ window.AEApp = {
                     const assignedCount = (window.aeStore.personnel || []).filter(
                       (p) => Array.isArray(p.assignedSurveys) && p.assignedSurveys.includes(s.id)
                     ).length;
+                    const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+                    const publicUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(s.id)}&mode=respondent`;
                     return `
                       <details class="relative inline-block text-left">
                         <summary class="list-none w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs cursor-pointer ae-press" title="More Instrument Actions">
                           <i class="fa-solid fa-ellipsis-vertical"></i>
                         </summary>
-                        <div class="absolute right-0 z-30 mt-1 w-48 rounded-[6px] bg-white border border-[#E4E7E4] shadow-md py-1 text-xs text-[#111613]">
+                        <div class="absolute right-0 z-30 mt-1 w-52 rounded-[6px] bg-white border border-[#E4E7E4] shadow-md py-1 text-xs text-[#111613]">
+                          <button onclick="AEApp.copyText('${this.escapeJs(publicUrl)}', 'Self-Administered Respondent Link copied to clipboard.'); this.closest('details').removeAttribute('open');"
+                            class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2 font-medium text-[#247B50]">
+                            <i class="fa-solid fa-earth-africa text-[#247B50] w-4"></i>
+                            <span>Copy Respondent Link</span>
+                          </button>
                           <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}'); this.closest('details').removeAttribute('open');"
                             class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
                             <i class="fa-solid fa-crosshairs text-[#247B50] w-4"></i>
@@ -3679,6 +3694,7 @@ window.AEApp = {
       description: 'Add survey description and enumerator instructions here.',
       category: 'Field Assessment',
       status: 'Draft',
+      collectionMode: 'hybrid',
       version: 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
