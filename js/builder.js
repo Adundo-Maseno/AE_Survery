@@ -214,10 +214,10 @@ window.AEBuilder = {
     const allSurveys = window.aeStore.surveys || [];
 
     return `
-      <div class="space-y-6">
+      <div class="space-y-5">
         <!-- 1. Builder Stage Header Row (Screen-Fit & Aligned with Overview) -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
-          <div class="min-w-0">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
+          <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2.5">
               <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Survey Builder &amp; Design</h1>
               <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56]">
@@ -231,39 +231,6 @@ window.AEBuilder = {
           </div>
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
-            <!-- Active Survey Switcher -->
-            <select onchange="AEApp.switchStage('design', this.value)"
-              aria-label="Select Survey to Edit"
-              class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[220px] truncate">
-              ${allSurveys
-                .map(
-                  (s) =>
-                    `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
-                      s.title.substring(0, 32)
-                    )}${s.title.length > 32 ? '…' : ''}</option>`
-                )
-                .join('')}
-            </select>
-
-            <!-- Status Dropdown -->
-            <select onchange="AEApp.updateSurveyMeta('status', this.value)"
-              aria-label="Survey Status"
-              class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">
-              <option value="Active" ${survey.status === 'Active' ? 'selected' : ''}>Status: Active</option>
-              <option value="Draft" ${survey.status === 'Draft' ? 'selected' : ''}>Status: Draft</option>
-              <option value="Closed" ${survey.status === 'Closed' ? 'selected' : ''}>Status: Closed</option>
-              <option value="Archived" ${survey.status === 'Archived' ? 'selected' : ''}>Status: Archived (Field Locked)</option>
-            </select>
-
-            <!-- Collection Mode Dropdown (Self-Administered vs Enumerator) -->
-            <select onchange="AEApp.updateSurveyMeta('collectionMode', this.value)"
-              aria-label="Collection Mode"
-              class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]">
-              <option value="hybrid" ${(survey.collectionMode || 'hybrid') === 'hybrid' ? 'selected' : ''}>Mode: Hybrid (Enumerators + Public Link)</option>
-              <option value="self_administered" ${survey.collectionMode === 'self_administered' ? 'selected' : ''}>Mode: Self-Administered (Public Link Only)</option>
-              <option value="enumerator" ${survey.collectionMode === 'enumerator' ? 'selected' : ''}>Mode: Enumerator-Assisted Only</option>
-            </select>
-
             <!-- Assign Field Team -->
             <button onclick="AEApp.openAssignTeamModal('${survey.id}')"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
@@ -293,6 +260,48 @@ window.AEBuilder = {
           </div>
         </div>
 
+        <!-- 1b. Active Instrument & Access Control Bar (Matching Overview Scope Bar) -->
+        <div class="bg-white p-3 rounded-[8px] border border-[#E4E7E4] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div class="flex flex-wrap sm:flex-nowrap items-center gap-2.5 min-w-0 flex-1">
+            <span class="w-2 h-2 rounded-full bg-[#247B50] shrink-0"></span>
+            <label for="ae_builder_active_survey_select" class="text-xs font-semibold text-[#111613] whitespace-nowrap shrink-0">Active Survey</label>
+            <select id="ae_builder_active_survey_select"
+              onchange="AEApp.switchStage('design', this.value)"
+              aria-label="Select Survey to Edit"
+              class="h-8 text-xs font-semibold bg-[#F8F9F8] hover:bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] w-full sm:w-auto min-w-0 sm:max-w-[440px] truncate">
+              ${allSurveys
+                .map(
+                  (s) =>
+                    `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
+                      s.title.substring(0, 48)
+                    )}${s.title.length > 48 ? '…' : ''}</option>`
+                )
+                .join('')}
+            </select>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <!-- Status Dropdown -->
+            <select onchange="AEApp.updateSurveyMeta('status', this.value)"
+              aria-label="Survey Status"
+              class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[180px] truncate">
+              <option value="Active" ${survey.status === 'Active' ? 'selected' : ''}>Status: Active</option>
+              <option value="Draft" ${survey.status === 'Draft' ? 'selected' : ''}>Status: Draft</option>
+              <option value="Closed" ${survey.status === 'Closed' ? 'selected' : ''}>Status: Closed</option>
+              <option value="Archived" ${survey.status === 'Archived' ? 'selected' : ''}>Status: Archived</option>
+            </select>
+
+            <!-- Collection Mode Dropdown (Self-Administered vs Enumerator) -->
+            <select onchange="AEApp.updateSurveyMeta('collectionMode', this.value)"
+              aria-label="Collection Mode"
+              class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[240px] truncate">
+              <option value="hybrid" ${(survey.collectionMode || 'hybrid') === 'hybrid' ? 'selected' : ''}>Mode: Hybrid (Team + Public Link)</option>
+              <option value="self_administered" ${survey.collectionMode === 'self_administered' ? 'selected' : ''}>Mode: Self-Administered (Public Link)</option>
+              <option value="enumerator" ${survey.collectionMode === 'enumerator' ? 'selected' : ''}>Mode: Enumerator-Assisted Only</option>
+            </select>
+          </div>
+        </div>
+
         ${
           this.previewMode
             ? this.renderLiveSimulator(survey)
@@ -300,23 +309,23 @@ window.AEBuilder = {
         <!-- 2. Divided 4-Cell Metadata Strip (Matching Overview KPI Architecture) -->
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
           <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF]">
-            <div class="p-4">
+            <div class="p-4 min-w-0">
               <span class="text-xs font-medium text-[#525B56] block">Active Instrument</span>
-              <div class="mt-1">
+              <div class="mt-1 min-w-0">
                 <strong class="text-sm font-semibold text-[#111613] block truncate" title="${AEApp.escapeAttr(survey.title)}">${AEApp.escapeHtml(survey.title)}</strong>
-                <span class="text-xs text-[#247B50] font-medium">${AEApp.escapeHtml(survey.category || 'Agricultural Field Survey')}</span>
+                <span class="text-xs text-[#247B50] font-medium block truncate">${AEApp.escapeHtml(survey.category || 'Agricultural Field Survey')}</span>
               </div>
             </div>
-            <div class="p-4">
+            <div class="p-4 min-w-0">
               <span class="text-xs font-medium text-[#525B56] block">Structure &amp; Scale</span>
-              <div class="mt-1 flex items-baseline gap-2">
+              <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <strong class="text-[24px] font-semibold text-[#111613] tabular-nums leading-none">${totalQuestions}</strong>
                 <span class="text-xs text-[#525B56]">questions across ${survey.pages.length} ${survey.pages.length === 1 ? 'section' : 'sections'}</span>
               </div>
             </div>
-            <div class="p-4">
+            <div class="p-4 min-w-0">
               <span class="text-xs font-medium text-[#525B56] block">Publication Lifecycle</span>
-              <div class="mt-1 flex items-center gap-2">
+              <div class="mt-1 flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-semibold ${
                   survey.status === 'Active'
                     ? 'bg-[#DCFAE5] text-[#04250E]'
@@ -331,9 +340,9 @@ window.AEBuilder = {
                 <span class="text-xs text-[#525B56] tabular-nums">Revision ${survey.version || 1}</span>
               </div>
             </div>
-            <div class="p-4">
+            <div class="p-4 min-w-0">
               <span class="text-xs font-medium text-[#525B56] block">Storage &amp; Cloud State</span>
-              <div class="mt-1 flex items-baseline gap-2">
+              <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <strong class="text-xs font-semibold text-[#247B50] flex items-center gap-1.5">
                   <i class="fa-solid fa-database text-[11px]"></i> IndexedDB Local
                 </strong>
@@ -388,7 +397,7 @@ window.AEBuilder = {
             <!-- Survey Title & Header Editor -->
             <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5">
               <div>
-                <div class="flex items-center justify-between gap-2 mb-1.5">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                   <span class="text-xs font-semibold text-[#247B50] flex items-center gap-1.5">
                     <i class="fa-solid fa-pen-to-square text-[11px]"></i> Survey Title &amp; Field Instructions
                   </span>
@@ -425,7 +434,9 @@ window.AEBuilder = {
                         : 'bg-[#F8F9F8] text-[#525B56] hover:text-[#111613] border border-[#E4E7E4]'
                     }">
                     <span>Page ${idx + 1}: ${AEApp.escapeHtml(p.title.substring(0, 26))}${p.title.length > 26 ? '…' : ''}</span>
-                    <span class="px-1.5 py-0.2 rounded-[4px] bg-white/15 text-[11px] tabular-nums">${(p.questions || []).length}</span>
+                    <span class="px-1.5 py-0.5 rounded-[4px] ${
+                      idx === this.activePageIndex ? 'bg-white/15 text-white' : 'bg-[#EAECE9] text-[#111613]'
+                    } text-[11px] tabular-nums">${(p.questions || []).length}</span>
                   </button>
                 `
                   )
@@ -731,7 +742,7 @@ window.AEBuilder = {
     ];
 
     return `
-      <div class="p-4 space-y-5">
+      <div class="p-4 space-y-5 lg:max-h-[calc(100dvh-160px)] lg:overflow-y-auto">
         <div>
           <label for="ae_builder_category" class="block text-xs font-medium text-[#111613] mb-1.5">Survey Category</label>
           <input type="text"

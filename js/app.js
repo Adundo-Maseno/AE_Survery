@@ -640,7 +640,7 @@ window.AEApp = {
                             <div class="min-w-0">
                               <div class="text-xs font-semibold text-[#111613] truncate">${this.escapeHtml(s.title)}</div>
                               <div class="text-[11px] text-[#525B56] mt-0.5 flex items-center gap-2">
-                                <span class="px-1.5 py-0.2 rounded bg-[#DCFAE5] text-[#04250E] text-[10px] font-bold">
+                                <span class="px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[10px] font-bold">
                                   ${taskProgress.completed}/${taskProgress.target} Plots
                                 </span>
                                 <span class="truncate">· ${this.escapeHtml(s.category || 'Field Survey')}</span>
@@ -851,8 +851,8 @@ window.AEApp = {
           </button>
         </div>
 
-        <!-- Center: Workflow Stage Tabs (Horizontally Scrollable on Mobile with .no-scrollbar) -->
-        <nav class="order-3 sm:order-2 w-full sm:w-auto overflow-x-auto sm:overflow-visible no-scrollbar scroll-smooth flex items-center justify-start sm:justify-center sm:h-12 gap-1 lg:gap-1.5 xl:gap-2 border-t sm:border-t-0 border-[#E4E7E4] pt-2 sm:pt-0 pb-1 sm:pb-0 -mx-3 sm:mx-0 px-3 sm:px-0 sm:shrink-0" aria-label="Survey Workflow Stages">
+        <!-- Center: Workflow Stage Tabs (Horizontally Scrollable on Mobile/Tablet with .no-scrollbar) -->
+        <nav class="order-3 sm:order-2 w-full sm:w-auto min-w-0 overflow-x-auto no-scrollbar scroll-smooth flex items-center justify-start sm:justify-center sm:h-12 gap-1 lg:gap-1.5 xl:gap-2 border-t sm:border-t-0 border-[#E4E7E4] pt-2 sm:pt-0 pb-1 sm:pb-0 -mx-3 sm:mx-0 px-3 sm:px-0" aria-label="Survey Workflow Stages">
           <button onclick="AEApp.switchStage('dashboard')"
             class="h-8 sm:h-full px-2 sm:px-2 lg:px-2.5 xl:px-3 text-xs inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] sm:rounded-none border-b-2 shrink-0 ae-press ${
               this.currentStage === 'dashboard'
@@ -920,7 +920,7 @@ window.AEApp = {
             <i class="fa-solid fa-arrows-rotate text-[11px] ${isCurrentlySyncing ? 'fa-spin' : ''}"></i>
             ${
               totalPending > 0
-                ? `<span class="px-1.5 py-0.2 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[10px] font-bold tabular-nums">${totalPending}</span>`
+                ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[10px] font-bold tabular-nums">${totalPending}</span>`
                 : ''
             }
           </button>
@@ -978,7 +978,7 @@ window.AEApp = {
               <span class="hidden xl:inline">${isCurrentlySyncing ? 'Syncing…' : 'Sync Sheets'}</span>
               ${
                 totalPending > 0
-                  ? `<span class="px-1.5 py-0.2 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[11px] font-semibold tabular-nums">${totalPending}</span>`
+                  ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[11px] font-semibold tabular-nums">${totalPending}</span>`
                   : ''
               }
             </button>
@@ -1012,7 +1012,6 @@ window.AEApp = {
             </div>
           </div>
         </div>
-      </div>
       </div>
     `;
   },
@@ -1405,7 +1404,7 @@ window.AEApp = {
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold text-[#111613]">Overview Survey Scope</span>
-                <span class="px-1.5 py-0.2 rounded text-[10px] font-medium bg-[#F4F6F4] text-[#525B56] border border-[#E4E7E4]">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#F4F6F4] text-[#525B56] border border-[#E4E7E4]">
                   ${this.overviewSurveyFilter === 'all' ? 'Multi-Survey Portfolio' : 'Single Instrument'}
                 </span>
               </div>
@@ -1639,7 +1638,7 @@ window.AEApp = {
                                 <div class="min-w-0">
                                   <div class="flex items-center gap-1.5">
                                     <span class="font-medium text-[#111613] truncate">${this.escapeHtml(r.gps?.label || r.id)}</span>
-                                    <span class="px-1.5 py-0.2 rounded text-[10px] font-medium bg-[#F4F6F4] text-[#247B50] border border-[#CFD5D0] shrink-0">
+                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#F4F6F4] text-[#247B50] border border-[#CFD5D0] shrink-0">
                                       ${this.escapeHtml(surveyBadge)}
                                     </span>
                                   </div>
@@ -2355,7 +2354,7 @@ window.AEApp = {
               }">
               <i class="fa-solid fa-table-list text-xs"></i>
               <span>Task &amp; Quota Allocation Matrix</span>
-              <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                 this.teamActiveSubTab === 'tasks' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#EFEFEF] text-[#525B56]'
               }">${taskAllocations.length}</span>
             </button>
@@ -2368,7 +2367,7 @@ window.AEApp = {
               }">
               <i class="fa-solid fa-users text-xs"></i>
               <span>Staff Directory &amp; Credentials</span>
-              <span class="px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                 this.teamActiveSubTab === 'roster' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#EFEFEF] text-[#525B56]'
               }">${activeStaff.length}</span>
             </button>
@@ -2935,8 +2934,8 @@ window.AEApp = {
                                 </div>
                                 ${
                                   isAssigned
-                                    ? `<span class="shrink-0 text-[9px] px-1.5 py-0.2 rounded font-semibold bg-[#DCFAE5] text-[#04250E]">Assigned</span>`
-                                    : `<span class="shrink-0 text-[9px] px-1.5 py-0.2 rounded font-medium bg-[#F4F6F4] text-[#88928B]">Unassigned</span>`
+                                    ? `<span class="shrink-0 text-[9px] px-1.5 py-0.5 rounded font-semibold bg-[#DCFAE5] text-[#04250E]">Assigned</span>`
+                                    : `<span class="shrink-0 text-[9px] px-1.5 py-0.5 rounded font-medium bg-[#F4F6F4] text-[#88928B]">Unassigned</span>`
                                 }
                               </label>
                             `;
@@ -3066,7 +3065,7 @@ window.AEApp = {
                               class="rounded border-[#CFD5D0] text-[#247B50] focus:ring-[#247B50]" />
                             <span class="text-xs text-[#111613] font-medium truncate">${this.escapeHtml(s.title)}</span>
                           </div>
-                          <span class="shrink-0 text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                          <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${
                             isArchived ? 'bg-[#F4F6F4] text-[#88928B]' : 'bg-[#DCFAE5] text-[#04250E]'
                           }">${this.escapeHtml(s.status)}</span>
                         </label>

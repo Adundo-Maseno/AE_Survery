@@ -1,7 +1,7 @@
 # Graph Report - AE_Survery  (2026-11-11)
 
 ## Corpus Check
-- 22 files · ~107,633 words
+- 22 files · ~107,714 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 2, .css 2, .gs 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7eed522b`
+- Built from commit: `9226589d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -259,17 +259,17 @@ Nodes (3): closePersonnelModals(), savePersonnel(), saveResetPin()
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Os` connect `Os` to `chart.umd.min.js`, `.initialize`, `_calculateBarValuePixels`, `.getDataset`, `updateElements`, `.parse`, `pa`, `.getParsed`?**
-  _High betweenness centrality (0.059) - this node is a cross-community bridge._
+- **Why does `i` connect `i` to `P`, `chart.umd.min.js`, `.buildOrUpdateControllers`, `Ji`, `.notifyPlugins`, `.constructor`, `A`, `.update`, `Ks`, `de`, `m`?**
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
 - **What connects `manifest.json (Admin PWA)`, `manifest-collector.json (Field PWA)`, `Code.gs (Google Apps Script Backend)` to the rest of the system?**
   _5 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `AESurveyStore` be split into smaller, more focused modules?**
   _Cohesion score 0.07991718426501035 - nodes in this community are weakly interconnected._
-- **Why does `zs` connect `zs` to `$n`, `chart.umd.min.js`, `en`?**
-  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+- **Why does `Os` connect `Os` to `chart.umd.min.js`, `.initialize`, `_calculateBarValuePixels`, `.getDataset`, `updateElements`, `.parse`, `pa`, `.getParsed`?**
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Should `zs` be split into smaller, more focused modules?**
   _Cohesion score 0.06101914962674456 - nodes in this community are weakly interconnected._
-- **Why does `i` connect `i` to `P`, `chart.umd.min.js`, `.buildOrUpdateControllers`, `Ji`, `.notifyPlugins`, `.constructor`, `A`, `.update`, `Ks`, `de`, `m`?**
+- **Why does `zs` connect `zs` to `$n`, `chart.umd.min.js`, `en`?**
   _High betweenness centrality (0.043) - this node is a cross-community bridge._
 - **Should `field-app.js` be split into smaller, more focused modules?**
   _Cohesion score 0.08117283950617284 - nodes in this community are weakly interconnected._
