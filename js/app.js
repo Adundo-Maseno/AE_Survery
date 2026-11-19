@@ -5049,6 +5049,72 @@ window.AEApp = {
     this.render();
   },
 
+  async resetSurveyTestData(surveyId) {
+    const currentUser = this.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      this.showToast('Access denied: Only HQ Administrators can reset survey test data.', 'error');
+      return;
+    }
+    const survey = window.aeStore.getSurveyById(surveyId);
+    if (!survey) return;
+    const responses = window.aeStore.getResponsesForSurvey(surveyId);
+    if (responses.length === 0) {
+      this.showToast('This survey already has 0 responses.', 'info');
+      return;
+    }
+
+    const confirmation = window.prompt(
+      `RESET TEST DATA FOR: "${survey.title}"\n\n` +
+      `This will permanently delete all ${responses.length} response(s) from this device AND Google Sheets (both Master Responses and the dedicated survey tab).\n\n` +
+      `Your survey questions, translations, collectors, and shared URL will remain 100% intact, and a JSON backup will download automatically first.\n\n` +
+      `Type RESET to confirm:`
+    );
+    if (!confirmation || confirmation.trim().toUpperCase() !== 'RESET') {
+      this.showToast('Reset cancelled. No data was deleted.', 'info');
+      return;
+    }
+
+    // 1. Automatic JSON backup download before wiping
+    try {
+      const backupPayload = {
+        exportedAt: new Date().toISOString(),
+        backupReason: 'Pre-Reset Test Data Backup',
+        surveyId: survey.id,
+        surveyTitle: survey.title,
+        responseCount: responses.length,
+        responses
+      };
+      const blob = new Blob([JSON.stringify(backupPayload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `AE_TestBackup_${survey.id}_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      console.warn('Backup download warning:', e);
+    }
+
+    // 2. Purge locally & remotely in Google Sheets
+    this.showToast(`Resetting ${responses.length} test response(s)…`, 'info');
+    const res = await window.aeStore.clearSurveyResponses(surveyId);
+
+    if (res && res.ok) {
+      this.showToast(
+        `Survey reset complete! Cleared ${res.localCleared} local and ${res.remoteCleared} Google Sheets row(s). Ready for real data collection.`,
+        'success'
+      );
+    } else if (res && res.remoteError) {
+      this.showToast(
+        `Cleared ${res.localCleared} local response(s), but Google Sheets reported: ${res.remoteError}`,
+        'warning'
+      );
+    }
+    this.render();
+  },
+
   exportSurveyResponsesCSV(surveyId) {
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()

@@ -1247,7 +1247,7 @@ window.AECollector = {
           </div>
 
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-5 flex flex-col items-center justify-center text-center">
-            <canvas id="ae_qr_canvas" width="180" height="180" class="bg-white p-2 rounded-[6px] border border-[#E4E7E4]" role="img" aria-label="QR Code for ${AEApp.escapeAttr(survey.title)}"></canvas>
+            <canvas id="ae_qr_canvas" width="220" height="220" class="bg-white p-2 rounded-[6px] border border-[#E4E7E4]" role="img" aria-label="QR Code for ${AEApp.escapeAttr(survey.title)}"></canvas>
             <div class="text-xs font-semibold text-[#111613] mt-3 ae-break-words">${AEApp.escapeHtml(survey.title)}</div>
             <div class="text-xs text-[#646E68] mt-0.5">Scan QR to open ${allowsSelfAdmin ? 'Self-Administered Survey' : 'Field Enumerator App'} · ID: <code>${survey.id}</code></div>
           </div>
@@ -1296,10 +1296,10 @@ window.AECollector = {
     if (window.AEQRCode && typeof window.AEQRCode.drawToCanvas === 'function') {
       try {
         window.AEQRCode.drawToCanvas(canvas, text, {
-          margin: 2,
-          foreground: '#141A17',
+          margin: 4,
+          foreground: '#000000',
           background: '#FFFFFF',
-          level: String(text || '').length > 160 ? 'L' : 'M'
+          level: String(text || '').length > 150 ? 'L' : 'M'
         });
         return;
       } catch (e) {

@@ -117,7 +117,15 @@
       [2, 86, 68, 2, 87, 69], [4, 69, 43, 1, 70, 44], [6, 43, 19, 2, 44, 20], [6, 43, 15, 2, 44, 16]
     ],
     getRSBlocks: function(typeNumber, errorCorrectLevel) {
-      var rsBlock = QRRSBlock.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + errorCorrectLevel];
+      var offset;
+      switch (errorCorrectLevel) {
+        case 1: offset = 0; break; // L (7%)
+        case 0: offset = 1; break; // M (15%)
+        case 3: offset = 2; break; // Q (25%)
+        case 2: offset = 3; break; // H (30%)
+        default: throw new Error('Unsupported QR EC level: ' + errorCorrectLevel);
+      }
+      var rsBlock = QRRSBlock.RS_BLOCK_TABLE[(typeNumber - 1) * 4 + offset];
       if (!rsBlock) throw new Error('Unsupported QR type/level: ' + typeNumber + '/' + errorCorrectLevel);
       var length = rsBlock.length / 3;
       var list = [];
@@ -161,6 +169,7 @@
       [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50], [6, 30, 54]
     ],
     G15: (1 << 10) | (1 << 8) | (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1) | (1 << 0),
+    G18: (1 << 12) | (1 << 11) | (1 << 10) | (1 << 9) | (1 << 8) | (1 << 5) | (1 << 2) | (1 << 0),
     G15_MASK: (1 << 14) | (1 << 12) | (1 << 10) | (1 << 4) | (1 << 1),
     getBCHTypeInfo: function(data) {
       var d = data << 10;
@@ -168,6 +177,13 @@
         d ^= (QRUtil.G15 << (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G15)));
       }
       return ((data << 10) | d) ^ QRUtil.G15_MASK;
+    },
+    getBCHTypeNumber: function(data) {
+      var d = data << 12;
+      while (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G18) >= 0) {
+        d ^= (QRUtil.G18 << (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G18)));
+      }
+      return (data << 12) | d;
     },
     getBCHDigit: function(data) {
       var digit = 0;
@@ -267,6 +283,9 @@
       this.setupPositionAdjustPattern();
       this.setupTimingPattern();
       this.setupTypeInfo(test, maskPattern);
+      if (this.typeNumber >= 7) {
+        this.setupTypeNumber(test);
+      }
       if (this.dataCache == null) {
         this.dataCache = QRCode.createData(this.typeNumber, this.errorCorrectLevel, this.dataList);
       }
@@ -340,6 +359,17 @@
         }
       }
       this.modules[this.moduleCount - 8][8] = !test;
+    },
+    setupTypeNumber: function(test) {
+      var bits = QRUtil.getBCHTypeNumber(this.typeNumber);
+      for (var i = 0; i < 18; i++) {
+        var mod = (!test && ((bits >> i) & 1) === 1);
+        this.modules[Math.floor(i / 3)][i % 3 + this.moduleCount - 8 - 3] = mod;
+      }
+      for (var i = 0; i < 18; i++) {
+        var mod = (!test && ((bits >> i) & 1) === 1);
+        this.modules[i % 3 + this.moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+      }
     },
     mapData: function(data, maskPattern) {
       var inc = -1;
@@ -457,9 +487,9 @@
       var qr = this.generate(text, options);
       var count = qr.getModuleCount();
       var ctx = canvas.getContext('2d');
-      var margin = options.margin !== undefined ? options.margin : 2;
+      var margin = options.margin !== undefined ? options.margin : 4;
       var totalModules = count + margin * 2;
-      var cellSize = Math.floor(canvas.width / totalModules);
+      var cellSize = Math.max(1, Math.floor(canvas.width / totalModules));
       var offset = Math.floor((canvas.width - count * cellSize) / 2);
 
       ctx.fillStyle = options.background || '#FFFFFF';

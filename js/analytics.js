@@ -1675,6 +1675,15 @@ window.AEAnalytics = {
               class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#525B56] hover:text-[#111613] inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-print"></i>
             </button>
+            ${
+              (window.AESession && window.AESession.getCurrentUser && window.AESession.getCurrentUser()?.role === 'admin' && allResponses.length > 0)
+                ? `<button onclick="AEApp.resetSurveyTestData('${survey.id}')"
+                    title="Clear all test responses locally and in Google Sheets (keeps survey questions & link intact)"
+                    class="h-8 px-3 rounded-[6px] border border-[#F5C2C0] bg-[#FFEDEA] hover:bg-[#C4242A] text-[#831C1E] hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
+                    <i class="fa-solid fa-rotate-left text-xs"></i> Reset Test Data (${allResponses.length})
+                  </button>`
+                : ''
+            }
           </div>
         </div>
 

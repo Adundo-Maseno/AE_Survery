@@ -560,6 +560,24 @@ function doPost(e) {
         });
       }
 
+      if (action === 'CLEAR_SURVEY_RESPONSES' && payload.surveyId) {
+        if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Clearing survey responses requires Admin role.' }, 403);
+        }
+        var clearStats = clearSurveyResponses_(String(payload.surveyId));
+        var clearVersion = bumpDbVersion_();
+        logSyncEvent_('CLEAR_SURVEY_RESPONSES', deviceId, 0, -clearStats.deletedMasterRows, 0, 'OK (' + String(payload.surveyId) + ')');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          surveyId: String(payload.surveyId),
+          deletedMasterRows: clearStats.deletedMasterRows,
+          deletedDedicatedRows: clearStats.deletedDedicatedRows,
+          version: clearVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+
       // Default: BATCH_SYNC (handles offline queue flush + full sync)
       var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
       var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
@@ -1820,6 +1838,62 @@ function deleteRowById_(sheetName, colIndex, idValue) {
   if (sheetName === DB_CONFIG.SHEETS.SURVEYS) {
     invalidateSurveyCache_(idValue);
   }
+}
+
+/**
+ * Purges all response rows for a single surveyId from both the master Responses sheet
+ * and the survey's dedicated sheet tab while preserving Row 1 headers, questions,
+ * collectors, and the shared survey URL.
+ */
+function clearSurveyResponses_(surveyId) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var targetId = String(surveyId || '').trim();
+  var deletedMasterRows = 0;
+  var deletedDedicatedRows = 0;
+  if (!targetId) return { deletedMasterRows: 0, deletedDedicatedRows: 0 };
+
+  // 1. Purge matching rows from master Responses sheet in one batched rewrite
+  var respSheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
+  if (respSheet && respSheet.getLastRow() > 1) {
+    var lastRow = respSheet.getLastRow();
+    var lastCol = respSheet.getLastColumn();
+    var allValues = respSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var keepRows = [];
+    for (var i = 0; i < allValues.length; i++) {
+      if (String(allValues[i][1] || '').trim() === targetId) {
+        deletedMasterRows++;
+      } else {
+        keepRows.push(allValues[i]);
+      }
+    }
+    if (deletedMasterRows > 0) {
+      respSheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+      if (keepRows.length > 0) {
+        respSheet.getRange(2, 1, keepRows.length, lastCol).setValues(keepRows);
+      }
+      var trailingRows = (lastRow - 1) - keepRows.length;
+      if (trailingRows > 0) {
+        respSheet.deleteRows(2 + keepRows.length, trailingRows);
+      }
+    }
+  }
+
+  // 2. Purge data rows from the survey's dedicated sheet tab (keeping Row 1 headers)
+  var surveyMap = getSurveyMap_();
+  var survey = surveyMap[targetId];
+  if (survey) {
+    var dedName = getSurveyDedicatedSheetName_(survey);
+    var dedSheet = ss.getSheetByName(dedName);
+    if (dedSheet && dedSheet.getLastRow() > 1) {
+      deletedDedicatedRows = dedSheet.getLastRow() - 1;
+      dedSheet.deleteRows(2, deletedDedicatedRows);
+    }
+  }
+
+  return {
+    deletedMasterRows: deletedMasterRows,
+    deletedDedicatedRows: deletedDedicatedRows
+  };
 }
 
 function logSyncEvent_(action, deviceId, surveysCount, responsesInserted, duplicatesSkipped, status) {

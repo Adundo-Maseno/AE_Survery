@@ -4716,6 +4716,92 @@ class AESurveyStore {
     this.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
   }
 
+  /**
+   * Purges all responses (test data) for a single survey locally and in Google Sheets
+   * while preserving the survey schema, translations, collectors, and shared URL.
+   * Requires Admin session for remote Google Sheets purge.
+   */
+  async clearSurveyResponses(surveyId) {
+    const targetId = String(surveyId || '').trim();
+    if (!targetId) return { ok: false, error: 'Missing surveyId' };
+
+    const matchingIds = new Set(
+      (this.responses || []).filter((r) => r && r.surveyId === targetId).map((r) => r.id)
+    );
+    const localCleared = matchingIds.size;
+
+    // 1. Purge local responses, queued response pushes, and saved runner draft for this survey
+    this.responses = (this.responses || []).filter((r) => !r || r.surveyId !== targetId);
+    this.syncQueue = (this.syncQueue || []).filter(
+      (q) => !q || (!matchingIds.has(q.recordId) && !(q.action === 'SUBMIT_RESPONSE' && q.surveyId === targetId))
+    );
+    if (this.runnerDrafts && this.runnerDrafts[targetId]) {
+      delete this.runnerDrafts[targetId];
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
+    }
+    this.settings.lastDeltaSyncAt = null;
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue', 'settings'], meta: { reason: 'responses_cleared', surveyId: targetId, localCleared } });
+
+    // 2. Purge remote rows from Google Sheets (master + dedicated tab) if online & configured
+    let remoteCleared = 0;
+    let remoteDedicatedCleared = 0;
+    let remoteError = null;
+    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+
+    if (gasUrl && this.isValidGasUrl(gasUrl) && this.isEffectivelyOnline()) {
+      try {
+        const currentUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
+          ? window.AESession.getCurrentUser()
+          : null;
+        const callerId = currentUser ? currentUser.id : 'ADM-01';
+        const resp = await this._fetchWithRetry(
+          gasUrl,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'CLEAR_SURVEY_RESPONSES',
+              syncToken: this.settings.syncToken || '',
+              deviceId: this.settings.deviceId,
+              callerId,
+              surveyId: targetId
+            })
+          },
+          { maxAttempts: 2, timeoutMs: 20000 }
+        );
+        const data = await resp.json();
+        if (data && data.ok) {
+          remoteCleared = Number(data.deletedMasterRows || 0);
+          remoteDedicatedCleared = Number(data.deletedDedicatedRows || 0);
+          if (data.version !== undefined && data.version !== null) {
+            this.settings.cloudDbVersion = String(data.version);
+          }
+          this.settings.lastSyncedAt = new Date().toISOString();
+          this.saveToLocalStorage({ stores: ['settings'] });
+        } else {
+          remoteError = (data && data.error) || 'Google Sheets did not confirm CLEAR_SURVEY_RESPONSES (deploy updated Code.gs).';
+        }
+      } catch (err) {
+        remoteError = err && err.message ? err.message : String(err);
+      }
+    }
+
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('ae-cloud-data-updated', {
+        detail: { changed: true, newResponsesCount: 0, surveysUpdated: false, reason: 'clear_survey_responses', surveyId: targetId }
+      }));
+    }
+
+    return {
+      ok: !remoteError,
+      surveyId: targetId,
+      localCleared,
+      remoteCleared,
+      remoteDedicatedCleared,
+      remoteError
+    };
+  }
+
   enqueueSyncItem(action, recordId, title) {
     const existing = this.syncQueue.find((item) => item.action === action && item.recordId === recordId);
     if (existing) {
