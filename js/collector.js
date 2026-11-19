@@ -539,9 +539,14 @@ window.AECollector = {
 
           <!-- Questions Form Body -->
           <div class="p-6 sm:p-7 space-y-6">
-            ${(page.questions || [])
-              .map((q, idx) => this.renderRespondentQuestion(survey, q, idx))
-              .join('')}
+            ${(() => {
+              const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
+                ? window.AEPiping.computeQuestionDisplayNumbers(page.questions || [])
+                : {};
+              return (page.questions || [])
+                .map((q, idx) => this.renderRespondentQuestion(survey, q, idx, qNumMap))
+                .join('');
+            })()}
           </div>
 
           <!-- Navigation Footer -->
@@ -582,7 +587,7 @@ window.AECollector = {
     `;
   },
 
-  renderRespondentQuestion(survey, q, idx) {
+  renderRespondentQuestion(survey, q, idx, qNumMap = {}) {
     const val = this.draftAnswers[q.id];
     const hasErr = this.validationErrors[q.id];
     const showNum = survey.theme?.showQuestionNumbers !== false;
@@ -592,13 +597,17 @@ window.AECollector = {
     const pipedHelp = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
       ? window.AEPiping.interpolate(q.helpText || '', this.draftAnswers, survey)
       : q.helpText;
+    const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(idx + 1), isSub: false };
 
     return `
-      <div id="runner_q_${q.id}" class="space-y-2 pb-6 border-b border-[#EFEFEF] last:border-b-0 last:pb-0">
+      <div id="runner_q_${q.id}" class="space-y-2 pb-6 border-b border-[#EFEFEF] last:border-b-0 last:pb-0 ${
+        q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-4 border-l-[#247B50] pl-4 bg-[#FAFBF9] rounded-[6px] p-4' : ''
+      }">
         <div class="flex items-start justify-between gap-2 min-w-0">
           <label for="runner_input_${q.id}" class="block text-sm sm:text-base font-semibold text-[#111613] leading-snug ae-break-words min-w-0 flex-1">
-            ${showNum ? `<span class="tabular-nums text-xs font-semibold text-[#247B50] mr-1.5">Q${idx + 1}.</span>` : ''}
+            ${showNum ? `<span class="tabular-nums text-xs font-semibold ${q.parentQuestionId ? 'text-[#247B50]' : 'text-[#247B50]'} mr-1.5">Q${numInfo.label}.</span>` : ''}
             ${AEApp.escapeHtml(pipedTitle)}
+            ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
           <div class="flex items-center gap-1.5 shrink-0">

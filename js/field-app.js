@@ -900,7 +900,12 @@ window.AEFieldApp = {
 
         <!-- Section Questions List -->
         <div class="space-y-4 pb-4">
-          ${(page.questions || []).map((q, idx) => this.renderQuestionCard(q, idx, survey)).join('')}
+          ${(() => {
+            const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
+              ? window.AEPiping.computeQuestionDisplayNumbers(page.questions || [])
+              : {};
+            return (page.questions || []).map((q, idx) => this.renderQuestionCard(q, idx, survey, qNumMap)).join('');
+          })()}
         </div>
 
         <!-- Section Bottom Navigation & Submission Bar (Floating Card Dock) -->
@@ -941,7 +946,7 @@ window.AEFieldApp = {
     `;
   },
 
-  renderQuestionCard(q, idx, survey) {
+  renderQuestionCard(q, idx, survey, qNumMap = {}) {
     const errorMsg = this.validationErrors[q.id];
     const pipedTitle = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
       ? window.AEPiping.interpolate(q.title, this.draftAnswers, survey)
@@ -949,15 +954,17 @@ window.AEFieldApp = {
     const pipedHelp = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
       ? window.AEPiping.interpolate(q.helpText || '', this.draftAnswers, survey)
       : q.helpText;
+    const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(idx + 1), isSub: false };
 
     return `
       <div id="field_q_${q.id}" class="bg-white border ${
-        errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : 'border-[#E4E7E4]'
-      } rounded-[8px] p-5 space-y-3 transition-colors">
+        errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : (q.parentQuestionId ? 'border-[#247B50]/30' : 'border-[#E4E7E4]')
+      } ${q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-4 border-l-[#247B50] bg-[#FAFBF9]' : ''} rounded-[8px] p-5 space-y-3 transition-colors">
         <div class="flex items-start justify-between gap-3">
           <label class="block text-sm font-semibold text-[#111613] leading-snug ae-break-words flex-1 min-w-0">
-            ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums text-[#525B56] mr-1.5">${idx + 1}.</span>` : ''}
+            ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums ${q.parentQuestionId ? 'text-[#247B50] font-bold' : 'text-[#525B56]'} mr-1.5">${numInfo.label}.</span>` : ''}
             <span>${this.escapeHtml(pipedTitle)}</span>
+            ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
           <button type="button" onclick="AEFieldApp.speakQuestion('${q.id}')"

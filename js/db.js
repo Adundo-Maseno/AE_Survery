@@ -2072,6 +2072,31 @@ window.AEPiping = {
     });
     // Remove awkward trailing whitespace or space before punctuation caused by empty token replacement
     return res.replace(/\s+([\?\.\!,:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+  },
+
+  computeQuestionDisplayNumbers(questions = []) {
+    const numMap = {};
+    let mainCount = 1;
+    const parentSubCounts = {};
+
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (q.parentQuestionId && numMap[q.parentQuestionId]) {
+        const parentNum = numMap[q.parentQuestionId].mainNum;
+        parentSubCounts[q.parentQuestionId] = (parentSubCounts[q.parentQuestionId] || 1) + 1;
+        const letter = String.fromCharCode(96 + parentSubCounts[q.parentQuestionId]); // 97='a', 98='b', etc.
+        if (!numMap[q.parentQuestionId].hasLetter) {
+          numMap[q.parentQuestionId].label = `${parentNum}a`;
+          numMap[q.parentQuestionId].letter = 'a';
+          numMap[q.parentQuestionId].hasLetter = true;
+        }
+        numMap[q.id] = { label: `${parentNum}${letter}`, mainNum: parentNum, letter, isSub: true, parentId: q.parentQuestionId };
+      } else {
+        numMap[q.id] = { label: `${mainCount}`, mainNum: mainCount, hasLetter: false, isSub: false };
+        mainCount++;
+      }
+    }
+    return numMap;
   }
 };
 

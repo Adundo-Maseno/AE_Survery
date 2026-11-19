@@ -4195,7 +4195,81 @@ window.AEApp = {
     if (!window.confirm(`Delete question "${ctx.question.title}"?`)) {
       return;
     }
+    // If deleted question had sub-questions, detach them so they are not orphaned
+    (ctx.page.questions || []).forEach((q) => {
+      if (q.parentQuestionId === questionId) {
+        delete q.parentQuestionId;
+        delete q.subQuestionPart;
+      }
+    });
     ctx.page.questions.splice(ctx.questionIndex, 1);
+    window.aeStore.upsertSurvey(ctx.survey);
+    this.render();
+  },
+
+  appendSubQuestion(parentQuestionId, type = 'short_text') {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    const ctx = this.findQuestionContext(parentQuestionId);
+    if (!ctx) return;
+
+    const newQ = window.AEBuilder.createDefaultQuestion(type);
+    newQ.parentQuestionId = parentQuestionId;
+    newQ.subQuestionPart = 'b';
+    const parentPrompt = ctx.question.title ? `"${ctx.question.title.substring(0, 36).trim()}…"` : 'the previous question';
+    newQ.title = `Please explain or elaborate on your answer for ${parentPrompt}:`;
+    newQ.helpText = 'Enter additional comments or details.';
+    newQ.required = false;
+
+    // Insert right after parent (or after its last existing sub-question)
+    let insertIdx = ctx.questionIndex + 1;
+    while (insertIdx < ctx.page.questions.length && ctx.page.questions[insertIdx].parentQuestionId === parentQuestionId) {
+      insertIdx++;
+    }
+    ctx.page.questions.splice(insertIdx, 0, newQ);
+    s.version = (s.version || 1) + 1;
+    window.aeStore.upsertSurvey(s);
+    this.showToast(`Appended sub-question (Part b) under Q${ctx.questionIndex + 1}.`, 'success');
+    this.render();
+  },
+
+  appendQuestionAfter(parentQuestionId, type = 'short_text') {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    const ctx = this.findQuestionContext(parentQuestionId);
+    if (!ctx) return;
+
+    const newQ = window.AEBuilder.createDefaultQuestion(type);
+    ctx.page.questions.splice(ctx.questionIndex + 1, 0, newQ);
+    s.version = (s.version || 1) + 1;
+    window.aeStore.upsertSurvey(s);
+    this.showToast(`Appended ${type.replace('_', ' ')} question below Q${ctx.questionIndex + 1}.`, 'success');
+    this.render();
+  },
+
+  detachSubQuestion(questionId) {
+    const ctx = this.findQuestionContext(questionId);
+    if (!ctx) return;
+    delete ctx.question.parentQuestionId;
+    delete ctx.question.subQuestionPart;
+    window.aeStore.upsertSurvey(ctx.survey);
+    this.showToast('Question detached to independent question.', 'info');
+    this.render();
+  },
+
+  setQuestionParent(questionId, parentQuestionId) {
+    const ctx = this.findQuestionContext(questionId);
+    if (!ctx) return;
+    if (!parentQuestionId) {
+      delete ctx.question.parentQuestionId;
+      delete ctx.question.subQuestionPart;
+      this.showToast('Question detached to independent question.', 'info');
+    } else {
+      if (parentQuestionId === questionId) return;
+      ctx.question.parentQuestionId = parentQuestionId;
+      ctx.question.subQuestionPart = 'b';
+      this.showToast('Question linked under parent question.', 'success');
+    }
     window.aeStore.upsertSurvey(ctx.survey);
     this.render();
   },

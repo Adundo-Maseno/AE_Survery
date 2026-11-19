@@ -489,9 +489,14 @@ window.AEBuilder = {
                     <h3 class="text-sm font-semibold text-[#111613]">No questions on Page ${this.activePageIndex + 1} yet</h3>
                     <p class="text-xs text-[#525B56] mt-1 max-w-md mx-auto">Select any question type from the left Question Bank (Multiple Choice, Net Promoter Score, Likert Matrix, Yield Metric, or GPS Coordinates) to append it to this page.</p>
                   </div>`
-                : (currentPage.questions || [])
-                    .map((q, qIdx) => this.renderQuestionEditorCard(survey, currentPage, q, qIdx))
-                    .join('')
+                : (() => {
+                    const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
+                      ? window.AEPiping.computeQuestionDisplayNumbers(currentPage.questions || [])
+                      : {};
+                    return (currentPage.questions || [])
+                      .map((q, qIdx) => this.renderQuestionEditorCard(survey, currentPage, q, qIdx, qNumMap))
+                      .join('');
+                  })()
             }
           </div>
         </section>
@@ -1056,21 +1061,33 @@ window.AEBuilder = {
     `;
   },
 
-  renderQuestionEditorCard(survey, page, q, qIdx) {
+  renderQuestionEditorCard(survey, page, q, qIdx, qNumMap = {}) {
     const typeMeta = QUESTION_TYPES_CATALOG.find((t) => t.type === q.type) || {
       label: q.type,
       icon: 'fa-circle-question'
     };
     const logic = q.logic || { enabled: false, condition: 'equals', value: '', target: '' };
+    const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(qIdx + 1), isSub: false };
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 ae-card-hover">
+      <div id="builder_q_${q.id}" class="bg-white border ${
+        q.parentQuestionId ? 'border-l-4 border-l-[#247B50] ml-3 sm:ml-6 bg-[#FAFBF9]' : 'border-[#E4E7E4]'
+      } rounded-[8px] p-5 ae-card-hover transition-all">
         <!-- Top Row: Question Number, Type Badge, Required Toggle & Reorder/Delete Actions -->
         <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#EFEFEF]">
-          <div class="flex items-center gap-2">
-            <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] bg-[#141A17] text-white text-xs font-semibold tabular-nums">
-              Q${qIdx + 1}
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] ${
+              q.parentQuestionId ? 'bg-[#247B50]' : 'bg-[#141A17]'
+            } text-white text-xs font-semibold tabular-nums">
+              Q${numInfo.label}
             </span>
+            ${
+              q.parentQuestionId
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-xs font-semibold">
+                    <i class="fa-solid fa-turn-down text-[10px]"></i> Part (${numInfo.letter || 'b'}) of Q${numInfo.mainNum}
+                  </span>`
+                : ''
+            }
             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[4px] bg-[#F8F9F8] border border-[#E4E7E4] text-[#111613] text-xs font-medium">
               <i class="fa-solid ${typeMeta.icon} text-[#247B50]"></i> ${typeMeta.label}
             </span>
@@ -1209,6 +1226,54 @@ window.AEBuilder = {
                 </div>`
               : ''
           }
+        </div>
+
+        <!-- Append Question / Follow-up Sub-Question Action Dock -->
+        <div class="mt-4 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="AEApp.appendSubQuestion('${q.id}', 'short_text')"
+              title="Append a connected follow-up sub-question (Part b) directly under Q${numInfo.label}"
+              class="h-8 px-3 rounded-[6px] bg-[#DCFAE5] hover:bg-[#247B50] text-[#04250E] hover:text-white border border-[#247B50]/30 text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors shadow-xs">
+              <i class="fa-solid fa-turn-down text-[11px]"></i>
+              <span>+ Append Sub-Question (Part b)</span>
+            </button>
+
+            <div class="inline-flex items-center rounded-[6px] border border-[#CFD5D0] bg-white overflow-hidden shadow-xs">
+              <button type="button" onclick="AEApp.appendQuestionAfter('${q.id}', 'short_text')"
+                title="Insert a new question immediately below Q${numInfo.label}"
+                class="h-8 px-2.5 hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+                <i class="fa-solid fa-plus text-[10px] text-[#247B50]"></i>
+                <span>Append Question Below</span>
+              </button>
+              <select aria-label="Select type for appended question"
+                onchange="if(this.value){ AEApp.appendQuestionAfter('${q.id}', this.value); this.value=''; }"
+                class="h-8 px-2 text-xs text-[#525B56] bg-[#F8F9F8] border-l border-[#CFD5D0] hover:bg-white focus:outline-none cursor-pointer">
+                <option value="">Type…</option>
+                ${QUESTION_TYPES_CATALOG.map((t) => `<option value="${t.type}">${t.label}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <!-- Parent Question Attachment Linker -->
+          <div class="flex items-center gap-1.5 text-xs">
+            <span class="text-[#646E68] text-[11px]">Attached under:</span>
+            <select aria-label="Attach under parent question"
+              onchange="AEApp.setQuestionParent('${q.id}', this.value)"
+              class="h-7 px-2 text-xs font-medium ${
+                q.parentQuestionId ? 'text-[#04250E] bg-[#DCFAE5]/50 border-[#247B50]' : 'text-[#525B56] bg-white border-[#CFD5D0]'
+              } rounded-[5px] border focus:outline-none max-w-[210px] truncate">
+              <option value="">None (Independent Question)</option>
+              ${(page.questions || [])
+                .filter((other) => other.id !== q.id && !other.parentQuestionId)
+                .map(
+                  (parent) =>
+                    `<option value="${parent.id}" ${q.parentQuestionId === parent.id ? 'selected' : ''}>Under: ${AEApp.escapeHtml(
+                      (parent.title || 'Question').substring(0, 24)
+                    )}…</option>`
+                )
+                .join('')}
+            </select>
+          </div>
         </div>
       </div>
     `;
