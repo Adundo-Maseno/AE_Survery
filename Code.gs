@@ -1002,9 +1002,12 @@ function syncSurveyDedicatedSheetHeader_(survey) {
     'Administered Language'
   ];
 
+  var displayNums = computeQuestionDisplayNumbers_(questions);
   for (var i = 0; i < questions.length; i++) {
     var q = questions[i];
-    headers.push(sanitizeSheetCell_('Q' + (i + 1) + ': ' + (q.title || q.id)));
+    var qLabel = (displayNums[q.id] && displayNums[q.id].label) ? displayNums[q.id].label : String(i + 1);
+    var cleanTitle = cleanPipedTextForHeader_(q.title || '') || String(q.id || '');
+    headers.push(sanitizeSheetCell_('Q' + qLabel + ': ' + cleanTitle));
   }
 
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -1055,9 +1058,101 @@ function appendToSurveyDedicatedSheet_(survey, response, clientRespId, nowIso) {
   sheet.appendRow(row);
 }
 
+function cleanPipedTextForHeader_(text) {
+  if (!text || typeof text !== 'string') return '';
+  var res = text.replace(/\{\{\s*[a-zA-Z0-9_-]+(?:\s*\|\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g, function (match, sqFallback, dqFallback) {
+    if (sqFallback !== undefined) return sqFallback;
+    if (dqFallback !== undefined) return dqFallback;
+    return '';
+  });
+  return res.replace(/\s+([\?\.\!,:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
+
+function computeQuestionDisplayNumbers_(questions) {
+  var numMap = {};
+  var byId = {};
+  var i, q;
+  for (i = 0; i < questions.length; i++) {
+    q = questions[i];
+    if (q && q.id) byId[q.id] = q;
+  }
+
+  function resolveRootParent_(item) {
+    if (!item || !item.parentQuestionId || !byId[item.parentQuestionId] || item.parentQuestionId === item.id) {
+      return null;
+    }
+    var visited = {};
+    visited[item.id] = true;
+    var curr = byId[item.parentQuestionId];
+    while (curr && curr.parentQuestionId && byId[curr.parentQuestionId]) {
+      if (visited[curr.id]) return null;
+      visited[curr.id] = true;
+      curr = byId[curr.parentQuestionId];
+    }
+    if (!curr || visited[curr.id]) return null;
+    return curr.id;
+  }
+
+  var mainCount = 1;
+  for (i = 0; i < questions.length; i++) {
+    q = questions[i];
+    if (!q || !q.id) continue;
+    if (!resolveRootParent_(q)) {
+      numMap[q.id] = { label: String(mainCount), mainNum: mainCount, hasLetter: false, isSub: false };
+      mainCount++;
+    }
+  }
+
+  var parentSubCounts = {};
+  for (i = 0; i < questions.length; i++) {
+    q = questions[i];
+    if (!q || !q.id) continue;
+    var rootId = resolveRootParent_(q);
+    if (rootId && numMap[rootId]) {
+      var parentEntry = numMap[rootId];
+      var parentNum = parentEntry.mainNum;
+      parentSubCounts[rootId] = (parentSubCounts[rootId] || 1) + 1;
+      var letter = String.fromCharCode(96 + parentSubCounts[rootId]);
+      if (!parentEntry.hasLetter) {
+        parentEntry.label = parentNum + 'a';
+        parentEntry.letter = 'a';
+        parentEntry.hasLetter = true;
+      }
+      numMap[q.id] = {
+        label: parentNum + letter,
+        mainNum: parentNum,
+        letter: letter,
+        isSub: true,
+        parentId: rootId
+      };
+    }
+  }
+  return numMap;
+}
+
 function formatAnswerForCell_(val) {
   if (val === null || val === undefined) return '';
-  if (Array.isArray(val)) return val.join(', ');
+  if (Array.isArray(val)) {
+    var hasObjects = false;
+    for (var idx = 0; idx < val.length; idx++) {
+      if (val[idx] !== null && typeof val[idx] === 'object') {
+        hasObjects = true;
+        break;
+      }
+    }
+    if (!hasObjects) return val.join(', ');
+    var formattedItems = [];
+    for (var j = 0; j < val.length; j++) {
+      var item = val[j];
+      if (item === null || item === undefined) continue;
+      if (typeof item === 'object') {
+        formattedItems.push('[' + (j + 1) + '] ' + formatAnswerForCell_(item));
+      } else {
+        formattedItems.push(String(item));
+      }
+    }
+    return formattedItems.join(' ; ');
+  }
   if (typeof val === 'object') {
     if (val.lat !== undefined && val.lng !== undefined) {
       return val.lat + ', ' + val.lng + (val.label ? ' (' + val.label + ')' : '');
@@ -1065,7 +1160,7 @@ function formatAnswerForCell_(val) {
     var parts = [];
     for (var k in val) {
       if (Object.prototype.hasOwnProperty.call(val, k)) {
-        parts.push(k + ': ' + val[k]);
+        parts.push(k + ': ' + formatAnswerForCell_(val[k]));
       }
     }
     return parts.join(' | ');

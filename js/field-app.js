@@ -963,7 +963,7 @@ window.AEFieldApp = {
         <div class="flex items-start justify-between gap-3">
           <label class="block text-sm font-semibold text-[#111613] leading-snug ae-break-words flex-1 min-w-0">
             ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums ${q.parentQuestionId ? 'text-[#247B50] font-bold' : 'text-[#525B56]'} mr-1.5">${numInfo.label}.</span>` : ''}
-            <span>${this.escapeHtml(pipedTitle)}</span>
+            <span data-piped-title-for="${q.id}">${this.escapeHtml(pipedTitle)}</span>
             ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
@@ -975,8 +975,8 @@ window.AEFieldApp = {
           </button>
         </div>
         ${
-          pipedHelp
-            ? `<p class="text-xs text-[#525B56] leading-relaxed ae-break-words">${this.escapeHtml(pipedHelp)}</p>`
+          q.helpText
+            ? `<p data-piped-help-for="${q.id}" class="text-xs text-[#525B56] leading-relaxed ae-break-words ${pipedHelp ? '' : 'hidden'}">${this.escapeHtml(pipedHelp)}</p>`
             : ''
         }
 
@@ -1467,7 +1467,37 @@ window.AEFieldApp = {
     if (this.validationErrors[questionId]) {
       delete this.validationErrors[questionId];
       this.render();
+      return;
     }
+    this.refreshPipedDom();
+  },
+
+  refreshPipedDom() {
+    if (typeof document === 'undefined' || !window.AEPiping || typeof window.AEPiping.interpolate !== 'function') return;
+    const rawSurvey = this.activeSurvey || (window.aeStore && window.aeStore.getSurveyById(this.activeSurveyId));
+    if (!rawSurvey) return;
+    const survey = (window.AEI18n && typeof window.AEI18n.localizeSurvey === 'function')
+      ? window.AEI18n.localizeSurvey(rawSurvey, this.currentLang)
+      : rawSurvey;
+    const allQs = window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const qMap = {};
+    allQs.forEach((q) => { qMap[q.id] = q; });
+
+    document.querySelectorAll('[data-piped-title-for]').forEach((el) => {
+      const qId = el.getAttribute('data-piped-title-for');
+      const q = qMap[qId];
+      if (!q || !q.title || q.title.indexOf('{{') === -1) return;
+      el.textContent = window.AEPiping.interpolate(q.title, this.draftAnswers, survey);
+    });
+
+    document.querySelectorAll('[data-piped-help-for]').forEach((el) => {
+      const qId = el.getAttribute('data-piped-help-for');
+      const q = qMap[qId];
+      if (!q || !q.helpText || q.helpText.indexOf('{{') === -1) return;
+      const interpolated = window.AEPiping.interpolate(q.helpText, this.draftAnswers, survey);
+      el.textContent = interpolated;
+      if (el.classList) el.classList.toggle('hidden', !interpolated);
+    });
   },
 
   toggleCheckbox(questionId, optionValue) {
@@ -1563,6 +1593,16 @@ window.AEFieldApp = {
 
   validatePage(page) {
     const errors = {};
+    const lang = this.currentLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+    const rawSurvey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+    const localizedSurvey = (rawSurvey && lang !== 'en' && window.AEI18n && typeof window.AEI18n.localizeSurvey === 'function')
+      ? window.AEI18n.localizeSurvey(rawSurvey, lang)
+      : null;
+    const localizedQMap = {};
+    if (localizedSurvey && window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function') {
+      window.aeStore.getQuestionsForSurvey(localizedSurvey).forEach((lq) => { localizedQMap[lq.id] = lq; });
+    }
+
     (page.questions || []).forEach((q) => {
       const val = this.draftAnswers[q.id];
 
@@ -1575,7 +1615,19 @@ window.AEFieldApp = {
           return;
         } else if (q.type === 'matrix') {
           const rows = q.rows || [];
-          const answeredRows = rows.filter((rName) => val && typeof val === 'object' && val[rName] !== undefined && val[rName] !== '').length;
+          const locQ = localizedQMap[q.id];
+          const locRows = (locQ && Array.isArray(locQ.rows)) ? locQ.rows : [];
+          const answeredRows = rows.filter((rName, rIdx) => {
+            if (!val || typeof val !== 'object') return false;
+            if (val[rName] !== undefined && val[rName] !== '') return true;
+            const locName = locRows[rIdx];
+            if (locName && val[locName] !== undefined && val[locName] !== '') return true;
+            if (lang !== 'en' && window.AEI18n && typeof window.AEI18n.translatePhrase === 'function') {
+              const trName = window.AEI18n.translatePhrase(rName, lang);
+              if (trName && val[trName] !== undefined && val[trName] !== '') return true;
+            }
+            return false;
+          }).length;
           if (answeredRows < rows.length) {
             errors[q.id] = `Please rate all ${rows.length} dimensions.`;
             return;
@@ -1723,12 +1775,29 @@ window.AEFieldApp = {
     if (this.isSubmitting) return;
     const survey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!survey) return;
-    const page = survey.pages[this.currentPageIndex];
-    if (!bypassValidation && !this.validatePage(page)) {
-      this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
-      this.render();
-      this.scrollToFirstError();
-      return;
+    if (!bypassValidation) {
+      if (this.runnerMode === 'focus') {
+        const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
+        if (!this.validatePage({ questions: allQuestions })) {
+          const firstErrId = Object.keys(this.validationErrors)[0];
+          const errIdx = allQuestions.findIndex((q) => q.id === firstErrId);
+          if (errIdx >= 0) this.focusQuestionIndex = errIdx;
+          const errPageIdx = (survey.pages || []).findIndex((p) => (p.questions || []).some((q) => q.id === firstErrId));
+          if (errPageIdx >= 0) this.currentPageIndex = errPageIdx;
+          this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
+          this.render();
+          this.scrollToFirstError();
+          return;
+        }
+      } else {
+        const page = survey.pages[this.currentPageIndex];
+        if (!this.validatePage(page)) {
+          this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
+          this.render();
+          this.scrollToFirstError();
+          return;
+        }
+      }
     }
 
     const activePerson = this.isRespondentMode
@@ -2383,10 +2452,20 @@ window.AEFieldApp = {
               <span class="text-xs font-semibold text-[#247B50]">${this.t('question')} ${this.focusQuestionIndex + 1}</span>
               ${q.required ? `<span class="text-[#C4242A] text-xs font-semibold">* ${this.t('required')}</span>` : `<span class="text-[#646E68] text-xs">${this.t('optional')}</span>`}
             </div>
-            <h2 class="text-lg sm:text-xl md:text-2xl font-semibold text-[#111613] leading-snug tracking-tight">
-              ${this.escapeHtml(q.title)}
+            <h2 data-piped-title-for="${q.id}" class="text-lg sm:text-xl md:text-2xl font-semibold text-[#111613] leading-snug tracking-tight">
+              ${this.escapeHtml(
+                (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+                  ? window.AEPiping.interpolate(q.title, this.draftAnswers, survey)
+                  : q.title
+              )}
             </h2>
-            ${q.helpText ? `<p class="text-xs sm:text-sm text-[#525B56] leading-relaxed">${this.escapeHtml(q.helpText)}</p>` : ''}
+            ${(() => {
+              if (!q.helpText) return '';
+              const pipedHelp = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+                ? window.AEPiping.interpolate(q.helpText, this.draftAnswers, survey)
+                : q.helpText;
+              return `<p data-piped-help-for="${q.id}" class="text-xs sm:text-sm text-[#525B56] leading-relaxed ${pipedHelp ? '' : 'hidden'}">${this.escapeHtml(pipedHelp)}</p>`;
+            })()}
           </div>
 
           ${errorMsg ? `

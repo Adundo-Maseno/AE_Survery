@@ -2053,15 +2053,27 @@ window.AESession = {
 window.AEPiping = {
   interpolate(template, answers = {}, survey = null) {
     if (!template || typeof template !== 'string') return '';
-    const res = template.replace(/\{\{\s*([a-zA-Z0-9_-]+)(?:\s*\|\s*['"]([^'"]+)['"])?\s*\}\}/g, (match, qId, fallback) => {
+    const res = template.replace(/\{\{\s*([a-zA-Z0-9_-]+)(?:\s*\|\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g, (match, qId, sqFallback, dqFallback) => {
+      const fallback = sqFallback !== undefined ? sqFallback : dqFallback;
       const val = answers[qId];
       if (val === undefined || val === null || val === '') {
         return fallback !== undefined ? fallback : '';
       }
-      if (Array.isArray(val)) return val.join(', ');
+      if (Array.isArray(val)) {
+        if (val.length === 0) {
+          return fallback !== undefined ? fallback : '';
+        }
+        return val.join(', ');
+      }
       if (typeof val === 'object') {
-        if (val.lat !== undefined && val.lng !== undefined) {
-          return val.label || `${val.lat.toFixed(4)}, ${val.lng.toFixed(4)}`;
+        if ('lat' in val || 'lng' in val) {
+          if (val.label) return String(val.label);
+          const latNum = (val.lat !== '' && val.lat !== null && val.lat !== undefined) ? Number(val.lat) : NaN;
+          const lngNum = (val.lng !== '' && val.lng !== null && val.lng !== undefined) ? Number(val.lng) : NaN;
+          if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
+            return `${latNum.toFixed(4)}, ${lngNum.toFixed(4)}`;
+          }
+          return fallback !== undefined ? fallback : '';
         }
         if (val.crop && val.variety) {
           return `${val.crop} - ${val.variety}`;
@@ -2076,24 +2088,61 @@ window.AEPiping = {
 
   computeQuestionDisplayNumbers(questions = []) {
     const numMap = {};
-    let mainCount = 1;
-    const parentSubCounts = {};
-
+    const byId = {};
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
-      if (q.parentQuestionId && numMap[q.parentQuestionId]) {
-        const parentNum = numMap[q.parentQuestionId].mainNum;
-        parentSubCounts[q.parentQuestionId] = (parentSubCounts[q.parentQuestionId] || 1) + 1;
-        const letter = String.fromCharCode(96 + parentSubCounts[q.parentQuestionId]); // 97='a', 98='b', etc.
-        if (!numMap[q.parentQuestionId].hasLetter) {
-          numMap[q.parentQuestionId].label = `${parentNum}a`;
-          numMap[q.parentQuestionId].letter = 'a';
-          numMap[q.parentQuestionId].hasLetter = true;
-        }
-        numMap[q.id] = { label: `${parentNum}${letter}`, mainNum: parentNum, letter, isSub: true, parentId: q.parentQuestionId };
-      } else {
+      if (q && q.id) byId[q.id] = q;
+    }
+
+    const resolveRootParent = (q) => {
+      if (!q || !q.parentQuestionId || !byId[q.parentQuestionId] || q.parentQuestionId === q.id) {
+        return null;
+      }
+      const visited = new Set([q.id]);
+      let curr = byId[q.parentQuestionId];
+      while (curr && curr.parentQuestionId && byId[curr.parentQuestionId]) {
+        if (visited.has(curr.id)) return null; // Cycle guard
+        visited.add(curr.id);
+        curr = byId[curr.parentQuestionId];
+      }
+      if (!curr || visited.has(curr.id)) return null;
+      return curr.id;
+    };
+
+    // Pass 1: Assign sequential main numbers to all top-level questions
+    let mainCount = 1;
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q || !q.id) continue;
+      if (!resolveRootParent(q)) {
         numMap[q.id] = { label: `${mainCount}`, mainNum: mainCount, hasLetter: false, isSub: false };
         mainCount++;
+      }
+    }
+
+    // Pass 2: Assign 2a/2b/2c sub-question labels against resolved root parents
+    const parentSubCounts = {};
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q || !q.id) continue;
+      const rootId = resolveRootParent(q);
+      if (rootId && numMap[rootId]) {
+        const parentEntry = numMap[rootId];
+        const parentNum = parentEntry.mainNum;
+        parentSubCounts[rootId] = (parentSubCounts[rootId] || 1) + 1;
+        const letter = String.fromCharCode(96 + parentSubCounts[rootId]); // 97='a', 98='b', etc.
+        if (!parentEntry.hasLetter) {
+          parentEntry.label = `${parentNum}a`;
+          parentEntry.letter = 'a';
+          parentEntry.hasLetter = true;
+        }
+        numMap[q.id] = {
+          label: `${parentNum}${letter}`,
+          mainNum: parentNum,
+          letter,
+          isSub: true,
+          parentId: rootId
+        };
       }
     }
     return numMap;
@@ -3396,7 +3445,20 @@ class AESurveyStore {
     }
 
     // 4. GPS Velocity & Teleportation Anti-Fraud Check (Impossible Road Travel Speed)
-    if (gps && gps.lat && gps.lng && response.submittedAt && response.enumerator) {
+    const normalizedEnum = String(response.enumerator || '').trim().toLowerCase();
+    const isSelfAdministered =
+      response.collectionMode === 'self_administered' ||
+      normalizedEnum === 'self-administered (web link)' ||
+      normalizedEnum === 'self-administered' ||
+      normalizedEnum === 'public respondent';
+    const hasValidGps =
+      gps &&
+      gps.lat !== '' && gps.lat !== null && gps.lat !== undefined &&
+      gps.lng !== '' && gps.lng !== null && gps.lng !== undefined &&
+      Number.isFinite(Number(gps.lat)) && Number.isFinite(Number(gps.lng));
+    if (!isSelfAdministered && hasValidGps && response.submittedAt && response.enumerator) {
+      const currLat = Number(gps.lat);
+      const currLng = Number(gps.lng);
       const respTime = new Date(response.submittedAt).getTime();
       const priorResponses = (this.responses || []).filter((r) => {
         return r &&
@@ -3405,13 +3467,16 @@ class AESurveyStore {
           r.enumerator === response.enumerator &&
           r.submittedAt &&
           r.gps &&
-          r.gps.lat &&
-          r.gps.lng &&
+          r.gps.lat !== '' && r.gps.lat !== null && r.gps.lat !== undefined &&
+          r.gps.lng !== '' && r.gps.lng !== null && r.gps.lng !== undefined &&
+          Number.isFinite(Number(r.gps.lat)) && Number.isFinite(Number(r.gps.lng)) &&
           new Date(r.submittedAt).getTime() < respTime;
       }).sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
 
       if (priorResponses.length > 0) {
         const prev = priorResponses[0];
+        const prevLat = Number(prev.gps.lat);
+        const prevLng = Number(prev.gps.lng);
         const prevTime = new Date(prev.submittedAt).getTime();
         const timeDiffMs = respTime - prevTime;
         const deltaHours = timeDiffMs / (1000 * 60 * 60);
@@ -3419,12 +3484,12 @@ class AESurveyStore {
 
         // Haversine distance in km
         const R = 6371;
-        const dLat = ((gps.lat - prev.gps.lat) * Math.PI) / 180;
-        const dLon = ((gps.lng - prev.gps.lng) * Math.PI) / 180;
+        const dLat = ((currLat - prevLat) * Math.PI) / 180;
+        const dLon = ((currLng - prevLng) * Math.PI) / 180;
         const a =
           Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos((prev.gps.lat * Math.PI) / 180) *
-            Math.cos((gps.lat * Math.PI) / 180) *
+          Math.cos((prevLat * Math.PI) / 180) *
+            Math.cos((currLat * Math.PI) / 180) *
             Math.sin(dLon / 2) *
             Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -4087,9 +4152,17 @@ class AESurveyStore {
 
     // Compute automated data quality flags & calculated metrics
     const durationSec = Math.max(0, Number(responsePayload.durationSec) >= 0 ? Number(responsePayload.durationSec) : 0);
+    const submittedAt = (responsePayload._preserveMeta && cleanPayload.submittedAt)
+      ? cleanPayload.submittedAt
+      : nowIso;
+    const enumerator = cleanPayload.enumerator || this.settings.defaultEnumerator || 'Field Enumerator';
     const rawFlags = Array.isArray(responsePayload.qaFlags) ? responsePayload.qaFlags : [];
     const automatedFlags = this.evaluateDataQuality(survey, {
       ...responsePayload,
+      id,
+      clientResponseId: id,
+      enumerator,
+      submittedAt,
       durationSec,
       answers: cleanPayload.answers || {}
     });
@@ -4097,13 +4170,12 @@ class AESurveyStore {
     const combinedFlags = Array.from(new Set([...rawFlags, ...autoCodes]));
 
     const calculated = this.calculateResponseMetrics(survey, cleanPayload.answers || {});
-    const defaultReviewStatus = combinedFlags.some((c) => c.includes('OUTLIER') || c === 'SPEEDER') ? 'flagged' : 'pending_review';
+    const defaultReviewStatus = combinedFlags.some(
+      (c) => c.includes('OUTLIER') || c === 'SPEEDER' || c === 'IMPOSSIBLE_TRAVEL_VELOCITY'
+    ) ? 'flagged' : 'pending_review';
     const reviewStatus = (responsePayload._preserveMeta && cleanPayload.reviewStatus)
       ? cleanPayload.reviewStatus
       : defaultReviewStatus;
-    const submittedAt = (responsePayload._preserveMeta && cleanPayload.submittedAt)
-      ? cleanPayload.submittedAt
-      : nowIso;
 
     const record = {
       id,
@@ -4111,7 +4183,7 @@ class AESurveyStore {
       surveyId: cleanPayload.surveyId,
       surveyTitle: survey ? survey.title : String(responsePayload.surveyTitle || 'Survey').slice(0, 240),
       collectorId: cleanPayload.collectorId || 'default',
-      enumerator: cleanPayload.enumerator || this.settings.defaultEnumerator || 'Field Enumerator',
+      enumerator,
       submittedByUserId: cleanPayload.submittedByUserId || null,
       submittedByUserRole: cleanPayload.submittedByUserRole || null,
       language: responsePayload.language || 'en',
@@ -4240,8 +4312,10 @@ class AESurveyStore {
     }
     const startTime = performance.now();
     const unsyncedResponses = options.forceAll
-      ? this.responses
+      ? [...this.responses]
       : this.responses.filter((r) => r.syncStatus !== 'synced');
+    const syncedResponseIds = new Set(unsyncedResponses.map((r) => r.id));
+    const syncedQueueSnapshot = new Map((this.syncQueue || []).map((q) => [q.id, q.createdAt]));
 
     const currentSessionUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
@@ -4351,12 +4425,12 @@ class AESurveyStore {
         if (!data.ok) {
           throw new Error(data.error || 'Google Apps Script returned an error');
         }
-        this.syncQueue = [];
-        this.deletedSurveyIds = [];
         if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
           this.mergePersonnelFromCloud(data.personnel);
         }
-        this._surveysDirty = false;
+        if (shouldSyncSurveys) {
+          this._surveysDirty = false;
+        }
         resultSummary = {
           mode: 'Live GAS Web App',
           surveysSynced: data.surveysSynced ?? (shouldSyncSurveys ? this.surveys.length : 0),
@@ -4379,14 +4453,32 @@ class AESurveyStore {
       }
 
       const nowIso = new Date().toISOString();
+      const syncedDeletedSurveyIds = new Set(deletedSurveyIds);
       this.responses.forEach((r) => {
-        if (r.syncStatus !== 'synced' || options.forceAll) {
+        if (syncedResponseIds.has(r.id)) {
           r.syncStatus = 'synced';
           r.syncedAt = nowIso;
         }
       });
 
-      this.syncQueue = [];
+      this.syncQueue = (this.syncQueue || []).filter((item) => {
+        if (!syncedQueueSnapshot.has(item.id) || item.createdAt !== syncedQueueSnapshot.get(item.id)) {
+          return true;
+        }
+        if (item.action === 'SUBMIT_RESPONSE') {
+          return !syncedResponseIds.has(item.recordId);
+        }
+        if (item.action === 'DELETE_SURVEY') {
+          return !syncedDeletedSurveyIds.has(item.recordId);
+        }
+        if (item.action === 'UPSERT_SURVEY') {
+          return !(shouldSyncSurveys || !gasUrl);
+        }
+        return false;
+      });
+      if (syncedDeletedSurveyIds.size > 0 && Array.isArray(this.deletedSurveyIds)) {
+        this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => !syncedDeletedSurveyIds.has(id));
+      }
       this.applyPinOverridesToPersonnel();
       this.settings.lastSyncedAt = nowIso;
       this.lastSyncError = null;

@@ -569,29 +569,43 @@ window.AEBuilder = {
               <!-- Question List -->
               <div class="space-y-4">
                 ${questions.length === 0 ? '<div class="p-6 text-center text-xs text-[#646E68]">No questions in this survey yet. Add questions from the editor.</div>' : ''}
-                ${questions
-                  .map(
-                    (q, idx) => `
-                  <div class="p-4 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2">
+                ${(() => {
+                  const qNumMap = (window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function')
+                    ? window.AEPiping.computeQuestionDisplayNumbers(questions)
+                    : {};
+                  return questions
+                    .map((q, idx) => {
+                      const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(idx + 1), isSub: false };
+                      const pipedTitle = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+                        ? window.AEPiping.interpolate(q.title || '', {}, survey)
+                        : (q.title || '');
+                      const rawHelp = q.subtitle || q.helpText || '';
+                      const pipedHelp = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+                        ? window.AEPiping.interpolate(rawHelp, {}, survey)
+                        : rawHelp;
+                      return `
+                  <div class="p-4 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2 ${q.parentQuestionId ? 'ml-4 border-l-4 border-l-[#247B50]' : ''}">
                     <div class="flex items-start justify-between gap-2">
                       <label class="text-xs font-semibold text-[#111613]">
-                        <span class="text-[#247B50] font-mono mr-1">${idx + 1}.</span>
-                        ${AEApp.escapeHtml(q.title)}
+                        <span class="text-[#247B50] font-mono mr-1">${numInfo.label}.</span>
+                        ${AEApp.escapeHtml(pipedTitle)}
+                        ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
                         ${q.required ? '<span class="text-[#C4242A] ml-0.5">*</span>' : ''}
                       </label>
                       <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[#646E68]">
                         ${q.type}
                       </span>
                     </div>
-                    ${q.subtitle ? `<p class="text-[11px] text-[#525B56]">${AEApp.escapeHtml(q.subtitle)}</p>` : ''}
+                    ${pipedHelp ? `<p class="text-[11px] text-[#525B56]">${AEApp.escapeHtml(pipedHelp)}</p>` : ''}
 
                     <div class="pt-1">
                       ${this.renderSimulatedQuestionInput(q)}
                     </div>
                   </div>
-                `
-                  )
-                  .join('')}
+                `;
+                    })
+                    .join('');
+                })()}
               </div>
 
               <!-- Submit Simulation -->
@@ -1231,12 +1245,12 @@ window.AEBuilder = {
         <!-- Append Question / Follow-up Sub-Question Action Dock -->
         <div class="mt-4 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2.5">
           <div class="flex flex-wrap items-center gap-2">
-            <button type="button" onclick="AEApp.appendSubQuestion('${q.id}', 'short_text')"
+            ${!q.parentQuestionId ? `<button type="button" onclick="AEApp.appendSubQuestion('${q.id}', 'short_text')"
               title="Append a connected follow-up sub-question (Part b) directly under Q${numInfo.label}"
               class="h-8 px-3 rounded-[6px] bg-[#DCFAE5] hover:bg-[#247B50] text-[#04250E] hover:text-white border border-[#247B50]/30 text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors shadow-xs">
               <i class="fa-solid fa-turn-down text-[11px]"></i>
               <span>+ Append Sub-Question (Part b)</span>
-            </button>
+            </button>` : ''}
 
             <div class="inline-flex items-center rounded-[6px] border border-[#CFD5D0] bg-white overflow-hidden shadow-xs">
               <button type="button" onclick="AEApp.appendQuestionAfter('${q.id}', 'short_text')"

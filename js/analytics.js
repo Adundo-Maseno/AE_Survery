@@ -1112,6 +1112,30 @@ window.AEAnalytics = {
     return !isNaN(num) ? num : null;
   },
 
+  cleanQuestionTitle(q, answers = {}, survey = null) {
+    const raw = typeof q === 'string' ? q : (q && q.title ? q.title : '');
+    if (!raw) return '';
+    if (window.AEPiping && typeof window.AEPiping.interpolate === 'function') {
+      return window.AEPiping.interpolate(raw, answers || {}, survey || null);
+    }
+    return raw
+      .replace(/\{\{\s*[a-zA-Z0-9_-]+(?:\s*\|\s*['"]([^'"]+)['"])?\s*\}\}/g, (_, fb) => (fb !== undefined ? fb : ''))
+      .replace(/\s+([\?\.\!,:])/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  },
+
+  getQuestionDisplayMap(questions = []) {
+    if (window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function') {
+      return window.AEPiping.computeQuestionDisplayNumbers(questions);
+    }
+    const map = {};
+    questions.forEach((q, idx) => {
+      map[q.id] = { label: String(idx + 1), mainNum: idx + 1, hasLetter: false, isSub: false };
+    });
+    return map;
+  },
+
   // Geographic Bounding Extents for Target Agricultural Countries
   COUNTRY_EXTENTS: {
     'Kenya': [[-4.7, 33.9], [4.7, 41.9]],
@@ -1882,13 +1906,15 @@ window.AEAnalytics = {
           const liftPct = bot.mean > 0 ? Math.round(((top.mean - bot.mean) / bot.mean) * 100) : 0;
           const testRes = window.AEStats.welchTTest(top.arr, bot.arr);
           const cohen = window.AEStats.cohensD(top.arr, bot.arr);
+          const cleanMetricTitle = this.cleanQuestionTitle(primaryNumQ, {}, survey).split(/[:\?(]/)[0].trim();
+          const unitStr = AEApp.escapeHtml(primaryNumQ.unit || '');
 
           insights.push({
             type: 'superiority',
             title: `Benchmark Leader: ${top.name.split('(')[0].trim()}`,
             badge: testRes.isSignificant ? 'p < 0.05 Statistically Significant' : 'Directional Trend',
             badgeClass: testRes.isSignificant ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]',
-            body: `Average ${primaryNumQ.title.split(/[:\?(]/)[0].trim()} achieved <strong>${Math.round(top.mean).toLocaleString()} ${primaryNumQ.unit || ''}</strong> (+${liftPct}% lift over lowest tier <em>${bot.name.split('(')[0].trim()}</em> at ${Math.round(bot.mean).toLocaleString()} ${primaryNumQ.unit || ''}; Cohen's d = ${cohen.toFixed(2)}).`
+            body: `Average ${AEApp.escapeHtml(cleanMetricTitle)} achieved <strong>${Math.round(top.mean).toLocaleString()} ${unitStr}</strong> (+${liftPct}% lift over lowest tier <em>${AEApp.escapeHtml(bot.name.split('(')[0].trim())}</em> at ${Math.round(bot.mean).toLocaleString()} ${unitStr}; Cohen's d = ${cohen.toFixed(2)}).`
           });
         }
       }
@@ -1923,12 +1949,13 @@ window.AEAnalytics = {
           const meanApp = window.AEStats.mean(applied);
           const meanCtrl = window.AEStats.mean(control);
           const lift = meanCtrl > 0 ? Math.round(((meanApp - meanCtrl) / meanCtrl) * 100) : 0;
+          const unitStr = AEApp.escapeHtml(primaryNumQ.unit || '');
           insights.push({
             type: 'treatment_lift',
             title: `Treatment Factor: ${topOpt.split('(')[0].trim()}`,
             badge: lift > 10 ? '+High Factor Lift' : 'Moderate Lift',
             badgeClass: 'bg-[#DCFAE5] text-[#04250E]',
-            body: `Records confirming ${topOpt} averaged <strong>${Math.round(meanApp).toLocaleString()} ${primaryNumQ.unit || ''}</strong> vs. ${Math.round(meanCtrl).toLocaleString()} ${primaryNumQ.unit || ''} without (${lift > 0 ? '+' : ''}${lift}% differential across ${responses.length} submissions).`
+            body: `Records confirming ${AEApp.escapeHtml(topOpt)} averaged <strong>${Math.round(meanApp).toLocaleString()} ${unitStr}</strong> vs. ${Math.round(meanCtrl).toLocaleString()} ${unitStr} without (${lift > 0 ? '+' : ''}${lift}% differential across ${responses.length} submissions).`
           });
         }
       }
@@ -1937,12 +1964,14 @@ window.AEAnalytics = {
     // Algorithmic Discovery 3: Qualitative Verbatim & Risk Sentiment
     const textAnalysis = window.AETeXtEngine.analyzeVerbatims(responses);
     if (textAnalysis && textAnalysis.sentimentSummary && textAnalysis.sentimentSummary.negative > 0) {
+      const term0 = AEApp.escapeHtml((textAnalysis.topTerms[0]?.term || 'delay').replace(/"/g, ''));
+      const term1 = AEApp.escapeHtml((textAnalysis.topTerms[1]?.term || 'issue').replace(/"/g, ''));
       insights.push({
         type: 'risk_alert',
         title: 'Verbatim Intelligence: Feedback & Quality Alerts',
         badge: `${textAnalysis.sentimentSummary.negative} Quality Alerts`,
         badgeClass: 'bg-[#FFEDEA] text-[#831C1E]',
-        body: `Free-text and audio notes flagged potential friction or issues in <strong>${textAnalysis.sentimentSummary.negative} submissions</strong>. Most recurrent keyword tokens include <em>"${(textAnalysis.topTerms[0]?.term || 'delay').replace(/"/g, '')}"</em> and <em>"${(textAnalysis.topTerms[1]?.term || 'issue').replace(/"/g, '')}"</em>.`
+        body: `Free-text and audio notes flagged potential friction or issues in <strong>${textAnalysis.sentimentSummary.negative} submissions</strong>. Most recurrent keyword tokens include <em>"${term0}"</em> and <em>"${term1}"</em>.`
       });
     }
 
@@ -1967,8 +1996,8 @@ window.AEAnalytics = {
                 <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3 flex flex-col justify-between shadow-xs">
                   <div>
                     <div class="flex items-center justify-between gap-2 mb-1.5">
-                      <span class="text-xs font-semibold text-[#111613] truncate">${item.title}</span>
-                      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-[3px] shrink-0 ${item.badgeClass}">${item.badge}</span>
+                      <span class="text-xs font-semibold text-[#111613] truncate">${AEApp.escapeHtml(item.title)}</span>
+                      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-[3px] shrink-0 ${item.badgeClass}">${AEApp.escapeHtml(item.badge)}</span>
                     </div>
                     <p class="text-xs text-[#525B56] leading-relaxed">${item.body}</p>
                   </div>
@@ -2023,7 +2052,7 @@ window.AEAnalytics = {
       const vals = filtered.map((r) => this.getContinuousValue(r, primaryNumQ.id)).filter((v) => v !== null && v > 0);
       if (vals.length > 0) {
         const meanV = Math.round(window.AEStats.mean(vals));
-        metric4Title = `Mean ${primaryNumQ.title.split(/[:\?(]/)[0].trim()}`;
+        metric4Title = `Mean ${this.cleanQuestionTitle(primaryNumQ, {}, survey).split(/[:\?(]/)[0].trim()}`;
         metric4Value = meanV.toLocaleString();
         metric4Unit = primaryNumQ.unit || 'units';
       }
@@ -2104,14 +2133,14 @@ window.AEAnalytics = {
           <!-- Metric 4: Yield / Continuous Output -->
           <div class="p-4 bg-white">
             <div class="flex items-center justify-between text-xs text-[#525B56]">
-              <span class="truncate">${metric4Title}</span>
+              <span class="truncate">${AEApp.escapeHtml(metric4Title)}</span>
               <span class="text-[11px] font-semibold text-[#247B50] tabular-nums">${approvedCount} sign-offs</span>
             </div>
             <div class="mt-2 flex items-baseline gap-2">
               <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${metric4Value}">
                 ${metric4Value}
               </strong>
-              ${metric4Unit ? `<span class="text-xs text-[#525B56]">${metric4Unit}</span>` : ''}
+              ${metric4Unit ? `<span class="text-xs text-[#525B56]">${AEApp.escapeHtml(metric4Unit)}</span>` : ''}
               ${flaggedCount > 0 ? `<span class="ml-auto text-xs font-semibold px-2 py-0.5 rounded bg-[#FFEDEA] text-[#831C1E] border border-[#F5C2C0]">${flaggedCount} flagged</span>` : ''}
             </div>
             <div class="text-[11px] text-[#646E68] mt-2">Quality assurance seal intact</div>
@@ -2199,14 +2228,15 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderQuestionSummaries(survey, responses) {
     const questions = window.aeStore.getQuestionsForSurvey(survey);
+    const numMap = this.getQuestionDisplayMap(questions);
     return `
       <div class="space-y-5">
-        ${questions.map((q, idx) => this.renderSingleQuestionAnalyticsCard(q, idx, responses)).join('')}
+        ${questions.map((q, idx) => this.renderSingleQuestionAnalyticsCard(q, idx, responses, survey, numMap[q.id])).join('')}
       </div>
     `;
   },
 
-  renderSingleQuestionAnalyticsCard(q, idx, responses) {
+  renderSingleQuestionAnalyticsCard(q, idx, responses, survey = null, numInfo = null) {
     let answeredCount = 0;
     const values = [];
 
@@ -2228,14 +2258,19 @@ window.AEAnalytics = {
     const answeredPct = responses.length > 0 ? Math.round((answeredCount / responses.length) * 100) : 0;
     const currentSubTab = this.questionSubTabs[q.id] || 'chart';
     const chartType = this.questionChartTypes[q.id] || (q.type === 'multiple_choice' || q.type === 'checkboxes' || q.type === 'dropdown' ? 'horizontalBar' : 'bar');
+    const displayLabel = numInfo?.label || String(idx + 1);
+    const isSub = Boolean(numInfo?.isSub);
+    const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
+    const cleanDesc = q.description ? this.cleanQuestionTitle(q.description, {}, survey) : '';
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 sm:p-5 shadow-xs space-y-4">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 sm:p-5 shadow-xs space-y-4 ${isSub ? 'ml-4 sm:ml-6 border-l-4 border-l-[#247B50]/40' : ''}">
         <!-- Card Header: Title, Metadata, Type Badge & Sub-Tab Switcher -->
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#EFEFEF]">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs font-semibold text-[#247B50]">Question ${idx + 1}</span>
+              <span class="text-xs font-semibold text-[#247B50]">Question ${AEApp.escapeHtml(displayLabel)}</span>
+              ${isSub ? `<span class="px-1.5 py-0.5 rounded-[3px] bg-[#DCFAE5] text-[#04250E] text-[10px] font-semibold">Sub-question</span>` : ''}
               <span class="text-[11px] text-[#525B56]">·</span>
               <span class="px-2 py-0.5 rounded-[4px] bg-[#F4F6F4] text-[#525B56] text-[11px] font-medium border border-[#CFD5D0]">
                 ${this.formatQuestionTypeLabel(q.type)}
@@ -2244,8 +2279,8 @@ window.AEAnalytics = {
                 · <strong>${answeredCount}</strong> answered (${answeredPct}%) · <strong>${skippedCount}</strong> skipped
               </span>
             </div>
-            <h3 class="text-base font-semibold text-[#111613] mt-1 ae-break-words">${AEApp.escapeHtml(q.title)}</h3>
-            ${q.description ? `<p class="text-xs text-[#525B56] mt-0.5 ae-break-words">${AEApp.escapeHtml(q.description)}</p>` : ''}
+            <h3 class="text-base font-semibold text-[#111613] mt-1 ae-break-words">${AEApp.escapeHtml(cleanTitle)}</h3>
+            ${cleanDesc ? `<p class="text-xs text-[#525B56] mt-0.5 ae-break-words">${AEApp.escapeHtml(cleanDesc)}</p>` : ''}
           </div>
 
           <!-- Card Header Actions & Sub-Tabs -->
@@ -3258,12 +3293,13 @@ window.AEAnalytics = {
     // Filter eligible dimensions
     const eligible = [];
     questions.forEach((q) => {
+      const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
       if (q.type === 'multiple_choice' || q.type === 'checkboxes' || q.type === 'dropdown') {
-        eligible.push({ id: q.id, title: q.title, options: q.options || [] });
+        eligible.push({ id: q.id, title: cleanTitle, options: q.options || [] });
       } else if (q.type === 'number_yield') {
         eligible.push({
           id: `binned_${q.id}`,
-          title: `${q.title} (Binned Bags/Acre)`,
+          title: `${cleanTitle} (Binned Bags/Acre)`,
           isBinned: true,
           extract: (r) => {
             const val = Number(r.answers?.[q.id]);
@@ -3907,6 +3943,7 @@ window.AEAnalytics = {
               }
 
               let healedAny = false;
+              const numMap = this.getQuestionDisplayMap(questions);
               const rowsHtml = questions
                 .map((q, qIdx) => {
                   let ans = r.answers?.[q.id];
@@ -3939,9 +3976,11 @@ window.AEAnalytics = {
                   }
 
                   const formatted = this.formatAnswerDisplay(ans, q.type);
+                  const displayNum = numMap[q.id]?.label || String(qIdx + 1);
+                  const resolvedTitle = this.cleanQuestionTitle(q, r.answers || {}, survey);
                   return `
                     <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-[#FAFBF9]">
-                      <div class="font-medium text-[#525B56] sm:max-w-md ae-break-words">${AEApp.escapeHtml(q.title)}</div>
+                      <div class="font-medium text-[#525B56] sm:max-w-md ae-break-words"><span class="font-semibold text-[#247B50] mr-1.5">Q${AEApp.escapeHtml(displayNum)}</span>${AEApp.escapeHtml(resolvedTitle)}</div>
                       <div class="font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(formatted)}</div>
                     </div>
                   `;
@@ -4380,7 +4419,7 @@ window.AEAnalytics = {
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
           <div class="text-[11px] font-semibold uppercase tracking-wider text-[#D97706]">Treatment Cohort Balance Notice</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
-            Treatment comparison requires at least 2 distinct response cohorts under <strong>${AEApp.escapeHtml(treatmentQ.title)}</strong>. Currently only 1 group has valid outcome observations.
+            Treatment comparison requires at least 2 distinct response cohorts under <strong>${AEApp.escapeHtml(this.cleanQuestionTitle(treatmentQ, {}, survey))}</strong>. Currently only 1 group has valid outcome observations.
           </p>
         </div>
       `;
@@ -4407,7 +4446,8 @@ window.AEAnalytics = {
     const pVal = tRes.pValue !== undefined ? tRes.pValue : (window.AEStats.studentTPValue ? window.AEStats.studentTPValue(tStat, df) : 0.05);
     const isSignificant = tRes.isSignificant !== undefined ? tRes.isSignificant : pVal < 0.05;
 
-    const pooledStd = Math.sqrt(((treatVals.length - 1) * (treatStd ** 2) + (ctrlVals.length - 1) * (ctrlStd ** 2)) / Math.max(1, df));
+    const pooledDf = Math.max(1, treatVals.length + ctrlVals.length - 2);
+    const pooledStd = Math.sqrt(((treatVals.length - 1) * (treatStd ** 2) + (ctrlVals.length - 1) * (ctrlStd ** 2)) / pooledDf);
     const cohenD = pooledStd > 0 ? ate / pooledStd : 0;
     const dInterp = Math.abs(cohenD) >= 0.8 ? 'Large Effect' : Math.abs(cohenD) >= 0.5 ? 'Moderate Effect' : Math.abs(cohenD) >= 0.2 ? 'Small Effect' : 'Negligible Effect';
 
@@ -4433,14 +4473,14 @@ window.AEAnalytics = {
               <span class="text-[11px] text-[#525B56] block">Outcome (Y):</span>
               <select onchange="window.AEAnalytics.selectedImpactOutcome = this.value; window.AEApp.render();"
                 class="h-7 px-2 text-xs font-semibold text-[#247B50] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none max-w-[160px] truncate">
-                ${numQs.map((q) => `<option value="${q.id}" ${q.id === outcomeQ.id ? 'selected' : ''}>${AEApp.escapeHtml(q.title.substring(0, 32))}</option>`).join('')}
+                ${numQs.map((q) => `<option value="${q.id}" ${q.id === outcomeQ.id ? 'selected' : ''}>${AEApp.escapeHtml(this.cleanQuestionTitle(q, {}, survey).substring(0, 32))}</option>`).join('')}
               </select>
             </div>
             <div>
               <span class="text-[11px] text-[#525B56] block">Intervention (T):</span>
               <select onchange="window.AEAnalytics.selectedImpactTreatment = this.value; window.AEApp.render();"
                 class="h-7 px-2 text-xs font-semibold text-[#111613] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none max-w-[160px] truncate">
-                ${catQs.map((q) => `<option value="${q.id}" ${q.id === treatmentQ.id ? 'selected' : ''}>${AEApp.escapeHtml(q.title.substring(0, 32))}</option>`).join('')}
+                ${catQs.map((q) => `<option value="${q.id}" ${q.id === treatmentQ.id ? 'selected' : ''}>${AEApp.escapeHtml(this.cleanQuestionTitle(q, {}, survey).substring(0, 32))}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -5267,7 +5307,7 @@ window.AEAnalytics = {
     responses.forEach((r) => {
       const e = r.enumerator || 'Unassigned';
       if (!enumAudit[e]) {
-        enumAudit[e] = { total: 0, speeders: 0, straightLining: 0, collisions: 0, durations: [] };
+        enumAudit[e] = { total: 0, speeders: 0, straightLining: 0, collisions: 0, velocityAnomalies: 0, durations: [] };
       }
       enumAudit[e].total++;
       const dur = Number(r.durationSec) || 0;
@@ -5406,15 +5446,23 @@ window.AEAnalytics = {
     const enumRows = Object.entries(audit.enumAudit)
       .map(([name, d]) => {
         const median = d.durations.length > 0 ? window.AEStats.median(d.durations) : 0;
-        const issues = d.speeders + d.straightLining + d.collisions;
-        const grade = issues === 0 ? 'A+' : issues === 1 ? 'A' : issues <= 3 ? 'B' : 'Needs Review';
+        const velocityAnomalies = d.velocityAnomalies || 0;
+        const issues = d.speeders + d.straightLining + d.collisions + velocityAnomalies;
+        const grade =
+          issues === 0
+            ? 'A+'
+            : issues === 1 && velocityAnomalies === 0
+            ? 'A'
+            : issues <= 3 && velocityAnomalies <= 1
+            ? 'B'
+            : 'Needs Review';
         const gradeClass =
           grade === 'A+' || grade === 'A'
             ? 'bg-[#DCFAE5] text-[#04250E]'
             : grade === 'B'
             ? 'bg-[#FFFBEB] text-[#92400E]'
             : 'bg-[#FFEDEA] text-[#831C1E]';
-        return { name, total: d.total, median, speeders: d.speeders, straightLining: d.straightLining, collisions: d.collisions, grade, gradeClass };
+        return { name, total: d.total, median, speeders: d.speeders, straightLining: d.straightLining, collisions: d.collisions, velocityAnomalies, grade, gradeClass };
       })
       .sort((a, b) => b.total - a.total);
 
@@ -5542,6 +5590,7 @@ window.AEAnalytics = {
                   <th class="p-3 font-semibold text-right">Speeders Flagged</th>
                   <th class="p-3 font-semibold text-right">Straight-Lining</th>
                   <th class="p-3 font-semibold text-right">GPS Collisions</th>
+                  <th class="p-3 font-semibold text-right">Velocity Flags</th>
                   <th class="p-3 font-semibold text-center">Reliability Grade</th>
                 </tr>
               </thead>
@@ -5556,6 +5605,7 @@ window.AEAnalytics = {
                         <td class="p-3 text-right font-mono tabular-nums ${r.speeders > 0 ? 'text-[#C4242A] font-semibold' : 'text-[#525B56]'}">${r.speeders}</td>
                         <td class="p-3 text-right font-mono tabular-nums ${r.straightLining > 0 ? 'text-[#C4242A] font-semibold' : 'text-[#525B56]'}">${r.straightLining}</td>
                         <td class="p-3 text-right font-mono tabular-nums ${r.collisions > 0 ? 'text-[#C4242A] font-semibold' : 'text-[#525B56]'}">${r.collisions}</td>
+                        <td class="p-3 text-right font-mono tabular-nums ${r.velocityAnomalies > 0 ? 'text-[#C4242A] font-semibold' : 'text-[#525B56]'}">${r.velocityAnomalies}</td>
                         <td class="p-3 text-center">
                           <span class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[10px] font-bold ${r.gradeClass}">
                             Grade ${r.grade}
@@ -6352,12 +6402,17 @@ window.AEAnalytics = {
   exportQuestionCsv(qId) {
     const survey = window.aeStore.getSurveyById(window.AEApp.activeSurveyId);
     if (!survey) return;
-    const q = window.aeStore.getQuestionsForSurvey(survey).find((x) => x.id === qId);
+    const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
+    const qIdx = allQuestions.findIndex((x) => x.id === qId);
+    const q = qIdx >= 0 ? allQuestions[qIdx] : null;
     if (!q) return;
     const responses = this.getFilteredResponses(survey.id);
+    const numMap = this.getQuestionDisplayMap(allQuestions);
+    const qLabel = numMap[q.id]?.label || String(qIdx + 1);
+    const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
 
     let csv = '\uFEFF';
-    csv += `"Question: ${q.title.replace(/"/g, '""')}"\r\n`;
+    csv += `"Question: Q${qLabel} - ${cleanTitle.replace(/"/g, '""')}"\r\n`;
     csv += `"Type: ${q.type}"\r\n`;
     csv += `"Survey: ${survey.title.replace(/"/g, '""')}"\r\n\r\n`;
 
@@ -6397,6 +6452,7 @@ window.AEAnalytics = {
     const survey = window.aeStore.getSurveyById(surveyId);
     if (!survey) return;
     const questions = window.aeStore.getQuestionsForSurvey(survey);
+    const numMap = this.getQuestionDisplayMap(questions);
     const responses = this.getFilteredResponses(survey.id);
 
     const escapeXml = (str) =>
@@ -6439,9 +6495,11 @@ window.AEAnalytics = {
     </Row>`;
     questions.forEach((q, idx) => {
       const answered = responses.filter((r) => r.answers?.[q.id] !== undefined && r.answers?.[q.id] !== '').length;
+      const qLabel = numMap[q.id]?.label || String(idx + 1);
+      const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
       xml += `<Row>
-        <Cell><Data ss:Type="String">Q${idx + 1}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(q.title)}</Data></Cell>
+        <Cell><Data ss:Type="String">Q${escapeXml(qLabel)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(cleanTitle)}</Data></Cell>
         <Cell><Data ss:Type="String">${escapeXml(q.type)}</Data></Cell>
         <Cell><Data ss:Type="Number">${answered}</Data></Cell>
       </Row>`;
@@ -6457,7 +6515,13 @@ window.AEAnalytics = {
       <Cell><Data ss:Type="String">Sync_Status</Data></Cell>
       <Cell><Data ss:Type="String">Review_Status</Data></Cell>
       <Cell><Data ss:Type="String">Duration_Seconds</Data></Cell>
-      ${questions.map((q) => `<Cell><Data ss:Type="String">${escapeXml(q.title)}</Data></Cell>`).join('')}
+      ${questions
+        .map((q, idx) => {
+          const qLabel = numMap[q.id]?.label || String(idx + 1);
+          const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
+          return `<Cell><Data ss:Type="String">Q${escapeXml(qLabel)}: ${escapeXml(cleanTitle)}</Data></Cell>`;
+        })
+        .join('')}
     </Row>`;
 
     responses.forEach((r) => {
@@ -6492,10 +6556,12 @@ window.AEAnalytics = {
       <Cell><Data ss:Type="String">Required</Data></Cell>
     </Row>`;
     questions.forEach((q, idx) => {
+      const qLabel = numMap[q.id]?.label || String(idx + 1);
+      const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
       xml += `<Row>
-        <Cell><Data ss:Type="String">Q${idx + 1}_${escapeXml(q.id)}</Data></Cell>
+        <Cell><Data ss:Type="String">Q${escapeXml(qLabel)}_${escapeXml(q.id)}</Data></Cell>
         <Cell><Data ss:Type="String">${escapeXml(q.type)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(q.title)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(cleanTitle)}</Data></Cell>
         <Cell><Data ss:Type="String">${q.required ? 'YES' : 'NO'}</Data></Cell>
       </Row>`;
     });
@@ -6521,15 +6587,17 @@ window.AEAnalytics = {
         }
       });
       const ct = window.AEStats.chiSquareTest(ctMatrix);
+      const colKeys = ct.cols || ct.colKeys || [];
+      const rowKeys = ct.rows || ct.rowKeys || [];
       xml += `<Row ss:StyleID="Header">
-        <Cell><Data ss:Type="String">${escapeXml(rQ.title)} \\ ${escapeXml(cQ.title)}</Data></Cell>
-        ${(ct.colKeys || []).map((ck) => `<Cell><Data ss:Type="String">${escapeXml(ck)}</Data></Cell>`).join('')}
+        <Cell><Data ss:Type="String">${escapeXml(this.cleanQuestionTitle(rQ, {}, survey))} \\ ${escapeXml(this.cleanQuestionTitle(cQ, {}, survey))}</Data></Cell>
+        ${colKeys.map((ck) => `<Cell><Data ss:Type="String">${escapeXml(ck)}</Data></Cell>`).join('')}
         <Cell><Data ss:Type="String">Row_Total</Data></Cell>
       </Row>`;
-      (ct.rowKeys || []).forEach((rk) => {
+      rowKeys.forEach((rk) => {
         xml += `<Row>
           <Cell ss:StyleID="Bold"><Data ss:Type="String">${escapeXml(rk)}</Data></Cell>
-          ${(ct.colKeys || []).map((ck) => `<Cell><Data ss:Type="Number">${Number(ctMatrix?.[rk]?.[ck] || 0)}</Data></Cell>`).join('')}
+          ${colKeys.map((ck) => `<Cell><Data ss:Type="Number">${Number(ctMatrix?.[rk]?.[ck] || 0)}</Data></Cell>`).join('')}
           <Cell ss:StyleID="Bold"><Data ss:Type="Number">${Number(ct.rowTotals?.[rk] || 0)}</Data></Cell>
         </Row>`;
       });
@@ -6544,11 +6612,11 @@ window.AEAnalytics = {
     if (numQs.length >= 2) {
       xml += `<Row ss:StyleID="Header">
         <Cell><Data ss:Type="String">Metric</Data></Cell>
-        ${numQs.map((nq) => `<Cell><Data ss:Type="String">${escapeXml(nq.title)}</Data></Cell>`).join('')}
+        ${numQs.map((nq) => `<Cell><Data ss:Type="String">${escapeXml(this.cleanQuestionTitle(nq, {}, survey))}</Data></Cell>`).join('')}
       </Row>`;
       numQs.forEach((rq) => {
         xml += `<Row>
-          <Cell ss:StyleID="Bold"><Data ss:Type="String">${escapeXml(rq.title)}</Data></Cell>
+          <Cell ss:StyleID="Bold"><Data ss:Type="String">${escapeXml(this.cleanQuestionTitle(rq, {}, survey))}</Data></Cell>
           ${numQs.map((cq) => {
             if (rq.id === cq.id) return `<Cell><Data ss:Type="Number">1</Data></Cell>`;
             const px = [];
@@ -6572,7 +6640,8 @@ window.AEAnalytics = {
     xml += `</Table></Worksheet>`;
 
     // Sheet 7: Verbatim_Intelligence
-    const verb = window.AETeXtEngine ? window.AETeXtEngine.analyzeVerbatims(responses) : { rows: [] };
+    const verb = window.AETeXtEngine ? window.AETeXtEngine.analyzeVerbatims(responses) : { records: [] };
+    const verbRecords = verb.records || verb.rows || [];
     xml += `<Worksheet ss:Name="Verbatim_Intelligence"><Table>`;
     xml += `<Row ss:StyleID="Header">
       <Cell><Data ss:Type="String">Enumerator</Data></Cell>
@@ -6580,7 +6649,7 @@ window.AEAnalytics = {
       <Cell><Data ss:Type="String">Sentiment</Data></Cell>
       <Cell><Data ss:Type="String">Field_Note</Data></Cell>
     </Row>`;
-    (verb.rows || []).forEach((vr) => {
+    verbRecords.forEach((vr) => {
       xml += `<Row>
         <Cell><Data ss:Type="String">${escapeXml(vr.enumerator)}</Data></Cell>
         <Cell><Data ss:Type="String">${escapeXml(vr.county)}</Data></Cell>

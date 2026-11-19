@@ -606,7 +606,7 @@ window.AECollector = {
         <div class="flex items-start justify-between gap-2 min-w-0">
           <label for="runner_input_${q.id}" class="block text-sm sm:text-base font-semibold text-[#111613] leading-snug ae-break-words min-w-0 flex-1">
             ${showNum ? `<span class="tabular-nums text-xs font-semibold ${q.parentQuestionId ? 'text-[#247B50]' : 'text-[#247B50]'} mr-1.5">Q${numInfo.label}.</span>` : ''}
-            ${AEApp.escapeHtml(pipedTitle)}
+            <span data-piped-title-for="${q.id}">${AEApp.escapeHtml(pipedTitle)}</span>
             ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
@@ -626,8 +626,8 @@ window.AECollector = {
         </div>
 
         ${
-          pipedHelp
-            ? `<p class="text-xs text-[#525B56] ae-break-words">${AEApp.escapeHtml(pipedHelp)}</p>`
+          q.helpText
+            ? `<p data-piped-help-for="${q.id}" class="text-xs text-[#525B56] ae-break-words ${pipedHelp ? '' : 'hidden'}">${AEApp.escapeHtml(pipedHelp)}</p>`
             : ''
         }
 

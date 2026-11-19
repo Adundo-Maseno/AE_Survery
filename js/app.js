@@ -3889,7 +3889,7 @@ window.AEApp = {
     if (!q) return;
 
     window.speechSynthesis.cancel();
-    const runnerAnswers = (this.runnerResponses && this.runnerResponses[this.activeSurveyId]) || {};
+    const runnerAnswers = (window.AECollector && window.AECollector.draftAnswers) ? window.AECollector.draftAnswers : {};
     const pipedTitle = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
       ? window.AEPiping.interpolate(q.title || '', runnerAnswers, survey)
       : (q.title || '');
@@ -4212,6 +4212,10 @@ window.AEApp = {
     if (!s) return;
     const ctx = this.findQuestionContext(parentQuestionId);
     if (!ctx) return;
+    if (ctx.question.parentQuestionId) {
+      this.showToast('Cannot nest a sub-question under another sub-question.', 'warning');
+      return;
+    }
 
     const newQ = window.AEBuilder.createDefaultQuestion(type);
     newQ.parentQuestionId = parentQuestionId;
@@ -4266,8 +4270,29 @@ window.AEApp = {
       this.showToast('Question detached to independent question.', 'info');
     } else {
       if (parentQuestionId === questionId) return;
+      const qs = ctx.page.questions || [];
+      const parentQ = qs.find((q) => q.id === parentQuestionId);
+      if (parentQ && parentQ.parentQuestionId) {
+        this.showToast('Cannot nest a sub-question under another sub-question.', 'warning');
+        return;
+      }
+      if (qs.some((other) => other.parentQuestionId === questionId)) {
+        this.showToast('Detach existing sub-questions before attaching this question under another parent.', 'warning');
+        return;
+      }
       ctx.question.parentQuestionId = parentQuestionId;
       ctx.question.subQuestionPart = 'b';
+      const curIdx = qs.findIndex((q) => q.id === questionId);
+      const parentIdx = qs.findIndex((q) => q.id === parentQuestionId);
+      if (curIdx >= 0 && parentIdx >= 0 && curIdx < parentIdx) {
+        const [moved] = qs.splice(curIdx, 1);
+        const newParentIdx = qs.findIndex((q) => q.id === parentQuestionId);
+        let insertIdx = newParentIdx + 1;
+        while (insertIdx < qs.length && qs[insertIdx].parentQuestionId === parentQuestionId) {
+          insertIdx++;
+        }
+        qs.splice(insertIdx, 0, moved);
+      }
       this.showToast('Question linked under parent question.', 'success');
     }
     window.aeStore.upsertSurvey(ctx.survey);
@@ -4408,7 +4433,39 @@ window.AEApp = {
     if (window.AECollector.validationErrors[questionId]) {
       delete window.AECollector.validationErrors[questionId];
       this.render();
+      return;
     }
+    this.refreshPipedDom();
+  },
+
+  refreshPipedDom() {
+    if (typeof document === 'undefined' || !window.AEPiping || typeof window.AEPiping.interpolate !== 'function') return;
+    const rawSurvey = window.aeStore && window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!rawSurvey) return;
+    const lang = this.runnerLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+    const survey = (window.AEI18n && typeof window.AEI18n.localizeSurvey === 'function')
+      ? window.AEI18n.localizeSurvey(rawSurvey, lang)
+      : rawSurvey;
+    const answers = (window.AECollector && window.AECollector.draftAnswers) || {};
+    const allQs = window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const qMap = {};
+    allQs.forEach((q) => { qMap[q.id] = q; });
+
+    document.querySelectorAll('[data-piped-title-for]').forEach((el) => {
+      const qId = el.getAttribute('data-piped-title-for');
+      const q = qMap[qId];
+      if (!q || !q.title || q.title.indexOf('{{') === -1) return;
+      el.textContent = window.AEPiping.interpolate(q.title, answers, survey);
+    });
+
+    document.querySelectorAll('[data-piped-help-for]').forEach((el) => {
+      const qId = el.getAttribute('data-piped-help-for');
+      const q = qMap[qId];
+      if (!q || !q.helpText || q.helpText.indexOf('{{') === -1) return;
+      const interpolated = window.AEPiping.interpolate(q.helpText, answers, survey);
+      el.textContent = interpolated;
+      if (el.classList) el.classList.toggle('hidden', !interpolated);
+    });
   },
 
   toggleRunnerCheckbox(questionId, optionValue) {
@@ -4484,8 +4541,18 @@ window.AEApp = {
     );
   },
 
-  validateRunnerPage(page) {
+  validateRunnerPage(page, surveyOverride = null) {
     const errors = {};
+    const lang = this.runnerLang || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
+    const rawSurvey = surveyOverride || (window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null);
+    const localizedSurvey = (rawSurvey && lang !== 'en' && window.AEI18n && typeof window.AEI18n.localizeSurvey === 'function')
+      ? window.AEI18n.localizeSurvey(rawSurvey, lang)
+      : null;
+    const localizedQMap = {};
+    if (localizedSurvey && window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function') {
+      window.aeStore.getQuestionsForSurvey(localizedSurvey).forEach((lq) => { localizedQMap[lq.id] = lq; });
+    }
+
     (page.questions || []).forEach((q) => {
       const val = window.AECollector.draftAnswers[q.id];
 
@@ -4498,7 +4565,19 @@ window.AEApp = {
           return;
         } else if (q.type === 'matrix') {
           const rows = q.rows || [];
-          const answeredRows = rows.filter((rName) => val && typeof val === 'object' && val[rName] !== undefined && val[rName] !== '').length;
+          const locQ = localizedQMap[q.id];
+          const locRows = (locQ && Array.isArray(locQ.rows)) ? locQ.rows : [];
+          const answeredRows = rows.filter((rName, rIdx) => {
+            if (!val || typeof val !== 'object') return false;
+            if (val[rName] !== undefined && val[rName] !== '') return true;
+            const locName = locRows[rIdx];
+            if (locName && val[locName] !== undefined && val[locName] !== '') return true;
+            if (lang !== 'en' && window.AEI18n && typeof window.AEI18n.translatePhrase === 'function') {
+              const trName = window.AEI18n.translatePhrase(rName, lang);
+              if (trName && val[trName] !== undefined && val[trName] !== '') return true;
+            }
+            return false;
+          }).length;
           if (answeredRows < rows.length) {
             errors[q.id] = `Please select a rating for all ${rows.length} rows.`;
             return;
@@ -4648,11 +4727,27 @@ window.AEApp = {
     const survey = window.aeStore.getSurveyById(surveyId);
     if (!survey) return;
     const page = survey.pages[window.AECollector.currentPageIndex];
-    if (!bypassValidation && !this.validateRunnerPage(page)) {
+    if (!bypassValidation && !this.validateRunnerPage(page, survey)) {
       this.showToast('Please complete all required questions before submitting.', 'error');
       this.render();
       this.scrollToFirstInvalidQuestion();
       return;
+    }
+
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    const activePerson = currentUser || (window.aeStore.personnel || []).find(
+      (p) => (window.AECollector.enumeratorName || '').includes(p.fullName) || (window.AECollector.enumeratorName || '').includes(p.id)
+    );
+    if (window.aeStore && typeof window.aeStore.canUserCollectSurvey === 'function') {
+      const check = window.aeStore.canUserCollectSurvey(activePerson, survey.id, {
+        isSelfAdministered: false
+      });
+      if (!check.allowed) {
+        this.showToast(check.reason || 'You are not authorized to collect responses for this survey.', 'error');
+        return;
+      }
     }
 
     window.AECollector.isSubmitting = true;
@@ -4664,7 +4759,17 @@ window.AEApp = {
         }
       });
 
-      const durationSec = Math.max(12, Math.round((Date.now() - (window.AECollector.startedAtMs || Date.now())) / 1000));
+      const allQ = window.aeStore.getQuestionsForSurvey(survey);
+      const durationSec = Math.max(1, Math.round((Date.now() - (window.AECollector.startedAtMs || Date.now())) / 1000));
+      const minPlausibleSec = Math.max(15, Math.round(allQ.length * 2.5));
+      const isSpeeder = durationSec < minPlausibleSec;
+      const qaFlags = isSpeeder ? ['SPEEDER_INTERVIEW'] : ['VERIFIED_PACING'];
+      if (currentUser && currentUser.role === 'admin') {
+        qaFlags.push('ADMIN_PILOT_AUDIT');
+      } else if (currentUser && currentUser.role === 'supervisor') {
+        qaFlags.push('SUPERVISOR_FIELD_AUDIT');
+      }
+
       const sourceLang = this.runnerLang || 'en';
       const canonicalAnswers = {};
       Object.entries(window.AECollector.draftAnswers || {}).forEach(([qId, val]) => {
@@ -4680,9 +4785,12 @@ window.AEApp = {
         surveyTitle: survey.title,
         collectorId: window.AECollector.activeCollectorId,
         enumerator: window.AECollector.enumeratorName,
+        submittedByUserId: currentUser ? currentUser.id : (activePerson ? activePerson.id : null),
+        submittedByUserRole: currentUser ? currentUser.role : (activePerson ? activePerson.role : 'enumerator'),
         language: sourceLang,
         startedAt: window.AECollector.startedAtIso,
         durationSec,
+        qaFlags,
         gps: gpsMeta,
         answers: canonicalAnswers
       });
@@ -4815,6 +4923,9 @@ window.AEApp = {
     const questions = window.aeStore.getQuestionsForSurvey(survey);
     const responses = window.aeStore.getResponsesForSurvey(surveyId, currentUser);
 
+    const qNumMap = (window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function')
+      ? window.AEPiping.computeQuestionDisplayNumbers(questions)
+      : {};
     const headers = [
       'Response_ID',
       'Survey_ID',
@@ -4826,7 +4937,13 @@ window.AEApp = {
       'GPS_Latitude',
       'GPS_Longitude',
       'GPS_Landmark',
-      ...questions.map((q, idx) => `Q${idx + 1}: ${q.title}`)
+      ...questions.map((q, idx) => {
+        const label = (qNumMap[q.id] && qNumMap[q.id].label) ? qNumMap[q.id].label : String(idx + 1);
+        const cleanTitle = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+          ? window.AEPiping.interpolate(q.title || '', {}, survey)
+          : (q.title || '');
+        return `Q${label}: ${cleanTitle}`;
+      })
     ];
 
     const escapeCsv = (val) => {
