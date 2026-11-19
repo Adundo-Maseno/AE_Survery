@@ -2053,10 +2053,10 @@ window.AESession = {
 window.AEPiping = {
   interpolate(template, answers = {}, survey = null) {
     if (!template || typeof template !== 'string') return '';
-    return template.replace(/\{\{\s*([a-zA-Z0-9_-]+)(?:\s*\|\s*['"]([^'"]+)['"])?\s*\}\}/g, (match, qId, fallback) => {
+    const res = template.replace(/\{\{\s*([a-zA-Z0-9_-]+)(?:\s*\|\s*['"]([^'"]+)['"])?\s*\}\}/g, (match, qId, fallback) => {
       const val = answers[qId];
       if (val === undefined || val === null || val === '') {
-        return fallback !== undefined ? fallback : match;
+        return fallback !== undefined ? fallback : '';
       }
       if (Array.isArray(val)) return val.join(', ');
       if (typeof val === 'object') {
@@ -2070,6 +2070,8 @@ window.AEPiping = {
       }
       return String(val);
     });
+    // Remove awkward trailing whitespace or space before punctuation caused by empty token replacement
+    return res.replace(/\s+([\?\.\!,:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
   }
 };
 

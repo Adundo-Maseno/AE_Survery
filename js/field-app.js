@@ -1009,9 +1009,15 @@ window.AEFieldApp = {
     if (!q) return;
 
     window.speechSynthesis.cancel();
-    let textToSpeak = q.title || '';
-    if (q.helpText) {
-      textToSpeak += `. ${q.helpText}`;
+    const pipedTitle = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+      ? window.AEPiping.interpolate(q.title || '', this.draftAnswers, survey)
+      : (q.title || '');
+    const pipedHelp = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
+      ? window.AEPiping.interpolate(q.helpText || '', this.draftAnswers, survey)
+      : (q.helpText || '');
+    let textToSpeak = pipedTitle;
+    if (pipedHelp) {
+      textToSpeak += `. ${pipedHelp}`;
     }
     if (Array.isArray(q.options) && q.options.length > 0 && (q.type === 'multiple_choice' || q.type === 'dropdown' || q.type === 'checkboxes')) {
       const optionsPrefix = lang === 'sw' ? 'Chaguo ni:' : lang === 'fr' ? 'Les options sont:' : lang === 'pt' ? 'As opções são:' : 'Options:';
