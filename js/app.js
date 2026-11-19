@@ -38,6 +38,8 @@ window.AEApp = {
   isAppInstalled: false,
   loginSelectedPersonId: 'ADM-01',
   loginError: '',
+  hasPendingCloudUpdates: false,
+  pendingCloudUpdateSummary: '',
 
   async boot() {
     try {
@@ -110,10 +112,15 @@ window.AEApp = {
       this.isAppInstalled = true;
     }
 
-    // Listen for browser online/offline transitions
+    // Listen for browser online/offline transitions (db.js owns the online push trigger)
     window.addEventListener('online', () => {
-      this.showToast('Network connection restored. Ready to sync with Google Sheets.', 'success');
-      if (window.aeStore.settings.autoSyncOnOnline && window.aeStore.syncQueue.length > 0) {
+      this.showToast('Network connection restored. Syncing with Google Sheets…', 'success');
+      if (
+        window.aeStore &&
+        typeof window.aeStore.triggerBackgroundSyncNow !== 'function' &&
+        window.aeStore.settings.autoSyncOnOnline &&
+        window.aeStore.syncQueue.length > 0
+      ) {
         this.triggerGoogleSheetsSync();
       } else {
         this.render();
@@ -135,10 +142,95 @@ window.AEApp = {
       }
     });
 
+    // Listen for inbound cloud freshness updates (stage-safe, never clobbers active edits)
+    window.addEventListener('ae-cloud-data-updated', (ev) => {
+      this.handleCloudDataUpdated(ev);
+    });
+
     // Global Keyboard Shortcuts & Escape Key Resilience
     window.addEventListener('keydown', (e) => this.handleGlobalKeydown(e));
 
+    this.mirrorSyncSettingsToIdb();
     this.render();
+
+    // Non-blocking freshness pull on Studio boot
+    if (window.aeStore && typeof window.aeStore.pullFreshDataIfStale === 'function') {
+      window.aeStore.pullFreshDataIfStale({
+        minAgeMs: 30000,
+        reason: 'stage_' + this.currentStage
+      }).catch(() => {});
+    }
+  },
+
+  mirrorSyncSettingsToIdb() {
+    if (!window.aeStore || typeof window.aeStore.writeStore !== 'function' || !window.aeStore.settings) return;
+    const s = window.aeStore.settings;
+    window.aeStore.writeStore('meta', {
+      id: 'settings',
+      gasWebAppUrl: s.gasWebAppUrl || '',
+      syncToken: s.syncToken || '',
+      deviceId: s.deviceId || '',
+      updatedAt: new Date().toISOString()
+    }).catch(() => {});
+  },
+
+  isUserActivelyEditingOrInModal() {
+    if (
+      this.showSyncModal ||
+      this.showTemplatesModal ||
+      this.showAddPersonnelModal ||
+      this.showAssignTaskModal ||
+      this.editingPersonnel ||
+      this.showResetPinPersonnel ||
+      this.showAssignTeamSurveyId ||
+      (window.AECollector && (window.AECollector.showPinPrompt || window.AECollector.showNewCollectorForm))
+    ) {
+      return true;
+    }
+    if (typeof document !== 'undefined') {
+      const active = document.activeElement;
+      if (active) {
+        const tag = (active.tagName || '').toUpperCase();
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || active.isContentEditable) {
+          return true;
+        }
+      }
+      if (document.querySelector('[role="dialog"], .ae-modal-backdrop')) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  handleCloudDataUpdated(ev) {
+    const detail = (ev && ev.detail) || {};
+    if (!detail.changed) return;
+
+    const readOnlyStages = ['dashboard', 'analyze', 'team'];
+    if (readOnlyStages.includes(this.currentStage) && !this.isUserActivelyEditingOrInModal()) {
+      this.hasPendingCloudUpdates = false;
+      this.pendingCloudUpdateSummary = '';
+      this.render();
+      return;
+    }
+
+    // Active editor/runner or focused input/modal: show non-destructive Refresh pill
+    this.hasPendingCloudUpdates = true;
+    this.pendingCloudUpdateSummary =
+      detail.newResponsesCount > 0
+        ? `${detail.newResponsesCount} new`
+        : 'New cloud updates';
+    const user = this.getCurrentUser();
+    if (user) {
+      this.renderHeaderBar(user);
+    }
+  },
+
+  refreshFromCloudBanner() {
+    this.hasPendingCloudUpdates = false;
+    this.pendingCloudUpdateSummary = '';
+    this.render();
+    this.showToast('View refreshed with latest cloud updates.', 'success');
   },
 
   handleGlobalKeydown(e) {
@@ -354,11 +446,25 @@ window.AEApp = {
     }
 
     this.currentStage = stage;
+    if (stage === 'dashboard' || stage === 'analyze' || stage === 'team') {
+      this.hasPendingCloudUpdates = false;
+      this.pendingCloudUpdateSummary = '';
+    }
     if (stage === 'collect') {
       const s = this.activeSurveyId ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
       if (s) window.AECollector.initRunnerForSurvey(s);
     }
     this.render();
+    if (
+      (stage === 'dashboard' || stage === 'analyze' || stage === 'team') &&
+      window.aeStore &&
+      typeof window.aeStore.pullFreshDataIfStale === 'function'
+    ) {
+      window.aeStore.pullFreshDataIfStale({
+        minAgeMs: 30000,
+        reason: 'stage_' + stage
+      }).catch(() => {});
+    }
     if (stageChanged) {
       const main = document.getElementById('ae_main_viewport');
       if (main) {
@@ -396,8 +502,34 @@ window.AEApp = {
     this.render();
     try {
       const res = await window.aeStore.syncWithGoogleSheets({ forceAll });
+      this.mirrorSyncSettingsToIdb();
+
+      // Bidirectional sync: also perform a version-checked pull so clicking Sync always gets fresh cloud data
+      let pullRes = null;
+      try {
+        if (window.aeStore && typeof window.aeStore.pullFreshDataIfStale === 'function') {
+          pullRes = await window.aeStore.pullFreshDataIfStale({
+            minAgeMs: 0,
+            force: true,
+            reason: 'manual_sync'
+          });
+        } else if (
+          window.aeStore &&
+          typeof window.aeStore.pullFromGoogleSheets === 'function' &&
+          window.aeStore.settings &&
+          window.aeStore.settings.gasWebAppUrl
+        ) {
+          pullRes = await window.aeStore.pullFromGoogleSheets();
+        }
+      } catch (pullErr) {
+        console.warn('[AEApp] Post-push cloud pull warning:', pullErr);
+      }
+
+      this.hasPendingCloudUpdates = false;
+      this.pendingCloudUpdateSummary = '';
+      const pullSuffix = pullRes && pullRes.changed ? ' · Fresh cloud updates pulled.' : '';
       this.showToast(
-        `Synced ${res.surveysSynced} surveys and ${res.responsesInserted} responses to Google Sheets (${res.latencyMs}ms).`,
+        `Synced ${res.surveysSynced} surveys and ${res.responsesInserted} responses to Google Sheets (${res.latencyMs}ms).${pullSuffix}`,
         'success'
       );
     } catch (err) {
@@ -937,6 +1069,16 @@ window.AEApp = {
 
         <!-- Right: Mobile Controls (<sm) & Desktop Action Cluster (>=sm) -->
         <div class="order-2 sm:order-3 flex items-center gap-1.5 sm:gap-2 shrink-0">
+          ${
+            this.hasPendingCloudUpdates
+              ? `<button id="ae_cloud_refresh_pill" onclick="AEApp.refreshFromCloudBanner()"
+                  title="New updates arrived from Google Sheets. Click to refresh view without losing saved work."
+                  class="h-8 px-2.5 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-[#DCFAE5] hover:bg-[#BBF7D0] text-[#04250E] border border-[#247B50]/40 shrink-0 ae-press">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+                  <span>New cloud updates · Refresh</span>
+                </button>`
+              : ''
+          }
           <!-- Mobile Sync Button -->
           <button onclick="AEApp.triggerGoogleSheetsSync()"
             ${isCurrentlySyncing ? 'disabled' : ''}

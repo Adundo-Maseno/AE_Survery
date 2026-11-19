@@ -39,6 +39,7 @@ window.AEFieldApp = {
   showEnumPinModal: false,
   pendingEnumPinPerson: null,
   enumPinError: '',
+  hasPendingCloudSurveyUpdate: false,
 
   async boot() {
     try {
@@ -93,27 +94,55 @@ window.AEFieldApp = {
       this.activeCollectorId = paramCollector;
     }
 
+    this.mirrorSyncSettingsToIdb();
+
     // Hydrate survey schema & collectors from Google Sheets when a direct survey/collector link is opened
     if ((paramSurvey || paramCollector) && window.aeStore.isEffectivelyOnline() && window.aeStore.settings.gasWebAppUrl) {
       const localSurvey = paramSurvey ? window.aeStore.getSurveyById(paramSurvey) : null;
       const localCol = paramCollector ? (window.aeStore.collectors || []).find((c) => c.id === paramCollector) : null;
+      const earlyResolvedSurveyId = paramSurvey || (localCol ? localCol.surveyId : null);
       const needsBlockingPull =
         (paramSurvey && !localSurvey) ||
         (paramCollector && !localCol) ||
         isExplicitRespondent ||
         (localSurvey && localSurvey.status !== 'Active');
+
+      const pullSurveyOrAll = async () => {
+        if (earlyResolvedSurveyId && typeof window.aeStore.pullSingleSurveyFromCloud === 'function') {
+          try {
+            const singleRes = await window.aeStore.pullSingleSurveyFromCloud(earlyResolvedSurveyId);
+            if (singleRes && (singleRes.survey || singleRes.ok || window.aeStore.getSurveyById(earlyResolvedSurveyId))) {
+              return singleRes;
+            }
+          } catch (singleErr) {
+            console.warn('[FieldApp] Single-survey cloud pull fallback:', singleErr);
+          }
+        }
+        return window.aeStore.pullFromGoogleSheets();
+      };
+
       if (needsBlockingPull) {
         try {
-          await window.aeStore.pullFromGoogleSheets();
+          await pullSurveyOrAll();
         } catch (pullErr) {
           console.warn('[FieldApp] Initial cloud survey pull warning:', pullErr);
         }
       } else {
-        window.aeStore.pullFromGoogleSheets().then(() => {
-          this.initRunnerForActiveSurvey(false);
-          this.render();
+        pullSurveyOrAll().then(() => {
+          this.handleIncomingCloudSurveyUpdate();
         }).catch(() => {});
       }
+    } else if (
+      !paramSurvey &&
+      !paramCollector &&
+      window.aeStore &&
+      typeof window.aeStore.pullFreshDataIfStale === 'function'
+    ) {
+      // PWA home-screen boot (no URL params): trigger non-blocking freshness pull
+      window.aeStore.pullFreshDataIfStale({
+        minAgeMs: 15000,
+        reason: 'field_boot'
+      }).catch(() => {});
     }
 
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
@@ -222,21 +251,28 @@ window.AEFieldApp = {
       this.renderHeader();
     });
 
-    // Listen for background auto-sync state changes
+    // Listen for background auto-sync state changes (inFlight === false)
     window.addEventListener('ae-sync-state-change', (ev) => {
       this.renderHeader();
-      if (this.justSubmittedReceipt && ev && ev.detail && ev.detail.syncing === false) {
-        const isOnline = window.aeStore.isEffectivelyOnline();
-        if (!this.isRespondentMode) {
-          this.justSubmittedReceipt.title = `${this.t('interviewLogged')} (${isOnline ? this.t('syncedDirectly') : this.t('storedLocallyPending')})`;
-          this.render();
-        }
+      if (this.justSubmittedReceipt && ev && ev.detail && ev.detail.inFlight === false) {
+        this.refreshSubmittedReceiptSyncState();
       }
     });
 
+    // Listen for inbound cloud freshness updates (never clobber active interview drafts)
+    window.addEventListener('ae-cloud-data-updated', (ev) => {
+      if (ev && ev.detail && ev.detail.changed) {
+        this.handleIncomingCloudSurveyUpdate();
+      }
+    });
+
+    // Browser online/offline transitions (db.js owns the online push trigger)
     window.addEventListener('online', () => {
       this.showToast('Online connection restored. Syncing outbox…', 'success');
-      this.triggerCloudSync(false);
+      this.renderHeader();
+      if (window.aeStore && typeof window.aeStore.triggerBackgroundSyncNow !== 'function') {
+        this.triggerCloudSync(false);
+      }
     });
 
     window.addEventListener('offline', () => {
@@ -248,6 +284,102 @@ window.AEFieldApp = {
 
     this.initRunnerForActiveSurvey(false);
     this.render();
+  },
+
+  mirrorSyncSettingsToIdb() {
+    if (!window.aeStore || typeof window.aeStore.writeStore !== 'function' || !window.aeStore.settings) return;
+    const s = window.aeStore.settings;
+    window.aeStore.writeStore('meta', {
+      id: 'settings',
+      gasWebAppUrl: s.gasWebAppUrl || '',
+      syncToken: s.syncToken || '',
+      deviceId: s.deviceId || '',
+      updatedAt: new Date().toISOString()
+    }).catch(() => {});
+  },
+
+  refreshSubmittedReceiptSyncState() {
+    if (!this.justSubmittedReceipt) return;
+    const rec = (window.aeStore && Array.isArray(window.aeStore.responses))
+      ? window.aeStore.responses.find((r) => r.id === this.justSubmittedReceipt.receiptId)
+      : null;
+    const isSynced = Boolean(rec && rec.syncStatus === 'synced');
+    const isOnline = window.aeStore && typeof window.aeStore.isEffectivelyOnline === 'function'
+      ? window.aeStore.isEffectivelyOnline()
+      : true;
+    const statusLabel = isSynced
+      ? 'Synced to Sheets'
+      : (isOnline ? 'Saved locally — syncing…' : this.t('storedLocallyPending'));
+
+    this.justSubmittedReceipt.syncStatus = isSynced ? 'synced' : 'pending';
+    this.justSubmittedReceipt.syncBadge = statusLabel;
+    if (!this.isRespondentMode) {
+      this.justSubmittedReceipt.title = `${this.t('interviewLogged')} (${statusLabel})`;
+    }
+    if (Object.keys(this.draftAnswers || {}).length === 0) {
+      this.render();
+    } else if (typeof document !== 'undefined') {
+      const badgeEl = document.getElementById('ae_receipt_sync_badge');
+      if (badgeEl) badgeEl.textContent = statusLabel;
+    }
+  },
+
+  handleIncomingCloudSurveyUpdate() {
+    const hasActiveDraft = Object.keys(this.draftAnswers || {}).length > 0;
+    if (hasActiveDraft) {
+      this.hasPendingCloudSurveyUpdate = true;
+      this.showCloudUpdateBanner();
+      return;
+    }
+    this.hasPendingCloudSurveyUpdate = false;
+    this.removeCloudUpdateBanner();
+    this.initRunnerForActiveSurvey(false);
+    this.render();
+  },
+
+  showCloudUpdateBanner() {
+    if (typeof document === 'undefined' || !document.body) return;
+    let banner = document.getElementById('ae_field_cloud_update_banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'ae_field_cloud_update_banner';
+      banner.setAttribute('role', 'status');
+      banner.className = 'fixed top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-[#141A17] text-white text-xs font-medium shadow-lg border border-[#247B50]/60';
+      document.body.appendChild(banner);
+    }
+    banner.innerHTML = `
+      <span class="w-2 h-2 rounded-full bg-[#3FC07A] shrink-0"></span>
+      <span>Survey updated · Refresh</span>
+      <button type="button" onclick="AEFieldApp.applyPendingCloudSurveyUpdate()"
+        class="px-2.5 py-0.5 rounded-full bg-[#247B50] hover:bg-[#1F6A45] text-white font-semibold text-[11px] ae-press">
+        Refresh
+      </button>
+      <button type="button" onclick="AEFieldApp.dismissCloudUpdateBanner()"
+        aria-label="Dismiss update notice"
+        class="text-white/70 hover:text-white text-xs px-1">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    `;
+  },
+
+  removeCloudUpdateBanner() {
+    if (typeof document === 'undefined') return;
+    const banner = document.getElementById('ae_field_cloud_update_banner');
+    if (banner) banner.remove();
+  },
+
+  dismissCloudUpdateBanner() {
+    this.hasPendingCloudSurveyUpdate = false;
+    this.removeCloudUpdateBanner();
+  },
+
+  applyPendingCloudSurveyUpdate() {
+    this.hasPendingCloudSurveyUpdate = false;
+    this.removeCloudUpdateBanner();
+    this.persistDraft();
+    this.initRunnerForActiveSurvey(false);
+    this.render();
+    this.showToast('Survey refreshed with latest cloud updates.', 'success');
   },
 
   initRunnerForActiveSurvey(forceReset = false) {
@@ -804,8 +936,19 @@ window.AEFieldApp = {
                   <div class="flex items-start gap-3 min-w-0">
                     <i class="fa-solid fa-circle-check text-[#247B50] text-lg mt-0.5 shrink-0"></i>
                     <div class="min-w-0">
-                      <div class="text-sm font-semibold text-[#04250E] ae-break-words">
-                        ${this.escapeHtml(this.justSubmittedReceipt.title)}
+                      <div class="flex flex-wrap items-center gap-2">
+                        <div class="text-sm font-semibold text-[#04250E] ae-break-words">
+                          ${this.escapeHtml(this.justSubmittedReceipt.title)}
+                        </div>
+                        ${
+                          this.justSubmittedReceipt.syncBadge
+                            ? `<span id="ae_receipt_sync_badge" class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                this.justSubmittedReceipt.syncStatus === 'synced'
+                                  ? 'bg-[#247B50] text-white'
+                                  : 'bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]'
+                              }">${this.escapeHtml(this.justSubmittedReceipt.syncBadge)}</span>`
+                            : ''
+                        }
                       </div>
                       <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">
                         ${this.escapeHtml(this.justSubmittedReceipt.subtitle)}
@@ -1875,14 +2018,21 @@ window.AEFieldApp = {
         : 'Not Captured';
       const receiptText = `AE-RECEIPT: ${saved.id} | Survey: ${survey.title} | Mode: ${this.isRespondentMode ? 'SELF_ADMINISTERED' : saved.enumerator} | GPS: ${gpsLabel} | Language: ${(this.currentLang || 'en').toUpperCase()} | QA: ${isSpeeder ? 'FLAGGED_SPEEDER' : 'VERIFIED'} | Timestamp: ${saved.submittedAt}`;
 
+      const isSavedSynced = saved.syncStatus === 'synced';
+      const initialSyncBadge = isSavedSynced
+        ? 'Synced to Sheets'
+        : (window.aeStore.isEffectivelyOnline() ? 'Saved locally — syncing…' : this.t('storedLocallyPending'));
+
       this.justSubmittedReceipt = {
         title: this.isRespondentMode
           ? 'Thank you! Your survey response has been submitted.'
-          : `${this.t('interviewLogged')} (${window.aeStore.isEffectivelyOnline() ? this.t('syncedDirectly') : this.t('storedLocallyPending')})`,
+          : `${this.t('interviewLogged')} (${initialSyncBadge})`,
         subtitle: this.isRespondentMode
           ? `Self-Administered Web Link · Your response has been securely recorded.`
           : `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`,
         receiptId: saved.id,
+        syncStatus: saved.syncStatus || 'pending',
+        syncBadge: initialSyncBadge,
         duration: `${durationSec}s`,
         gps: gpsLabel,
         receiptText

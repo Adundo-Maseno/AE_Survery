@@ -3,7 +3,9 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.61';
+const CACHE_NAME = 'ae-survey-prod-v3.62';
+const CODE_ASSET_TIMEOUT_MS = 2000;
+const SW_IDB_CANDIDATES = ['AESurveyMonkeyDB', 'AESurveyDB'];
 
 const APP_SHELL_ASSETS = [
   './',
@@ -74,6 +76,32 @@ function isGoogleAppsScriptHost(hostname) {
     h === 'googleusercontent.com' ||
     h.endsWith('.googleusercontent.com')
   );
+}
+
+function isSameOriginCodeAsset(url, request) {
+  const pathname = (url && url.pathname ? url.pathname : '').toLowerCase();
+  const dest = (request && request.destination ? request.destination : '').toLowerCase();
+  return (
+    pathname.endsWith('.js') ||
+    pathname.endsWith('.css') ||
+    dest === 'script' ||
+    dest === 'style'
+  );
+}
+
+function fetchWithTimeout(request, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('NetworkTimeout')), timeoutMs);
+    fetch(request)
+      .then((res) => {
+        clearTimeout(timer);
+        resolve(res);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 }
 
 // ----------------------------------------------------------------------------
@@ -222,7 +250,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Same-origin static assets: Cache-First with Background Revalidation
+  // 2. Same-origin code assets (.js / .css): Network-First (2s timeout, cache fallback, exact URL match without ignoreSearch)
+  if (isSameOrigin && isSameOriginCodeAsset(url, request)) {
+    event.respondWith(
+      fetchWithTimeout(request, CODE_ASSET_TIMEOUT_MS)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            return networkResponse;
+          }
+          return caches.match(request).then((cached) => cached || networkResponse);
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // 2b. Other same-origin static assets (images, icons, manifests): Cache-First with Background Revalidation
   if (isSameOrigin) {
     event.respondWith(
       caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
@@ -266,16 +311,264 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ----------------------------------------------------------------------------
+// CLOSED-TAB INDEXEDDB BACKGROUND SYNC HELPERS
+// ----------------------------------------------------------------------------
+function cleanAnswersForSwSync(answers) {
+  if (!answers || typeof answers !== 'object') return {};
+  const clean = {};
+  for (const [k, v] of Object.entries(answers)) {
+    if (typeof v === 'string' && v.startsWith('data:image/')) {
+      clean[k] = '[Digital Signature/Image Recorded]';
+    } else if (v && typeof v === 'object' && v.dataUrl) {
+      if (v.durationSec !== undefined || (v.mimeType && String(v.mimeType).startsWith('audio/'))) {
+        clean[k] = {
+          capturedAt: v.capturedAt || '',
+          durationSec: v.durationSec || 0,
+          mimeType: v.mimeType || 'audio/webm',
+          transcript: v.transcript || '',
+          summary: `Audio note (${v.durationSec || 0}s)`
+        };
+      } else {
+        clean[k] = {
+          capturedAt: v.capturedAt || '',
+          width: v.width || 0,
+          height: v.height || 0,
+          sizeKb: v.sizeKb || 0,
+          summary: `Photo proof attached (${v.sizeKb || 0} KB)`
+        };
+      }
+    } else {
+      clean[k] = v;
+    }
+  }
+  return clean;
+}
+
+function openIdbDatabase(dbName) {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB unavailable in Service Worker'));
+    }
+    try {
+      const req = indexedDB.open(dbName);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('Failed to open IndexedDB'));
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+function idbReadAll(db, storeName) {
+  return new Promise((resolve) => {
+    if (!db || !db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
+      return resolve([]);
+    }
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+
+function idbGetByKey(db, storeName, key) {
+  return new Promise((resolve) => {
+    if (!db || !db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
+      return resolve(null);
+    }
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const req = store.get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+function idbPutMany(db, storeName, items) {
+  return new Promise((resolve, reject) => {
+    if (!db || !db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
+      return resolve(0);
+    }
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      items.forEach((item) => store.put(item));
+      tx.oncomplete = () => resolve(items.length);
+      tx.onerror = () => reject(tx.error || new Error('IDB write failed'));
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+function idbDeleteMany(db, storeName, keys) {
+  return new Promise((resolve) => {
+    if (!db || !keys.length || !db.objectStoreNames || !db.objectStoreNames.contains(storeName)) {
+      return resolve(0);
+    }
+    try {
+      const tx = db.transaction(storeName, 'readwrite');
+      const store = tx.objectStore(storeName);
+      keys.forEach((k) => store.delete(k));
+      tx.oncomplete = () => resolve(keys.length);
+      tx.onerror = () => resolve(0);
+    } catch (e) {
+      resolve(0);
+    }
+  });
+}
+
+async function readSyncSettingsFromIdb(db) {
+  // Check dedicated 'settings' store first, then 'meta' store ('settings' / 'syncSettings')
+  if (db.objectStoreNames && db.objectStoreNames.contains('settings')) {
+    const direct = (await idbGetByKey(db, 'settings', 'settings')) ||
+      (await idbGetByKey(db, 'settings', 'syncSettings'));
+    if (direct && direct.gasWebAppUrl) return direct;
+    const all = await idbReadAll(db, 'settings');
+    const found = all.find((s) => s && s.gasWebAppUrl);
+    if (found) return found;
+  }
+  if (db.objectStoreNames && db.objectStoreNames.contains('meta')) {
+    const mSettings = (await idbGetByKey(db, 'meta', 'settings')) ||
+      (await idbGetByKey(db, 'meta', 'syncSettings'));
+    if (mSettings) {
+      if (mSettings.gasWebAppUrl) return mSettings;
+      if (mSettings.value && mSettings.value.gasWebAppUrl) return mSettings.value;
+    }
+  }
+  return null;
+}
+
+async function performClosedTabBackgroundSync() {
+  for (const dbName of SW_IDB_CANDIDATES) {
+    let db = null;
+    try {
+      db = await openIdbDatabase(dbName);
+      if (!db || !db.objectStoreNames || !db.objectStoreNames.contains('responses')) {
+        if (db && typeof db.close === 'function') db.close();
+        continue;
+      }
+
+      const settings = await readSyncSettingsFromIdb(db);
+      const gasUrl = settings && settings.gasWebAppUrl ? String(settings.gasWebAppUrl).trim() : '';
+      if (!gasUrl) {
+        if (db && typeof db.close === 'function') db.close();
+        continue;
+      }
+
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(gasUrl);
+      } catch (e) {
+        if (db && typeof db.close === 'function') db.close();
+        continue;
+      }
+      if (parsedUrl.protocol !== 'https:' || !isGoogleAppsScriptHost(parsedUrl.hostname)) {
+        if (db && typeof db.close === 'function') db.close();
+        continue;
+      }
+
+      const allResponses = await idbReadAll(db, 'responses');
+      const unsynced = allResponses.filter((r) => r && r.syncStatus !== 'synced');
+      if (unsynced.length === 0) {
+        if (db && typeof db.close === 'function') db.close();
+        return { ok: true, syncedCount: 0, dbName };
+      }
+
+      const payload = {
+        action: 'BATCH_SYNC',
+        syncToken: settings.syncToken || '',
+        deviceId: settings.deviceId || 'sw-bg-sync',
+        callerId: 'SW_BACKGROUND_SYNC',
+        surveys: [],
+        deletedSurveyIds: [],
+        collectors: [],
+        responses: unsynced.map((r) => ({
+          ...r,
+          answers: cleanAnswersForSwSync(r.answers)
+        })),
+        personnel: []
+      };
+
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+      });
+
+      if (!res || !res.ok) {
+        throw new Error(`SW BATCH_SYNC HTTP ${res ? res.status : 0}`);
+      }
+
+      const data = await res.json();
+      if (!data || !data.ok) {
+        throw new Error((data && data.error) || 'SW BATCH_SYNC returned error');
+      }
+
+      const syncedAt = data.serverTime || new Date().toISOString();
+      const updatedResponses = unsynced.map((r) => ({
+        ...r,
+        syncStatus: 'synced',
+        syncedAt
+      }));
+      await idbPutMany(db, 'responses', updatedResponses);
+
+      // Prune matching SUBMIT_RESPONSE items from syncQueue if present
+      if (db.objectStoreNames.contains('syncQueue')) {
+        const syncedIds = new Set(unsynced.map((r) => r.id));
+        const queueItems = await idbReadAll(db, 'syncQueue');
+        const keysToDelete = queueItems
+          .filter((q) => q && q.action === 'SUBMIT_RESPONSE' && syncedIds.has(q.recordId))
+          .map((q) => q.id);
+        await idbDeleteMany(db, 'syncQueue', keysToDelete);
+      }
+
+      if (db && typeof db.close === 'function') db.close();
+      return { ok: true, syncedCount: updatedResponses.length, dbName };
+    } catch (err) {
+      if (db && typeof db.close === 'function') db.close();
+      console.warn('[SW] Closed-tab background sync warning:', err && err.message ? err.message : err);
+    }
+  }
+  return { ok: false, syncedCount: 0 };
+}
+
+// ----------------------------------------------------------------------------
 // BACKGROUND SYNC API
 // ----------------------------------------------------------------------------
 self.addEventListener('sync', (event) => {
   if (event.tag === 'ae-background-sync') {
     event.waitUntil(
-      self.clients.matchAll({ type: 'window' }).then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({ type: 'TRIGGER_BG_SYNC' });
-        });
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        if (clients && clients.length > 0) {
+          clients.forEach((client) => {
+            client.postMessage({ type: 'TRIGGER_BG_SYNC' });
+          });
+          return;
+        }
+        return performClosedTabBackgroundSync();
       })
     );
   }
 });
+
+// Expose internals for automated verification
+self.__AE_SW_INTERNALS__ = {
+  CACHE_NAME,
+  CODE_ASSET_TIMEOUT_MS,
+  SW_IDB_CANDIDATES,
+  isSameOriginCodeAsset,
+  fetchWithTimeout,
+  cleanAnswersForSwSync,
+  performClosedTabBackgroundSync
+};

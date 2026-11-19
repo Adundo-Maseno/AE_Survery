@@ -2170,7 +2170,18 @@ class AESurveyStore {
     this.runnerDrafts = {};
     this.lastSyncError = null;
     this._syncInFlight = false;
+    this._syncPendingAgain = false;
+    this._syncPendingOptions = null;
+    this._syncInFlightPromise = null;
+    this._pullInFlight = false;
+    this._pullInFlightPromise = null;
+    this._lastPullAttemptAt = 0;
     this._surveysDirty = false;
+    this._tabId = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+    this._broadcastChannel = null;
+    this._leaderHeartbeatTimer = null;
+    this._leaderUnloadBound = false;
+    this._storageListenerBound = false;
     this.settings = {
       gasWebAppUrl: AE_DEFAULT_GAS_CONFIG.gasWebAppUrl,
       syncToken: AE_DEFAULT_GAS_CONFIG.syncToken,
@@ -2180,20 +2191,34 @@ class AESurveyStore {
       simulateOffline: false,
       deviceId: 'AE-TAB-' + Math.random().toString(36).substring(2, 6).toUpperCase(),
       defaultEnumerator: '',
-      lastSyncedAt: null
+      lastSyncedAt: null,
+      cloudDbVersion: null,
+      lastDeltaSyncAt: null
     };
     this.listeners = [];
+  }
+
+  _isRespondentModeUrl() {
+    if (typeof window === 'undefined' || !window.location || !window.location.search) return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return String(params.get('mode') || '').toLowerCase() === 'respondent';
+    } catch (e) {
+      return false;
+    }
   }
 
   async init() {
     this.loadFromLocalStorage();
 
     // Support URL Query Parameter Auto-Config (?gasUrl=...&syncToken=...)
+    let isRespondentMode = false;
     if (typeof window !== 'undefined' && window.location && window.location.search) {
       try {
         const params = new URLSearchParams(window.location.search);
         const urlParam = params.get('gasUrl') || params.get('gas');
         const tokenParam = params.get('syncToken') || params.get('token');
+        isRespondentMode = String(params.get('mode') || '').toLowerCase() === 'respondent';
         let updated = false;
         if (urlParam && this.isValidGasUrl(urlParam)) {
           this.settings.gasWebAppUrl = urlParam.trim();
@@ -2204,7 +2229,7 @@ class AESurveyStore {
           updated = true;
         }
         if (updated) {
-          this.saveToLocalStorage();
+          this.saveToLocalStorage({ stores: ['settings'], broadcast: false });
         }
       } catch (e) { }
     }
@@ -2215,18 +2240,25 @@ class AESurveyStore {
     } catch (e) {
       console.warn('IndexedDB unavailable, using synchronous localStorage engine:', e);
     }
-    // If there are queued local personnel/survey/response changes, flush them BEFORE pulling remote personnel
-    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+
+    // Initialize cross-tab synchronization (BroadcastChannel + storage event fallback)
+    this.initCrossTabSync();
+
+    // Non-blocking boot sync & fresh pull:
+    // - In mode=respondent, skip refreshPersonnelFromCloud() and full pullAll (field-app uses pullSingleSurveyFromCloud).
+    // - Otherwise, flush pending personnel/changes first (BATCH_SYNC already returns personnel, so no redundant refreshPersonnelFromCloud),
+    //   then run non-blocking version-checked pullFreshDataIfStale.
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl && !isRespondentMode) {
       const hasPendingPersonnel = Array.isArray(this.syncQueue) && this.syncQueue.some((q) => q && q.action === 'UPSERT_PERSONNEL');
       if (hasPendingPersonnel) {
         this.syncWithGoogleSheets({ forceAll: false, isBackground: true })
-          .then(() => this.refreshPersonnelFromCloud())
+          .then(() => this.pullFreshDataIfStale({ minAgeMs: 0, force: true, reason: 'init' }))
           .catch(() => { });
       } else {
-        this.refreshPersonnelFromCloud().catch(() => { });
+        this.pullFreshDataIfStale({ minAgeMs: 0, force: true, reason: 'init' }).catch(() => { });
       }
     }
-    // Launch continuous background auto-sync daemon
+    // Launch continuous background auto-sync daemon (leader-elected)
     this.startBackgroundSyncDaemon();
     return this;
   }
@@ -2294,7 +2326,15 @@ class AESurveyStore {
 
   async reconcileIndexedDB() {
     if (!this.idb) return;
-    const idbSurveys = await this.readStoreAll('surveys');
+    const [idbSurveys, cols, resps, metaEntries, staff, queue] = await Promise.all([
+      this.readStoreAll('surveys'),
+      this.readStoreAll('collectors'),
+      this.readStoreAll('responses'),
+      this.readStoreAll('meta'),
+      this.readStoreAll('personnel'),
+      this.readStoreAll('syncQueue')
+    ]);
+
     if (idbSurveys.length === 0 && this.surveys.length > 0) {
       await this.persistAllToIDB();
     } else if (idbSurveys.length > 0) {
@@ -2311,7 +2351,6 @@ class AESurveyStore {
       });
       this.surveys = Array.from(surveyMap.values());
 
-      const cols = await this.readStoreAll('collectors');
       if (cols.length) {
         const colMap = new Map(cols.map((c) => [c.id, c]));
         (this.collectors || []).forEach((lsCol) => {
@@ -2320,7 +2359,6 @@ class AESurveyStore {
         this.collectors = Array.from(colMap.values());
       }
 
-      const resps = await this.readStoreAll('responses');
       if (resps.length) {
         const respMap = new Map(resps.map((r) => [r.id || r.clientResponseId, r]));
         (this.responses || []).forEach((lsResp) => {
@@ -2332,13 +2370,11 @@ class AESurveyStore {
       }
 
       // Reconcile personnel by updatedAt / pinUpdatedAt + pinOverrides ledger so PIN changes never revert
-      const metaEntries = await this.readStoreAll('meta');
       const idbPinMeta = (metaEntries || []).find((m) => m && m.id === 'pinOverrides');
       if (idbPinMeta && idbPinMeta.overrides && typeof idbPinMeta.overrides === 'object') {
         this.pinOverrides = this.mergePinOverrides(this.pinOverrides, idbPinMeta.overrides);
       }
 
-      const staff = await this.readStoreAll('personnel');
       if (staff.length) {
         const staffMap = new Map(staff.map((p) => [p.id, p]));
         (this.personnel || []).forEach((lsPerson) => {
@@ -2364,7 +2400,6 @@ class AESurveyStore {
       }
       this.applyPinOverridesToPersonnel();
 
-      const queue = await this.readStoreAll('syncQueue');
       if (queue.length || (this.syncQueue && this.syncQueue.length)) {
         const qMap = new Map(queue.map((q) => [`${q.action}_${q.recordId}`, q]));
         (this.syncQueue || []).forEach((lsQ) => {
@@ -2375,7 +2410,7 @@ class AESurveyStore {
         this.syncQueue = Array.from(qMap.values());
       }
       await this.persistAllToIDB();
-      this.saveToLocalStorage();
+      this.saveToLocalStorage({ skipIDB: true, broadcast: false });
     }
   }
 
@@ -2530,30 +2565,74 @@ class AESurveyStore {
     });
   }
 
+  async persistStoreToIDB(storeName, items, options = {}) {
+    if (!this.idb || !storeName) return;
+    if (storeName === 'meta') {
+      const entries = Array.isArray(items) ? items : [items];
+      await Promise.all(entries.filter(Boolean).map((entry) => this.writeStore('meta', entry)));
+      return;
+    }
+    const replace = options.replace !== false;
+    const list = Array.isArray(items) ? items : (items ? [items] : []);
+    return new Promise((resolve) => {
+      try {
+        const tx = this.idb.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        if (replace) {
+          store.clear();
+        }
+        list.forEach((item) => {
+          if (item && typeof item === 'object') {
+            store.put(item);
+          }
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      } catch (e) {
+        resolve();
+      }
+    });
+  }
+
   async persistAllToIDB() {
     if (!this.idb) return;
-    const writeCollection = (storeName, items) =>
-      new Promise((resolve) => {
-        try {
-          const tx = this.idb.transaction(storeName, 'readwrite');
-          const store = tx.objectStore(storeName);
-          store.clear();
-          items.forEach((item) => store.put(item));
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => resolve();
-        } catch (e) {
-          resolve();
-        }
-      });
-
     await Promise.all([
-      writeCollection('surveys', this.surveys),
-      writeCollection('collectors', this.collectors),
-      writeCollection('responses', this.responses),
-      writeCollection('personnel', this.personnel),
-      writeCollection('syncQueue', this.syncQueue),
+      this.persistStoreToIDB('surveys', this.surveys),
+      this.persistStoreToIDB('collectors', this.collectors),
+      this.persistStoreToIDB('responses', this.responses),
+      this.persistStoreToIDB('personnel', this.personnel),
+      this.persistStoreToIDB('syncQueue', this.syncQueue),
       this.writeStore('meta', { id: 'pinOverrides', overrides: this.pinOverrides || {}, updatedAt: new Date().toISOString() })
     ]);
+  }
+
+  _safeLocalStorageSet(key, value) {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      const isQuota = Boolean(
+        e && (
+          e.name === 'QuotaExceededError' ||
+          e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+          e.code === 22 ||
+          e.code === 1014
+        )
+      );
+      if (isQuota) {
+        try {
+          localStorage.setItem(AE_STORAGE_KEYS.SYNC_LOGS, JSON.stringify((this.syncLogs || []).slice(0, 10)));
+          localStorage.setItem(key, value);
+          return true;
+        } catch (retryErr) {
+          console.warn(`[AESurveyStore] localStorage quota exceeded while writing ${key}; data remains safe in IndexedDB.`, retryErr);
+          return false;
+        }
+      }
+      console.warn(`[AESurveyStore] localStorage write failed for ${key}:`, e);
+      return false;
+    }
   }
 
   loadFromLocalStorage() {
@@ -2648,18 +2727,276 @@ class AESurveyStore {
     }
   }
 
-  saveToLocalStorage() {
-    localStorage.setItem(AE_STORAGE_KEYS.SURVEYS, JSON.stringify(this.surveys));
-    localStorage.setItem(AE_STORAGE_KEYS.COLLECTORS, JSON.stringify(this.collectors));
-    localStorage.setItem(AE_STORAGE_KEYS.RESPONSES, JSON.stringify(this.responses));
-    localStorage.setItem(AE_STORAGE_KEYS.PERSONNEL, JSON.stringify(this.personnel || []));
-    localStorage.setItem(AE_STORAGE_KEYS.PIN_OVERRIDES, JSON.stringify(this.pinOverrides || {}));
-    localStorage.setItem(AE_STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(this.syncQueue));
-    localStorage.setItem(AE_STORAGE_KEYS.SYNC_LOGS, JSON.stringify(this.syncLogs.slice(0, 40)));
-    localStorage.setItem(AE_STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
-    localStorage.setItem(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts || {}));
-    this.persistAllToIDB();
+  saveToLocalStorage(options = {}) {
+    const stores = Array.isArray(options && options.stores) && options.stores.length > 0
+      ? new Set(options.stores)
+      : null;
+    const skipIDB = Boolean(options && options.skipIDB);
+    const shouldBroadcast = !options || options.broadcast !== false;
+
+    if (!stores) {
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.SURVEYS, JSON.stringify(this.surveys));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.COLLECTORS, JSON.stringify(this.collectors));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.RESPONSES, JSON.stringify(this.responses));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.PERSONNEL, JSON.stringify(this.personnel || []));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.PIN_OVERRIDES, JSON.stringify(this.pinOverrides || {}));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(this.syncQueue));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.SYNC_LOGS, JSON.stringify((this.syncLogs || []).slice(0, 40)));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
+      this._safeLocalStorageSet(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts || {}));
+      if (!skipIDB) {
+        this.persistAllToIDB();
+      }
+    } else {
+      const idbTasks = [];
+      if (stores.has('surveys')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.SURVEYS, JSON.stringify(this.surveys));
+        if (!skipIDB) idbTasks.push(this.persistStoreToIDB('surveys', this.surveys));
+      }
+      if (stores.has('collectors')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.COLLECTORS, JSON.stringify(this.collectors));
+        if (!skipIDB) idbTasks.push(this.persistStoreToIDB('collectors', this.collectors));
+      }
+      if (stores.has('responses')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.RESPONSES, JSON.stringify(this.responses));
+        if (!skipIDB) idbTasks.push(this.persistStoreToIDB('responses', this.responses));
+      }
+      if (stores.has('personnel')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.PERSONNEL, JSON.stringify(this.personnel || []));
+        if (!skipIDB) idbTasks.push(this.persistStoreToIDB('personnel', this.personnel));
+      }
+      if (stores.has('pinOverrides')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.PIN_OVERRIDES, JSON.stringify(this.pinOverrides || {}));
+        if (!skipIDB) {
+          idbTasks.push(this.writeStore('meta', { id: 'pinOverrides', overrides: this.pinOverrides || {}, updatedAt: new Date().toISOString() }));
+        }
+      }
+      if (stores.has('syncQueue')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(this.syncQueue));
+        if (!skipIDB) idbTasks.push(this.persistStoreToIDB('syncQueue', this.syncQueue));
+      }
+      if (stores.has('syncLogs')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.SYNC_LOGS, JSON.stringify((this.syncLogs || []).slice(0, 40)));
+      }
+      if (stores.has('settings')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
+      }
+      if (stores.has('runnerDrafts')) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts || {}));
+      }
+      if (idbTasks.length > 0) {
+        Promise.all(idbTasks).catch(() => { });
+      }
+    }
+
+    if (shouldBroadcast) {
+      this.broadcastTabUpdate(stores ? Array.from(stores) : ['all'], (options && options.meta) || {});
+    }
     this.notify();
+  }
+
+  /**
+   * Initializes cross-tab real-time state sync using BroadcastChannel('ae_survey_sync')
+   * with a localStorage `storage` event fallback for browsers without BroadcastChannel.
+   */
+  initCrossTabSync() {
+    if (typeof BroadcastChannel !== 'undefined' && !this._broadcastChannel) {
+      try {
+        this._broadcastChannel = new BroadcastChannel('ae_survey_sync');
+        this._broadcastChannel.onmessage = (event) => {
+          this._handleCrossTabMessage(event && event.data);
+        };
+      } catch (e) {
+        this._broadcastChannel = null;
+      }
+    }
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !this._storageListenerBound) {
+      this._storageListenerBound = true;
+      const watchedKeys = new Set(Object.values(AE_STORAGE_KEYS));
+      window.addEventListener('storage', (event) => {
+        if (!event || !event.key) return;
+        if (event.key === 'ae_survey_sync_ping' && event.newValue) {
+          try {
+            const msg = JSON.parse(event.newValue);
+            this._handleCrossTabMessage(msg);
+          } catch (e) { }
+          return;
+        }
+        if (watchedKeys.has(event.key)) {
+          const keyToStore = {
+            [AE_STORAGE_KEYS.SURVEYS]: 'surveys',
+            [AE_STORAGE_KEYS.COLLECTORS]: 'collectors',
+            [AE_STORAGE_KEYS.RESPONSES]: 'responses',
+            [AE_STORAGE_KEYS.PERSONNEL]: 'personnel',
+            [AE_STORAGE_KEYS.PIN_OVERRIDES]: 'pinOverrides',
+            [AE_STORAGE_KEYS.SYNC_QUEUE]: 'syncQueue',
+            [AE_STORAGE_KEYS.SYNC_LOGS]: 'syncLogs',
+            [AE_STORAGE_KEYS.SETTINGS]: 'settings',
+            [AE_STORAGE_KEYS.RUNNER_DRAFTS]: 'runnerDrafts'
+          };
+          const storeName = keyToStore[event.key];
+          if (storeName) {
+            this._handleCrossTabMessage({
+              type: 'STATE_UPDATED',
+              senderId: 'storage_event',
+              stores: [storeName],
+              timestamp: Date.now()
+            });
+          }
+        }
+      });
+    }
+  }
+
+  broadcastTabUpdate(stores = ['all'], meta = {}) {
+    const payload = {
+      type: 'STATE_UPDATED',
+      senderId: this._tabId,
+      stores: Array.isArray(stores) ? stores : ['all'],
+      timestamp: Date.now(),
+      meta: meta || {}
+    };
+    if (this._broadcastChannel) {
+      try {
+        this._broadcastChannel.postMessage(payload);
+        return;
+      } catch (e) { }
+    }
+    // Fallback ping via localStorage if BroadcastChannel is unavailable
+    if (typeof BroadcastChannel === 'undefined') {
+      this._safeLocalStorageSet('ae_survey_sync_ping', JSON.stringify(payload));
+    }
+  }
+
+  _reloadStoresFromLocalStorage(stores = ['all']) {
+    if (typeof localStorage === 'undefined') return false;
+    const all = !Array.isArray(stores) || stores.includes('all');
+    const set = new Set(Array.isArray(stores) ? stores : ['all']);
+    let reloaded = false;
+    try {
+      if (all || set.has('surveys')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.SURVEYS);
+        if (raw) { this.surveys = JSON.parse(raw) || []; reloaded = true; }
+      }
+      if (all || set.has('collectors')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.COLLECTORS);
+        if (raw) { this.collectors = JSON.parse(raw) || []; reloaded = true; }
+      }
+      if (all || set.has('responses')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.RESPONSES);
+        if (raw) { this.responses = JSON.parse(raw) || []; reloaded = true; }
+      }
+      if (all || set.has('personnel')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.PERSONNEL);
+        if (raw) { this.personnel = JSON.parse(raw) || []; reloaded = true; }
+      }
+      if (all || set.has('pinOverrides')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.PIN_OVERRIDES);
+        if (raw) { this.pinOverrides = JSON.parse(raw) || {}; reloaded = true; }
+      }
+      if (all || set.has('syncQueue')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.SYNC_QUEUE);
+        if (raw) { this.syncQueue = JSON.parse(raw) || []; reloaded = true; }
+      }
+      if (all || set.has('syncLogs')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.SYNC_LOGS);
+        if (raw) { this.syncLogs = JSON.parse(raw) || []; reloaded = true; }
+      }
+      if (all || set.has('settings')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.SETTINGS);
+        if (raw) {
+          const parsed = JSON.parse(raw) || {};
+          this.settings = { ...this.settings, ...parsed };
+          reloaded = true;
+        }
+      }
+      if (all || set.has('runnerDrafts')) {
+        const raw = localStorage.getItem(AE_STORAGE_KEYS.RUNNER_DRAFTS);
+        if (raw) { this.runnerDrafts = JSON.parse(raw) || {}; reloaded = true; }
+      }
+    } catch (e) { }
+    return reloaded;
+  }
+
+  _handleCrossTabMessage(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.senderId && msg.senderId === this._tabId) return;
+    if (msg.type === 'STATE_UPDATED') {
+      const reloaded = this._reloadStoresFromLocalStorage(msg.stores || ['all']);
+      if (reloaded) {
+        this.notify();
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ae-cloud-data-updated', {
+            detail: {
+              changed: true,
+              newResponsesCount: Number(msg.meta && msg.meta.newResponsesCount) || 0,
+              surveysUpdated: Number(msg.meta && msg.meta.surveysUpdated) || 0,
+              reason: 'cross_tab'
+            }
+          }));
+        }
+      }
+    }
+  }
+
+  /**
+   * Single-tab leader lease (`ae_sync_leader`) via localStorage heartbeat so only
+   * 1 tab runs the 25s background daemon at a time.
+   */
+  tryAcquireSyncLeader(ttlMs = 35000) {
+    if (typeof localStorage === 'undefined') return true;
+    const LEADER_KEY = 'ae_sync_leader';
+    const now = Date.now();
+    try {
+      const raw = localStorage.getItem(LEADER_KEY);
+      if (raw) {
+        const current = JSON.parse(raw);
+        if (current && current.tabId && current.tabId !== this._tabId && Number(current.expiresAt) > now) {
+          return false;
+        }
+      }
+      this._safeLocalStorageSet(LEADER_KEY, JSON.stringify({ tabId: this._tabId, expiresAt: now + ttlMs }));
+      return true;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  isSyncLeader() {
+    if (typeof localStorage === 'undefined') return true;
+    const LEADER_KEY = 'ae_sync_leader';
+    const now = Date.now();
+    try {
+      const raw = localStorage.getItem(LEADER_KEY);
+      if (!raw) return this.tryAcquireSyncLeader();
+      const current = JSON.parse(raw);
+      if (!current || !current.tabId || Number(current.expiresAt) <= now) {
+        return this.tryAcquireSyncLeader();
+      }
+      if (current.tabId === this._tabId) {
+        // Renew lease while active
+        this._safeLocalStorageSet(LEADER_KEY, JSON.stringify({ tabId: this._tabId, expiresAt: now + 35000 }));
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  releaseSyncLeader() {
+    if (typeof localStorage === 'undefined') return;
+    const LEADER_KEY = 'ae_sync_leader';
+    try {
+      const raw = localStorage.getItem(LEADER_KEY);
+      if (raw) {
+        const current = JSON.parse(raw);
+        if (current && current.tabId === this._tabId) {
+          localStorage.removeItem(LEADER_KEY);
+        }
+      }
+    } catch (e) { }
   }
 
   subscribe(fn) {
@@ -2681,7 +3018,7 @@ class AESurveyStore {
 
   updateSettings(partial) {
     this.settings = { ...this.settings, ...partial };
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['settings'] });
   }
 
   getSurveyById(surveyId) {
@@ -2809,11 +3146,7 @@ class AESurveyStore {
     }
 
     this.enqueueSyncItem('UPSERT_PERSONNEL', clean.id, `Personnel (${clean.role}): ${clean.fullName}`);
-    this.saveToLocalStorage();
-    if (this.idb) {
-      this.writeStore('personnel', clean).catch(() => { });
-      this.writeStore('meta', { id: 'pinOverrides', overrides: this.pinOverrides, updatedAt: nowIso }).catch(() => { });
-    }
+    this.saveToLocalStorage({ stores: ['personnel', 'pinOverrides', 'syncQueue'] });
     if (window.AESession && typeof window.AESession.syncCurrentUser === 'function') {
       window.AESession.syncCurrentUser(clean);
     }
@@ -2867,6 +3200,67 @@ class AESurveyStore {
     return check;
   }
 
+  _isAuthError(errOrMsg, statusCode = 0) {
+    if (statusCode === 401 || statusCode === 403) return true;
+    const msg = typeof errOrMsg === 'string'
+      ? errOrMsg
+      : (errOrMsg && errOrMsg.message ? String(errOrMsg.message) : '');
+    return /\b(401|403|unauthorized|forbidden|admin\s+auth|admin\s+only|insufficient\s+permissions?)\b/i.test(msg);
+  }
+
+  /**
+   * Fetch wrapper with 18s timeout and exponential backoff + jitter on transient
+   * network/5xx/429 failures. Never retries on 401/403 or Unauthorized errors.
+   */
+  async _fetchWithRetry(url, fetchOptions = {}, retryOptions = {}) {
+    const timeoutMs = Number(retryOptions.timeoutMs) > 0 ? Number(retryOptions.timeoutMs) : 18000;
+    const maxAttempts = Math.max(1, Number(retryOptions.maxAttempts) || 3);
+    const baseDelayMs = retryOptions.baseDelayMs !== undefined ? Number(retryOptions.baseDelayMs) : 600;
+    const jitterMaxMs = retryOptions.jitterMaxMs !== undefined ? Number(retryOptions.jitterMaxMs) : 400;
+
+    let attempt = 0;
+    let lastError = null;
+    while (attempt < maxAttempts) {
+      attempt++;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, {
+          ...fetchOptions,
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (res && res.ok) {
+          return res;
+        }
+        const status = res ? res.status : 0;
+        // Never retry auth errors (401/403) or non-429 4xx client errors
+        if (status === 401 || status === 403 || (status >= 400 && status < 500 && status !== 429)) {
+          return res;
+        }
+        if (attempt < maxAttempts) {
+          const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * jitterMaxMs);
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        return res;
+      } catch (netErr) {
+        clearTimeout(timer);
+        lastError = netErr;
+        if (this._isAuthError(netErr)) {
+          throw netErr;
+        }
+        if (attempt < maxAttempts) {
+          const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * jitterMaxMs);
+          await new Promise((r) => setTimeout(r, delayMs));
+          continue;
+        }
+        throw netErr;
+      }
+    }
+    throw lastError || new Error('Network request failed');
+  }
+
   /**
    * Pushes updated personnel credentials/PIN directly to Google Sheets in background
    * with live sync state feedback and automatic outbox queuing if offline.
@@ -2879,7 +3273,7 @@ class AESurveyStore {
 
     if (!gasUrl || !this.isValidGasUrl(gasUrl) || !isOnline) {
       this.enqueueSyncItem('UPSERT_PERSONNEL', person.id, `Personnel (${person.role || 'Staff'}): ${person.fullName || person.id}`);
-      this.saveToLocalStorage();
+      this.saveToLocalStorage({ stores: ['syncQueue'] });
       return { ok: false, offline: true, error: 'Device is offline or GAS Web App URL is not set. Queued in outbox.' };
     }
 
@@ -2901,16 +3295,16 @@ class AESurveyStore {
     }
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20000);
-      const res = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-        redirect: 'follow',
-        signal: controller.signal
-      });
-      clearTimeout(timer);
+      const res = await this._fetchWithRetry(
+        gasUrl,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          redirect: 'follow'
+        },
+        { timeoutMs: 18000, maxAttempts: 2 }
+      );
 
       if (res && res.ok) {
         let data = await res.json();
@@ -2935,12 +3329,16 @@ class AESurveyStore {
                 responses: [],
                 personnel: this.personnel
               };
-              const fbRes = await fetch(gasUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(fallbackPayload),
-                redirect: 'follow'
-              });
+              const fbRes = await this._fetchWithRetry(
+                gasUrl,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify(fallbackPayload),
+                  redirect: 'follow'
+                },
+                { timeoutMs: 18000, maxAttempts: 1 }
+              );
               if (fbRes && fbRes.ok) {
                 const fbData = await fbRes.json();
                 if (fbData && fbData.ok && Array.isArray(fbData.personnel)) {
@@ -2959,12 +3357,15 @@ class AESurveyStore {
             }
           }
 
+          if (data.version !== undefined && data.version !== null && data.version !== '') {
+            this.settings.cloudDbVersion = String(data.version);
+          }
           if (Array.isArray(data.personnel) && data.personnel.length > 0) {
             this.mergePersonnelFromCloud(data.personnel);
           }
           this.syncQueue = this.syncQueue.filter((q) => q.recordId !== person.id);
           this.settings.lastSyncedAt = new Date().toISOString();
-          this.saveToLocalStorage();
+          this.saveToLocalStorage({ stores: ['personnel', 'pinOverrides', 'syncQueue', 'settings'] });
           this._syncInFlight = false;
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
@@ -2979,7 +3380,7 @@ class AESurveyStore {
     } catch (e) {
       console.warn('Direct personnel sync failed, safely preserved in local outbox:', e);
       this.enqueueSyncItem('UPSERT_PERSONNEL', person.id, `Personnel (${person.role || 'Staff'}): ${person.fullName || person.id}`);
-      this.saveToLocalStorage();
+      this.saveToLocalStorage({ stores: ['syncQueue'] });
       this._syncInFlight = false;
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
@@ -2997,17 +3398,11 @@ class AESurveyStore {
 
     try {
       const sep = gasUrl.includes('?') ? '&' : '?';
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20000);
-      let response;
-      try {
-        response = await fetch(
-          `${gasUrl}${sep}action=pullPersonnel&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`,
-          { method: 'GET', redirect: 'follow', signal: controller.signal }
-        );
-      } finally {
-        clearTimeout(timer);
-      }
+      const response = await this._fetchWithRetry(
+        `${gasUrl}${sep}action=pullPersonnel&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`,
+        { method: 'GET', redirect: 'follow' },
+        { timeoutMs: 18000, maxAttempts: 2 }
+      );
 
       if (response && response.ok) {
         const data = await response.json();
@@ -3178,7 +3573,7 @@ class AESurveyStore {
 
     if (changed) {
       this.personnel = Array.from(perMap.values());
-      this.saveToLocalStorage();
+      this.saveToLocalStorage({ stores: ['personnel', 'pinOverrides'] });
       if (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function') {
         const cur = window.AESession.getCurrentUser();
         if (cur && cur.id) {
@@ -3187,40 +3582,107 @@ class AESurveyStore {
         }
       }
     }
+    return changed;
+  }
+
+  /**
+   * Stops the continuous background auto-sync daemon and releases the leader lease.
+   */
+  stopBackgroundSyncDaemon() {
+    if (this._bgSyncTimer) {
+      clearInterval(this._bgSyncTimer);
+      this._bgSyncTimer = null;
+    }
+    if (this._leaderHeartbeatTimer) {
+      clearInterval(this._leaderHeartbeatTimer);
+      this._leaderHeartbeatTimer = null;
+    }
+    this.releaseSyncLeader();
+  }
+
+  /**
+   * Event-driven fresh pull with throttle (`_lastPullAttemptAt`) and concurrency guard (`_pullInFlight`).
+   * Uses version-checked / delta pull so no-op polls are tiny and non-blocking.
+   */
+  async pullFreshDataIfStale(options = {}) {
+    const { minAgeMs = 5000, force = false, reason = 'auto' } = options || {};
+    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+    if (!this.isEffectivelyOnline() || !gasUrl || !this.isValidGasUrl(gasUrl)) {
+      return { ok: false, skipped: true, reason: 'offline_or_no_url' };
+    }
+    if (this._pullInFlight && this._pullInFlightPromise) {
+      return this._pullInFlightPromise;
+    }
+    const now = Date.now();
+    if (!force && this._lastPullAttemptAt && (now - this._lastPullAttemptAt) < minAgeMs) {
+      return { ok: true, skipped: true, reason: 'throttled' };
+    }
+    this._lastPullAttemptAt = now;
+    try {
+      return await this.pullFromGoogleSheets({ forceFull: false, reason, isBackground: true });
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : 'Background pull failed' };
+    }
   }
 
   /**
    * Continuous Background Auto-Sync Daemon.
-   * Runs silently in the background, flushing queued field responses and pulling
-   * updated staff credentials whenever connectivity is present.
+   * Runs silently in the background (single-tab leader-elected via `ae_sync_leader`),
+   * flushing queued field responses and running lightweight version-checked pulls.
    */
   startBackgroundSyncDaemon() {
     if (this._bgSyncTimer) {
       clearInterval(this._bgSyncTimer);
       this._bgSyncTimer = null;
     }
+    if (this._leaderHeartbeatTimer) {
+      clearInterval(this._leaderHeartbeatTimer);
+      this._leaderHeartbeatTimer = null;
+    }
 
     if (this.settings.backgroundSyncEnabled === false) return;
+
+    // Acquire or contend for single-tab leader lease
+    this.tryAcquireSyncLeader();
+    this._leaderHeartbeatTimer = setInterval(() => {
+      this.isSyncLeader();
+    }, 12000);
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !this._leaderUnloadBound) {
+      this._leaderUnloadBound = true;
+      const release = () => this.releaseSyncLeader();
+      window.addEventListener('beforeunload', release);
+      window.addEventListener('pagehide', release);
+    }
 
     // Heartbeat every 20-30 seconds (default: 25s)
     const intervalSec = Math.max(10, parseInt(this.settings.backgroundSyncIntervalSec, 10) || 25);
     const intervalMs = intervalSec * 1000;
 
     this._bgSyncTimer = setInterval(async () => {
-      // Guard: skip if offline, simulated offline, no GAS URL, or sync already in flight
-      if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl || this._syncInFlight) {
+      // Single-tab leader lease: only 1 tab runs the 25s background daemon at a time
+      if (!this.isSyncLeader()) {
+        return;
+      }
+      // Guard: skip if offline, simulated offline, or no GAS URL
+      if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl) {
         return;
       }
 
       const hasUnsyncedResponses = this.responses.some((r) => r.syncStatus !== 'synced');
       const hasQueuedItems = Array.isArray(this.syncQueue) && this.syncQueue.length > 0;
 
-      if (hasUnsyncedResponses || hasQueuedItems) {
+      if ((hasUnsyncedResponses || hasQueuedItems) && !this._syncInFlight) {
         try {
           await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
         } catch (e) {
           // Silent retry on next interval tick
         }
+      }
+
+      // Version-checked pull (no-op polls return tiny { ok: true, unchanged: true })
+      if (!this._isRespondentModeUrl()) {
+        await this.pullFreshDataIfStale({ minAgeMs: 5000, reason: 'daemon' });
       }
     }, intervalMs);
 
@@ -3230,18 +3692,26 @@ class AESurveyStore {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           this.triggerBackgroundSyncNow();
+          if (!this._isRespondentModeUrl()) {
+            this.pullFreshDataIfStale({ minAgeMs: 5000, reason: 'visibilitychange' }).catch(() => { });
+          }
         }
       });
-      window.addEventListener('focus', () => {
-        this.triggerBackgroundSyncNow();
-      });
+      if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+        window.addEventListener('focus', () => {
+          this.triggerBackgroundSyncNow();
+        });
+      }
     }
 
     // Event 2: Network online reconnection
-    if (typeof window !== 'undefined' && !this._onlineBound) {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !this._onlineBound) {
       this._onlineBound = true;
       window.addEventListener('online', () => {
         this.triggerBackgroundSyncNow();
+        if (!this._isRespondentModeUrl()) {
+          this.pullFreshDataIfStale({ minAgeMs: 2000, reason: 'online' }).catch(() => { });
+        }
       });
     }
 
@@ -3875,7 +4345,7 @@ class AESurveyStore {
         this.triggerBackgroundSyncNow(400);
       }
     }
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['surveys', 'collectors', 'syncQueue'] });
     return cleanSurvey;
   }
 
@@ -3909,8 +4379,8 @@ class AESurveyStore {
     survey.status = 'Archived';
     survey.updatedAt = new Date().toISOString();
     this._surveysDirty = true;
-    this.saveToLocalStorage();
     this.enqueueSyncItem('UPSERT_SURVEY', survey.id, `Archive Survey: ${survey.title}`);
+    this.saveToLocalStorage({ stores: ['surveys', 'syncQueue'] });
     if (this.isEffectivelyOnline()) {
       this.syncWithGoogleSheets({ manual: true }).catch(() => { });
     }
@@ -3926,8 +4396,8 @@ class AESurveyStore {
     survey.status = targetStatus;
     survey.updatedAt = new Date().toISOString();
     this._surveysDirty = true;
-    this.saveToLocalStorage();
     this.enqueueSyncItem('UPSERT_SURVEY', survey.id, `Restore Survey: ${survey.title} (${targetStatus})`);
+    this.saveToLocalStorage({ stores: ['surveys', 'syncQueue'] });
     if (this.isEffectivelyOnline()) {
       this.syncWithGoogleSheets({ manual: true }).catch(() => { });
     }
@@ -4136,7 +4606,7 @@ class AESurveyStore {
         this.triggerBackgroundSyncNow(400);
       }
     }
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['collectors', 'syncQueue'] });
     return cleanCol;
   }
 
@@ -4212,7 +4682,7 @@ class AESurveyStore {
       if (typeof window.AEIntegrityEngine.computeRecordHash === 'function') {
         window.AEIntegrityEngine.computeRecordHash(record).then((hash) => {
           record.recordHash = hash;
-          this.saveToLocalStorage();
+          this.saveToLocalStorage({ stores: ['responses'], broadcast: false });
         });
       }
     }
@@ -4223,7 +4693,7 @@ class AESurveyStore {
       record.id,
       `Response (${record.enumerator}) -> ${record.surveyTitle.substring(0, 38)}`
     );
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue'], meta: { newResponsesCount: 1 } });
 
     // Trigger immediate background sync to stream new response to Google Sheets
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
@@ -4243,7 +4713,7 @@ class AESurveyStore {
   deleteResponse(responseId) {
     this.responses = this.responses.filter((r) => r.id !== responseId);
     this.syncQueue = this.syncQueue.filter((q) => q.recordId !== responseId);
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
   }
 
   enqueueSyncItem(action, recordId, title) {
@@ -4270,9 +4740,7 @@ class AESurveyStore {
       ...draftState,
       savedAt: new Date().toISOString()
     };
-    try {
-      localStorage.setItem(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
-    } catch (e) { }
+    this._safeLocalStorageSet(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
   }
 
   getRunnerDraft(surveyId) {
@@ -4283,256 +4751,487 @@ class AESurveyStore {
   clearRunnerDraft(surveyId) {
     if (!surveyId || !this.runnerDrafts) return;
     delete this.runnerDrafts[surveyId];
-    try {
-      localStorage.setItem(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
-    } catch (e) { }
+    this._safeLocalStorageSet(AE_STORAGE_KEYS.RUNNER_DRAFTS, JSON.stringify(this.runnerDrafts));
   }
 
   /**
    * Synchronizes all pending surveys, collectors, and offline responses with
    * Google Sheets via Google Apps Script (`Code.gs`).
    * - If `gasWebAppUrl` is configured, performs a real CORS-safe `POST` with
-   *   `Content-Type: text/plain;charset=utf-8`, 45s AbortController timeout,
-   *   and automatic 1-retry container warm-up.
+   *   `Content-Type: text/plain;charset=utf-8`, 18s AbortController timeout,
+   *   and exponential backoff + jitter on transient failures.
+   * - Overlapping calls coalesce cleanly via `_syncPendingAgain` instead of throwing.
    * - If no URL is configured yet (or user chooses Demo Cloud Sync), simulates
    *   the exact Google Sheets batch transaction locally so every workflow can be
    *   tested immediately!
    */
   async syncWithGoogleSheets(options = { forceAll: false }) {
-    if (this._syncInFlight) {
-      throw new Error('A Google Sheets synchronization is already in progress.');
-    }
+    const opts = options || { forceAll: false };
     if (!this.isEffectivelyOnline()) {
       throw new Error('Device is currently in Offline Mode. Disable Offline Mode or connect to Wi-Fi/cellular to sync with Google Sheets.');
     }
 
-    this._syncInFlight = true;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
-    }
-    const startTime = performance.now();
-    const unsyncedResponses = options.forceAll
-      ? [...this.responses]
-      : this.responses.filter((r) => r.syncStatus !== 'synced');
-    const syncedResponseIds = new Set(unsyncedResponses.map((r) => r.id));
-    const syncedQueueSnapshot = new Map((this.syncQueue || []).map((q) => [q.id, q.createdAt]));
-
-    const currentSessionUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
-      ? window.AESession.getCurrentUser()
-      : null;
-
-    const isCallerAdmin = Boolean(
-      (currentSessionUser && currentSessionUser.role === 'admin') ||
-      (!currentSessionUser && (options.forceAll || options.syncSurveys || this._surveysDirty))
-    );
-
-    // Send survey schemas if forced, dirty, first connect, or manual sync (when authorized)
-    const shouldSyncSurveys = Boolean(
-      isCallerAdmin && (options.forceAll || options.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt || options.manual)
-    );
-    const surveysPayload = shouldSyncSurveys ? this.surveys : [];
-    const deletedSurveyIds = isCallerAdmin
-      ? Array.from(
-          new Set([
-            ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
-            ...this.syncQueue.filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
-          ])
-        )
-      : [];
-
-    const callerId = currentSessionUser
-      ? currentSessionUser.id
-      : (isCallerAdmin ? 'ADM-01' : 'PUBLIC_RESPONDENT');
-    const cloudResponses = unsyncedResponses.map((r) => ({
-      ...r,
-      answers: this.cleanAnswersForCloudSync(r.answers)
-    }));
-
-    const personnelPayload = isCallerAdmin
-      ? this.personnel
-      : (currentSessionUser ? this.personnel.filter((p) => p.id === currentSessionUser.id) : []);
-
-    const payload = {
-      action: 'BATCH_SYNC',
-      syncToken: this.settings.syncToken || '',
-      deviceId: this.settings.deviceId,
-      callerId,
-      surveys: surveysPayload,
-      deletedSurveyIds,
-      collectors: isCallerAdmin ? this.collectors : [],
-      responses: cloudResponses,
-      personnel: personnelPayload
-    };
-
-    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
-    let resultSummary = null;
-
-    try {
-      if (gasUrl && !this.isValidGasUrl(gasUrl)) {
-        throw new Error('Untrusted or invalid GAS URL. Only https://script.google.com/macros/s/.../exec endpoints are permitted.');
+    // Coalesce overlapping sync calls instead of throwing
+    if (this._syncInFlight) {
+      this._syncPendingAgain = true;
+      const prev = this._syncPendingOptions || {};
+      this._syncPendingOptions = {
+        forceAll: Boolean(prev.forceAll || opts.forceAll),
+        syncSurveys: Boolean(prev.syncSurveys || opts.syncSurveys),
+        manual: Boolean(prev.manual || opts.manual),
+        isBackground: prev.isBackground !== undefined
+          ? Boolean(prev.isBackground && opts.isBackground)
+          : Boolean(opts.isBackground)
+      };
+      if (this._syncInFlightPromise) {
+        return this._syncInFlightPromise;
       }
+      return { ok: true, coalesced: true };
+    }
 
-      if (gasUrl) {
-        // Real Google Apps Script Web App POST (CORS-safe text/plain + 45s timeout + auto-retry)
-        const GAS_TIMEOUT_MS = 45000;
-        let response = null;
-        let attempt = 0;
-        const maxAttempts = 2;
+    this._syncInFlight = true;
+    const runSync = async () => {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
+      }
+      const startTime = performance.now();
+      const unsyncedResponses = opts.forceAll
+        ? [...this.responses]
+        : this.responses.filter((r) => r.syncStatus !== 'synced');
+      const syncedResponseIds = new Set(unsyncedResponses.map((r) => r.id));
+      const syncedQueueSnapshot = new Map((this.syncQueue || []).map((q) => [q.id, q.createdAt]));
 
-        while (attempt < maxAttempts) {
-          attempt++;
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), GAS_TIMEOUT_MS);
+      const currentSessionUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
+        ? window.AESession.getCurrentUser()
+        : null;
+
+      const isCallerAdmin = Boolean(
+        (currentSessionUser && currentSessionUser.role === 'admin') ||
+        (!currentSessionUser && (opts.forceAll || opts.syncSurveys || this._surveysDirty))
+      );
+
+      // Send survey schemas if forced, dirty, first connect, or manual sync (when authorized)
+      const shouldSyncSurveys = Boolean(
+        isCallerAdmin && (opts.forceAll || opts.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt || opts.manual)
+      );
+      const surveysPayload = shouldSyncSurveys ? this.surveys : [];
+      const deletedSurveyIds = isCallerAdmin
+        ? Array.from(
+            new Set([
+              ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
+              ...this.syncQueue.filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
+            ])
+          )
+        : [];
+
+      const callerId = currentSessionUser
+        ? currentSessionUser.id
+        : (isCallerAdmin ? 'ADM-01' : 'PUBLIC_RESPONDENT');
+      const cloudResponses = unsyncedResponses.map((r) => ({
+        ...r,
+        answers: this.cleanAnswersForCloudSync(r.answers)
+      }));
+
+      const personnelPayload = isCallerAdmin
+        ? this.personnel
+        : (currentSessionUser ? this.personnel.filter((p) => p.id === currentSessionUser.id) : []);
+
+      let sentSurveySync = shouldSyncSurveys;
+      let sentCollectorSync = isCallerAdmin;
+      let sentDeletedSurveyIds = new Set(deletedSurveyIds);
+      let sentAllPersonnel = isCallerAdmin;
+      let sentPersonnelIds = new Set(personnelPayload.map((p) => p && p.id).filter(Boolean));
+
+      const payload = {
+        action: 'BATCH_SYNC',
+        syncToken: this.settings.syncToken || '',
+        deviceId: this.settings.deviceId,
+        callerId,
+        surveys: surveysPayload,
+        deletedSurveyIds,
+        collectors: isCallerAdmin ? this.collectors : [],
+        responses: cloudResponses,
+        personnel: personnelPayload
+      };
+
+      const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+      let resultSummary = null;
+
+      try {
+        if (gasUrl && !this.isValidGasUrl(gasUrl)) {
+          throw new Error('Untrusted or invalid GAS URL. Only https://script.google.com/macros/s/.../exec endpoints are permitted.');
+        }
+
+        if (gasUrl) {
+          const postBatch = async (batchPayload) => {
+            let response;
+            try {
+              response = await this._fetchWithRetry(
+                gasUrl,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                  body: JSON.stringify(batchPayload),
+                  redirect: 'follow'
+                },
+                { timeoutMs: 18000, maxAttempts: 3 }
+              );
+            } catch (netErr) {
+              if (netErr && netErr.name === 'AbortError') {
+                throw new Error('Google Apps Script request timed out after 18s. Responses remain safely queued in IndexedDB outbox.');
+              }
+              throw new Error(`Network connection to Google Apps Script failed (${netErr && netErr.message ? netErr.message : 'Unreachable'}). Responses remain safely queued locally.`);
+            }
+
+            if (!response || !response.ok) {
+              const status = response ? response.status : 0;
+              const statusText = response ? response.statusText : 'No response';
+              const httpErr = new Error(`Google Apps Script HTTP ${status}: ${statusText}`);
+              httpErr.status = status;
+              throw httpErr;
+            }
+
+            let parsed;
+            try {
+              parsed = await response.json();
+            } catch (parseErr) {
+              throw new Error('Google Apps Script returned an HTML login page instead of JSON. Ensure your Web App deployment has "Who has access: Anyone".');
+            }
+
+            if (!parsed || !parsed.ok) {
+              const apiErr = new Error((parsed && parsed.error) || 'Google Apps Script returned an error');
+              if (parsed && parsed.status) apiErr.status = parsed.status;
+              throw apiErr;
+            }
+            return parsed;
+          };
+
+          let data;
           try {
-            response = await fetch(gasUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
-              },
-              body: JSON.stringify(payload),
-              redirect: 'follow',
-              signal: controller.signal
-            });
-            clearTimeout(timer);
-            if (response && response.ok) {
-              break;
+            data = await postBatch(payload);
+          } catch (batchErr) {
+            // If an admin-auth error rejected a mixed batch that also contained valid non-admin response submissions,
+            // retry a responses-only submission so field responses are never dropped or blocked by admin-only queue items.
+            const hasAdminPayload = surveysPayload.length > 0 || deletedSurveyIds.length > 0 || (isCallerAdmin && this.collectors.length > 0);
+            if (this._isAuthError(batchErr, batchErr.status) && cloudResponses.length > 0 && hasAdminPayload) {
+              const responsesOnlyPayload = {
+                action: 'BATCH_SYNC',
+                syncToken: this.settings.syncToken || '',
+                deviceId: this.settings.deviceId,
+                callerId,
+                surveys: [],
+                deletedSurveyIds: [],
+                collectors: [],
+                responses: cloudResponses,
+                personnel: []
+              };
+              data = await postBatch(responsesOnlyPayload);
+              sentSurveySync = false;
+              sentCollectorSync = false;
+              sentDeletedSurveyIds = new Set();
+              sentAllPersonnel = false;
+              sentPersonnelIds = new Set();
+            } else {
+              throw batchErr;
             }
-          } catch (netErr) {
-            clearTimeout(timer);
-            // If request timed out or network glitched on attempt 1, retry once (warm container)
-            if (attempt < maxAttempts && (netErr.name === 'AbortError' || netErr.name === 'TypeError')) {
-              await new Promise((r) => setTimeout(r, 1200));
-              continue;
-            }
-            if (netErr && netErr.name === 'AbortError') {
-              throw new Error(`Google Apps Script request timed out after ${Math.round(GAS_TIMEOUT_MS / 1000)}s. Responses remain safely queued in IndexedDB outbox.`);
-            }
-            throw new Error(`Network connection to Google Apps Script failed (${netErr.message || 'Unreachable'}). Responses remain safely queued locally.`);
+          }
+
+          if (data.version !== undefined && data.version !== null && data.version !== '') {
+            this.settings.cloudDbVersion = String(data.version);
+          }
+          if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
+            this.mergePersonnelFromCloud(data.personnel);
+          }
+          if (sentSurveySync) {
+            this._surveysDirty = false;
+          }
+          resultSummary = {
+            mode: 'Live GAS Web App',
+            surveysSynced: data.surveysSynced ?? (sentSurveySync ? this.surveys.length : 0),
+            responsesInserted: data.responsesInserted ?? unsyncedResponses.length,
+            personnelSynced: data.personnelSynced ?? this.personnel.length,
+            duplicatesSkipped: data.duplicatesSkipped ?? 0,
+            version: data.version ?? this.settings.cloudDbVersion ?? null,
+            serverTime: data.serverTime || new Date().toISOString()
+          };
+        } else {
+          // Built-in Google Sheets Sandbox / Simulator when no live GAS URL is pasted yet
+          await new Promise((r) => setTimeout(r, 320));
+          resultSummary = {
+            mode: 'Local GAS Simulator (Ready for live URL)',
+            surveysSynced: this.surveys.length,
+            responsesInserted: unsyncedResponses.length,
+            personnelSynced: this.personnel.length,
+            duplicatesSkipped: 0,
+            version: this.settings.cloudDbVersion || null,
+            serverTime: new Date().toISOString()
+          };
+        }
+
+        const nowIso = new Date().toISOString();
+        this.responses.forEach((r) => {
+          if (syncedResponseIds.has(r.id)) {
+            r.syncStatus = 'synced';
+            r.syncedAt = nowIso;
+          }
+        });
+
+        // Prune ONLY syncQueue items that were actually included in the succeeded payload
+        // so non-admin syncs never drop queued admin items (and vice versa).
+        this.syncQueue = (this.syncQueue || []).filter((item) => {
+          if (!syncedQueueSnapshot.has(item.id) || item.createdAt !== syncedQueueSnapshot.get(item.id)) {
+            return true;
+          }
+          if (item.action === 'SUBMIT_RESPONSE') {
+            return !syncedResponseIds.has(item.recordId);
+          }
+          if (item.action === 'DELETE_SURVEY') {
+            return !sentDeletedSurveyIds.has(item.recordId);
+          }
+          if (item.action === 'UPSERT_SURVEY') {
+            return !(sentSurveySync || !gasUrl);
+          }
+          if (item.action === 'UPSERT_COLLECTOR') {
+            return !(sentCollectorSync || !gasUrl);
+          }
+          if (item.action === 'UPSERT_PERSONNEL') {
+            return !(sentAllPersonnel || sentPersonnelIds.has(item.recordId) || !gasUrl);
+          }
+          return true;
+        });
+        if (sentDeletedSurveyIds.size > 0 && Array.isArray(this.deletedSurveyIds)) {
+          this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => !sentDeletedSurveyIds.has(id));
+        }
+        this.applyPinOverridesToPersonnel();
+        this.settings.lastSyncedAt = nowIso;
+        this.lastSyncError = null;
+
+        const latencyMs = Math.round(performance.now() - startTime);
+        this.syncLogs.unshift({
+          id: 'log_' + Date.now().toString(36),
+          timestamp: nowIso,
+          action: 'BATCH_SYNC',
+          details: `[${resultSummary.mode}] Synced ${resultSummary.surveysSynced} surveys & ${resultSummary.responsesInserted} responses (${resultSummary.duplicatesSkipped} duplicates skipped).`,
+          status: 'success',
+          latencyMs
+        });
+
+        this.saveToLocalStorage({ stores: ['responses', 'syncQueue', 'syncLogs', 'settings'] });
+        return { ...resultSummary, latencyMs };
+      } catch (err) {
+        const nowIso = new Date().toISOString();
+        const latencyMs = Math.round(performance.now() - startTime);
+        this.syncQueue.forEach((item) => {
+          item.attempts = (item.attempts || 0) + 1;
+        });
+        // In background auto-sync mode, do not show a disruptive banner on transient timeout
+        if (!opts.isBackground) {
+          this.lastSyncError = {
+            message: err.message || 'Synchronization failed',
+            timestamp: nowIso,
+            gasUrl
+          };
+        }
+        this.syncLogs.unshift({
+          id: 'log_' + Date.now().toString(36),
+          timestamp: nowIso,
+          action: 'BATCH_SYNC_ERROR',
+          details: `[Sync Failed] ${err.message || 'Unknown error'} (${this.syncQueue.length} items retained in IndexedDB outbox)`,
+          status: 'error',
+          latencyMs
+        });
+        this.saveToLocalStorage({ stores: ['syncQueue', 'syncLogs'] });
+        throw err;
+      } finally {
+        this._syncInFlight = false;
+        this._syncInFlightPromise = null;
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+        }
+        if (this._syncPendingAgain) {
+          const nextOpts = this._syncPendingOptions || { forceAll: false, isBackground: true };
+          this._syncPendingAgain = false;
+          this._syncPendingOptions = null;
+          if (this.isEffectivelyOnline()) {
+            setTimeout(() => {
+              this.syncWithGoogleSheets(nextOpts).catch(() => { });
+            }, 50);
           }
         }
-
-        if (!response || !response.ok) {
-          throw new Error(`Google Apps Script HTTP ${response ? response.status : 0}: ${response ? response.statusText : 'No response'}`);
-        }
-
-        let data;
-        try {
-          data = await response.json();
-        } catch (parseErr) {
-          throw new Error('Google Apps Script returned an HTML login page instead of JSON. Ensure your Web App deployment has "Who has access: Anyone".');
-        }
-
-        if (!data.ok) {
-          throw new Error(data.error || 'Google Apps Script returned an error');
-        }
-        if (data.personnel && Array.isArray(data.personnel) && data.personnel.length) {
-          this.mergePersonnelFromCloud(data.personnel);
-        }
-        if (shouldSyncSurveys) {
-          this._surveysDirty = false;
-        }
-        resultSummary = {
-          mode: 'Live GAS Web App',
-          surveysSynced: data.surveysSynced ?? (shouldSyncSurveys ? this.surveys.length : 0),
-          responsesInserted: data.responsesInserted ?? unsyncedResponses.length,
-          personnelSynced: data.personnelSynced ?? this.personnel.length,
-          duplicatesSkipped: data.duplicatesSkipped ?? 0,
-          serverTime: data.serverTime || new Date().toISOString()
-        };
-      } else {
-        // Built-in Google Sheets Sandbox / Simulator when no live GAS URL is pasted yet
-        await new Promise((r) => setTimeout(r, 320));
-        resultSummary = {
-          mode: 'Local GAS Simulator (Ready for live URL)',
-          surveysSynced: this.surveys.length,
-          responsesInserted: unsyncedResponses.length,
-          personnelSynced: this.personnel.length,
-          duplicatesSkipped: 0,
-          serverTime: new Date().toISOString()
-        };
       }
+    };
 
-      const nowIso = new Date().toISOString();
-      const syncedDeletedSurveyIds = new Set(deletedSurveyIds);
-      this.responses.forEach((r) => {
-        if (syncedResponseIds.has(r.id)) {
-          r.syncStatus = 'synced';
-          r.syncedAt = nowIso;
-        }
-      });
-
-      this.syncQueue = (this.syncQueue || []).filter((item) => {
-        if (!syncedQueueSnapshot.has(item.id) || item.createdAt !== syncedQueueSnapshot.get(item.id)) {
-          return true;
-        }
-        if (item.action === 'SUBMIT_RESPONSE') {
-          return !syncedResponseIds.has(item.recordId);
-        }
-        if (item.action === 'DELETE_SURVEY') {
-          return !syncedDeletedSurveyIds.has(item.recordId);
-        }
-        if (item.action === 'UPSERT_SURVEY') {
-          return !(shouldSyncSurveys || !gasUrl);
-        }
-        return false;
-      });
-      if (syncedDeletedSurveyIds.size > 0 && Array.isArray(this.deletedSurveyIds)) {
-        this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => !syncedDeletedSurveyIds.has(id));
-      }
-      this.applyPinOverridesToPersonnel();
-      this.settings.lastSyncedAt = nowIso;
-      this.lastSyncError = null;
-
-      const latencyMs = Math.round(performance.now() - startTime);
-      this.syncLogs.unshift({
-        id: 'log_' + Date.now().toString(36),
-        timestamp: nowIso,
-        action: 'BATCH_SYNC',
-        details: `[${resultSummary.mode}] Synced ${resultSummary.surveysSynced} surveys & ${resultSummary.responsesInserted} responses (${resultSummary.duplicatesSkipped} duplicates skipped).`,
-        status: 'success',
-        latencyMs
-      });
-
-      this.saveToLocalStorage();
-      return { ...resultSummary, latencyMs };
-    } catch (err) {
-      const nowIso = new Date().toISOString();
-      const latencyMs = Math.round(performance.now() - startTime);
-      this.syncQueue.forEach((item) => {
-        item.attempts = (item.attempts || 0) + 1;
-      });
-      // In background auto-sync mode, do not show a disruptive banner on transient timeout
-      if (!options.isBackground) {
-        this.lastSyncError = {
-          message: err.message || 'Synchronization failed',
-          timestamp: nowIso,
-          gasUrl
-        };
-      }
-      this.syncLogs.unshift({
-        id: 'log_' + Date.now().toString(36),
-        timestamp: nowIso,
-        action: 'BATCH_SYNC_ERROR',
-        details: `[Sync Failed] ${err.message || 'Unknown error'} (${this.syncQueue.length} items retained in IndexedDB outbox)`,
-        status: 'error',
-        latencyMs
-      });
-      this.saveToLocalStorage();
-      throw err;
-    } finally {
-      this._syncInFlight = false;
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
-      }
-    }
+    this._syncInFlightPromise = runSync();
+    return this._syncInFlightPromise;
   }
 
   /**
-   * Pulls all surveys, collectors, and responses from the live Google Sheet (`?action=pullAll`).
+   * Pulls a single survey and its collectors via `?action=pullSurvey&surveyId=...`
+   * without fetching Responses or Personnel (fast & private for respondent links).
+   * Automatically falls back to `pullFromGoogleSheets()` if connected to an older GAS
+   * deployment that does not yet support `pullSurvey`.
    */
-  async pullFromGoogleSheets() {
-    if (this._syncInFlight) {
-      throw new Error('A Google Sheets synchronization is already in progress.');
+  async pullSingleSurveyFromCloud(surveyId, options = {}) {
+    if (!surveyId) {
+      throw new Error('surveyId is required to pull a single survey.');
+    }
+    if (!this.isEffectivelyOnline()) {
+      throw new Error('Cannot pull survey from Google Sheets while offline.');
+    }
+    const gasUrl = (this.settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !this.isValidGasUrl(gasUrl)) {
+      throw new Error('Paste a valid Google Apps Script Web App URL (`https://script.google.com/macros/s/.../exec`) first.');
+    }
+
+    const startTime = performance.now();
+    const sep = gasUrl.includes('?') ? '&' : '?';
+    const url = `${gasUrl}${sep}action=pullSurvey&surveyId=${encodeURIComponent(surveyId)}&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`;
+
+    let response;
+    try {
+      response = await this._fetchWithRetry(
+        url,
+        { method: 'GET', redirect: 'follow' },
+        { timeoutMs: 18000, maxAttempts: 3 }
+      );
+    } catch (netErr) {
+      if (netErr && netErr.name === 'AbortError') {
+        throw new Error('Pulling survey from Google Apps Script timed out after 18s.');
+      }
+      throw new Error(`Failed to pull survey from Google Sheets (${netErr && netErr.message ? netErr.message : 'Network error'}).`);
+    }
+
+    if (response && (response.status === 401 || response.status === 403)) {
+      throw new Error(`HTTP ${response.status} Unauthorized while pulling survey from Google Apps Script`);
+    }
+
+    let data = null;
+    let shouldFallback = false;
+    if (!response || !response.ok) {
+      shouldFallback = true;
+    } else {
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        throw new Error('Google Apps Script returned an HTML login page instead of JSON. Ensure your Web App deployment has "Who has access: Anyone".');
+      }
+      if (!data || !data.ok) {
+        const errMsg = (data && data.error) ? String(data.error) : '';
+        if (this._isAuthError(errMsg)) {
+          throw new Error(errMsg || 'Unauthorized');
+        }
+        if (/not\s*found/i.test(errMsg) && !/action/i.test(errMsg)) {
+          return { ok: false, notFound: true, error: errMsg, survey: null, collectors: [] };
+        }
+        shouldFallback = true;
+      } else if (!('survey' in data)) {
+        // Older GAS deployment ignored unknown action (e.g. returned status banner or pullAll payload without `survey`)
+        shouldFallback = true;
+      }
+    }
+
+    if (shouldFallback) {
+      const fb = await this.pullFromGoogleSheets({ forceFull: false, reason: options.reason || 'pullSurvey_fallback', isBackground: Boolean(options.isBackground) });
+      return {
+        ok: true,
+        fallback: true,
+        survey: this.getSurveyById(surveyId),
+        collectors: this.getCollectorsForSurvey(surveyId),
+        version: fb && fb.version ? fb.version : (this.settings.cloudDbVersion || null),
+        latencyMs: Math.round(performance.now() - startTime)
+      };
+    }
+
+    let surveysUpdated = 0;
+    let collectorsChanged = false;
+    let mergedSurvey = null;
+
+    if (data.survey && typeof data.survey === 'object') {
+      const clean = this.sanitizeSurveyRecord(data.survey);
+      const pendingSurveyIds = new Set(
+        (this.syncQueue || []).filter((q) => q.action === 'UPSERT_SURVEY').map((q) => q.recordId)
+      );
+      const deletedIds = new Set([
+        ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
+        ...(this.syncQueue || []).filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
+      ]);
+
+      if (clean && !deletedIds.has(clean.id)) {
+        const idx = this.surveys.findIndex((s) => s.id === clean.id);
+        if (idx >= 0) {
+          const existing = this.surveys[idx];
+          const localTime = Date.parse(existing.updatedAt || '') || 0;
+          const remoteTime = Date.parse(clean.updatedAt || '') || 0;
+          if (!pendingSurveyIds.has(clean.id) && !(localTime > 0 && remoteTime > 0 && localTime > remoteTime)) {
+            if (JSON.stringify(existing) !== JSON.stringify(clean)) {
+              this.surveys[idx] = clean;
+              surveysUpdated = 1;
+            }
+          }
+          mergedSurvey = this.surveys[idx];
+        } else {
+          this.surveys.unshift(clean);
+          surveysUpdated = 1;
+          mergedSurvey = clean;
+        }
+      }
+    }
+
+    if (Array.isArray(data.collectors) && data.collectors.length > 0) {
+      const colMap = new Map(this.collectors.map((c) => [c.id, c]));
+      data.collectors.forEach((rc) => {
+        const cleanCol = this.sanitizeCollectorRecord(rc);
+        if (!cleanCol) return;
+        const prev = colMap.get(cleanCol.id);
+        if (!prev || JSON.stringify(prev) !== JSON.stringify(cleanCol)) {
+          colMap.set(cleanCol.id, cleanCol);
+          collectorsChanged = true;
+        }
+      });
+      if (collectorsChanged) {
+        this.collectors = Array.from(colMap.values());
+      }
+    }
+
+    const changed = surveysUpdated > 0 || collectorsChanged;
+    if (changed) {
+      const storesToSave = [];
+      if (surveysUpdated > 0) storesToSave.push('surveys');
+      if (collectorsChanged) storesToSave.push('collectors');
+      this.saveToLocalStorage({ stores: storesToSave, meta: { surveysUpdated } });
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-cloud-data-updated', {
+          detail: {
+            changed: true,
+            newResponsesCount: 0,
+            surveysUpdated,
+            reason: options.reason || 'pullSurvey'
+          }
+        }));
+      }
+    }
+
+    return {
+      ok: true,
+      fallback: false,
+      changed,
+      survey: mergedSurvey || this.getSurveyById(surveyId),
+      collectors: this.getCollectorsForSurvey(surveyId),
+      version: data.version ?? null,
+      latencyMs: Math.round(performance.now() - startTime)
+    };
+  }
+
+  /**
+   * Pulls surveys, collectors, responses, and personnel from Google Sheets.
+   * Supports version-checked short-circuit (`unchanged: true`) and incremental delta pulls
+   * (`action=pullDelta&since=...&version=...`) with automatic fallback to `action=pullAll`
+   * for backward compatibility with older GAS deployments.
+   */
+  async pullFromGoogleSheets(options = {}) {
+    const { forceFull = false, reason = 'manual', isBackground = false } = options || {};
+    if (this._pullInFlight && this._pullInFlightPromise) {
+      return this._pullInFlightPromise;
     }
     if (!this.isEffectivelyOnline()) {
       throw new Error('Cannot pull from Google Sheets while offline.');
@@ -4542,189 +5241,313 @@ class AESurveyStore {
       throw new Error('Paste a valid Google Apps Script Web App URL (`https://script.google.com/macros/s/.../exec`) first to pull live sheet rows.');
     }
 
-    this._syncInFlight = true;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
-    }
-    const startTime = performance.now();
-    try {
-      const sep = gasUrl.includes('?') ? '&' : '?';
-      const GAS_TIMEOUT_MS = 45000;
-      let response = null;
-      let attempt = 0;
-      const maxAttempts = 2;
+    this._pullInFlight = true;
+    this._lastPullAttemptAt = Date.now();
+    const runPull = async () => {
+      if (!isBackground && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
+      }
+      const startTime = performance.now();
+      try {
+        const sep = gasUrl.includes('?') ? '&' : '?';
+        const baseParams = `deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}`;
+        const hasVersion = !forceFull && Boolean(this.settings.cloudDbVersion);
+        const versionParam = hasVersion ? `&version=${encodeURIComponent(this.settings.cloudDbVersion)}` : '';
+        const tryDelta = hasVersion && Boolean(this.settings.lastDeltaSyncAt);
 
-      while (attempt < maxAttempts) {
-        attempt++;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), GAS_TIMEOUT_MS);
-        try {
-          response = await fetch(`${gasUrl}${sep}action=pullAll&deviceId=${encodeURIComponent(this.settings.deviceId)}&syncToken=${encodeURIComponent(this.settings.syncToken || '')}&t=${Date.now()}`, {
-            method: 'GET',
-            redirect: 'follow',
-            signal: controller.signal
+        const fetchPullJson = async (url) => {
+          let response;
+          try {
+            response = await this._fetchWithRetry(
+              url,
+              { method: 'GET', redirect: 'follow' },
+              { timeoutMs: 18000, maxAttempts: 3 }
+            );
+          } catch (netErr) {
+            if (netErr && netErr.name === 'AbortError') {
+              throw new Error('Pulling from Google Apps Script timed out after 18s.');
+            }
+            throw new Error(`Failed to pull from Google Sheets (${netErr && netErr.message ? netErr.message : 'Network error'}).`);
+          }
+
+          if (!response || !response.ok) {
+            const status = response ? response.status : 0;
+            const err = new Error(`HTTP ${status} while pulling from Google Apps Script`);
+            err.status = status;
+            throw err;
+          }
+
+          let parsed;
+          try {
+            parsed = await response.json();
+          } catch (parseErr) {
+            throw new Error('Google Apps Script returned an HTML login page instead of JSON. Ensure your Web App deployment has "Who has access: Anyone".');
+          }
+          return parsed;
+        };
+
+        let data;
+        let usedAction = 'pullAll';
+        if (tryDelta) {
+          const deltaUrl = `${gasUrl}${sep}action=pullDelta&since=${encodeURIComponent(this.settings.lastDeltaSyncAt)}${versionParam}&${baseParams}&t=${Date.now()}`;
+          try {
+            const deltaData = await fetchPullJson(deltaUrl);
+            if (
+              deltaData &&
+              deltaData.ok &&
+              (deltaData.unchanged === true ||
+                deltaData.delta === true ||
+                Array.isArray(deltaData.surveys) ||
+                Array.isArray(deltaData.responses))
+            ) {
+              data = deltaData;
+              usedAction = 'pullDelta';
+            } else {
+              const errMsg = (deltaData && deltaData.error) || '';
+              if (this._isAuthError(errMsg)) {
+                throw new Error(errMsg || 'Unauthorized');
+              }
+              // Older GAS deployment does not support pullDelta (e.g. returned status banner or error) -> fall back to pullAll
+              data = null;
+            }
+          } catch (deltaErr) {
+            if (this._isAuthError(deltaErr, deltaErr.status)) {
+              throw deltaErr;
+            }
+            // Fall back cleanly to pullAll
+            data = null;
+          }
+        }
+
+        if (!data) {
+          const pullAllUrl = `${gasUrl}${sep}action=pullAll${versionParam}&${baseParams}&t=${Date.now()}`;
+          data = await fetchPullJson(pullAllUrl);
+          usedAction = 'pullAll';
+        }
+
+        if (!data || !data.ok) {
+          throw new Error((data && data.error) || 'Failed to pull from Google Sheets');
+        }
+
+        const latencyMs = Math.round(performance.now() - startTime);
+
+        // Version-checked short-circuit: skip merge and localStorage/IDB writes!
+        if (data.unchanged === true) {
+          if (data.version !== undefined && data.version !== null && String(data.version) !== String(this.settings.cloudDbVersion || '')) {
+            this.settings.cloudDbVersion = String(data.version);
+            this.saveToLocalStorage({ stores: ['settings'], broadcast: false });
+          }
+          return {
+            ok: true,
+            unchanged: true,
+            version: data.version ?? this.settings.cloudDbVersion ?? null,
+            surveysCount: this.surveys.length,
+            responsesCount: this.responses.length,
+            latencyMs
+          };
+        }
+
+        let surveysUpdated = 0;
+        let collectorsChanged = false;
+        let newResponsesCount = 0;
+        let responsesChanged = false;
+        let personnelChanged = false;
+
+        // Merge remote surveys (sanitized against DOM XSS / invalid IDs, preserving newer local edits)
+        if (Array.isArray(data.surveys) && data.surveys.length > 0) {
+          const localMap = new Map(this.surveys.map((s) => [s.id, s]));
+          const pendingSurveyIds = new Set(
+            (this.syncQueue || []).filter((q) => q.action === 'UPSERT_SURVEY').map((q) => q.recordId)
+          );
+          const deletedIds = new Set([
+            ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
+            ...(this.syncQueue || []).filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
+          ]);
+          data.surveys.forEach((remoteSurvey) => {
+            const clean = this.sanitizeSurveyRecord(remoteSurvey);
+            if (!clean || deletedIds.has(clean.id)) return;
+            const existing = localMap.get(clean.id);
+            if (existing) {
+              if (pendingSurveyIds.has(clean.id)) {
+                return;
+              }
+              const localTime = Date.parse(existing.updatedAt || '') || 0;
+              const remoteTime = Date.parse(clean.updatedAt || '') || 0;
+              if (localTime > 0 && remoteTime > 0 && localTime > remoteTime) {
+                return;
+              }
+              if (JSON.stringify(existing) !== JSON.stringify(clean)) {
+                surveysUpdated++;
+              }
+            } else {
+              surveysUpdated++;
+            }
+            localMap.set(clean.id, clean);
           });
-          clearTimeout(timer);
-          if (response && response.ok) {
-            break;
+          if (surveysUpdated > 0) {
+            this.surveys = Array.from(localMap.values());
           }
-        } catch (netErr) {
-          clearTimeout(timer);
-          if (attempt < maxAttempts && (netErr.name === 'AbortError' || netErr.name === 'TypeError')) {
-            await new Promise((r) => setTimeout(r, 1200));
-            continue;
+        }
+
+        // Merge remote collectors (sanitized)
+        if (Array.isArray(data.collectors) && data.collectors.length > 0) {
+          const colMap = new Map(this.collectors.map((c) => [c.id, c]));
+          data.collectors.forEach((rc) => {
+            const cleanCol = this.sanitizeCollectorRecord(rc);
+            if (!cleanCol) return;
+            const prev = colMap.get(cleanCol.id);
+            if (!prev || JSON.stringify(prev) !== JSON.stringify(cleanCol)) {
+              colMap.set(cleanCol.id, cleanCol);
+              collectorsChanged = true;
+            }
+          });
+          if (collectorsChanged) {
+            this.collectors = Array.from(colMap.values());
           }
-          if (netErr && netErr.name === 'AbortError') {
-            throw new Error(`Pulling from Google Apps Script timed out after ${Math.round(GAS_TIMEOUT_MS / 1000)}s.`);
-          }
-          throw new Error(`Failed to pull from Google Sheets (${netErr.message || 'Network error'}).`);
+        }
+
+        // Merge remote responses (sanitized against prototype pollution & invalid IDs)
+        // Preserves local responses not present in `data.responses` (supports both pullAll and pullDelta)
+        if (Array.isArray(data.responses)) {
+          const existingRespMap = new Map(this.responses.map((r) => [r.clientResponseId || r.id, r]));
+          const respMap = new Map();
+          data.responses.forEach((rr) => {
+            const cleanResp = this.sanitizeResponseRecord(rr);
+            if (cleanResp) {
+              const key = cleanResp.clientResponseId || cleanResp.id;
+              if (!existingRespMap.has(key)) {
+                newResponsesCount++;
+                responsesChanged = true;
+              }
+              respMap.set(key, { ...cleanResp, syncStatus: 'synced' });
+            }
+          });
+          const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
+          this.responses.forEach((localResp) => {
+            const key = localResp.clientResponseId || localResp.id;
+            if (!respMap.has(key)) {
+              respMap.set(key, localResp);
+            } else {
+              // Preserve rich local answers and pending supervisor review state
+              const remoteItem = respMap.get(key);
+              const remoteHasAnswers = remoteItem && remoteItem.answers && Object.keys(remoteItem.answers).length > 0;
+              const localHasAnswers = localResp && localResp.answers && Object.keys(localResp.answers).length > 0;
+              if (!remoteHasAnswers && localHasAnswers) {
+                remoteItem.answers = { ...localResp.answers };
+              } else if (!remoteHasAnswers && seedMap.has(key)) {
+                remoteItem.answers = JSON.parse(JSON.stringify(seedMap.get(key).answers || {}));
+              }
+              if (localResp.syncStatus === 'queued') {
+                remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
+                remoteItem.qaFlags = Array.isArray(localResp.qaFlags) && localResp.qaFlags.length ? localResp.qaFlags : remoteItem.qaFlags;
+                remoteItem.audit = localResp.audit || remoteItem.audit;
+                remoteItem.auditTrail = Array.isArray(localResp.auditTrail) && localResp.auditTrail.length ? localResp.auditTrail : remoteItem.auditTrail;
+                remoteItem.syncStatus = 'queued';
+              } else if (localResp.audit && !remoteItem.audit) {
+                remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
+                remoteItem.audit = localResp.audit;
+                remoteItem.auditTrail = Array.isArray(localResp.auditTrail) ? localResp.auditTrail : [];
+              }
+              if (!responsesChanged && JSON.stringify(localResp) !== JSON.stringify(remoteItem)) {
+                responsesChanged = true;
+              }
+            }
+          });
+          this.responses = Array.from(respMap.values()).sort(
+            (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+          );
+          this.healResponsesAnswers();
+        }
+
+        // Merge remote personnel (staff credentials, roles, and PIN updates)
+        if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+          personnelChanged = Boolean(this.mergePersonnelFromCloud(data.personnel));
+        }
+
+        const nowIso = new Date().toISOString();
+        if (data.version !== undefined && data.version !== null && data.version !== '') {
+          this.settings.cloudDbVersion = String(data.version);
+        }
+        this.settings.lastDeltaSyncAt = data.serverTime || nowIso;
+        this.settings.lastSyncedAt = nowIso;
+        this.lastSyncError = null;
+
+        this.syncLogs.unshift({
+          id: 'log_' + Date.now().toString(36),
+          timestamp: this.settings.lastSyncedAt,
+          action: usedAction === 'pullDelta' ? 'PULL_DELTA' : 'PULL_ALL',
+          details: `Pulled ${data.surveys?.length || 0} surveys & ${data.responses?.length || 0} responses from Google Sheets (${usedAction}).`,
+          status: 'success',
+          latencyMs
+        });
+
+        const changed = surveysUpdated > 0 || collectorsChanged || responsesChanged || personnelChanged;
+        const storesToSave = ['settings', 'syncLogs'];
+        if (surveysUpdated > 0) storesToSave.push('surveys');
+        if (collectorsChanged) storesToSave.push('collectors');
+        if (responsesChanged) storesToSave.push('responses');
+        if (personnelChanged) storesToSave.push('personnel', 'pinOverrides');
+
+        this.saveToLocalStorage({
+          stores: storesToSave,
+          broadcast: changed,
+          meta: { newResponsesCount, surveysUpdated }
+        });
+
+        if (changed && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ae-cloud-data-updated', {
+            detail: {
+              changed: true,
+              newResponsesCount,
+              surveysUpdated,
+              reason
+            }
+          }));
+        }
+
+        return {
+          ok: true,
+          unchanged: false,
+          delta: usedAction === 'pullDelta' || Boolean(data.delta),
+          changed,
+          newResponsesCount,
+          surveysUpdated,
+          surveysCount: this.surveys.length,
+          responsesCount: this.responses.length,
+          version: this.settings.cloudDbVersion || null,
+          latencyMs
+        };
+      } catch (err) {
+        const nowIso = new Date().toISOString();
+        const latencyMs = Math.round(performance.now() - startTime);
+        if (!isBackground) {
+          this.lastSyncError = {
+            message: err.message || 'Pull failed',
+            timestamp: nowIso,
+            gasUrl
+          };
+        }
+        this.syncLogs.unshift({
+          id: 'log_' + Date.now().toString(36),
+          timestamp: nowIso,
+          action: 'PULL_ERROR',
+          details: `[Pull Failed] ${err.message || 'Unknown error'}`,
+          status: 'error',
+          latencyMs
+        });
+        this.saveToLocalStorage({ stores: ['syncLogs'], broadcast: false });
+        throw err;
+      } finally {
+        this._pullInFlight = false;
+        this._pullInFlightPromise = null;
+        if (!isBackground && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
         }
       }
+    };
 
-      if (!response || !response.ok) {
-        throw new Error(`HTTP ${response ? response.status : 0} while pulling from Google Apps Script`);
-      }
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        throw new Error('Google Apps Script returned an HTML login page instead of JSON. Ensure your Web App deployment has "Who has access: Anyone".');
-      }
-
-      if (!data.ok) {
-        throw new Error(data.error || 'Failed to pull from Google Sheets');
-      }
-
-      // Merge remote surveys (sanitized against DOM XSS / invalid IDs, preserving newer local edits)
-      if (Array.isArray(data.surveys) && data.surveys.length > 0) {
-        const localMap = new Map(this.surveys.map((s) => [s.id, s]));
-        const pendingSurveyIds = new Set(
-          (this.syncQueue || []).filter((q) => q.action === 'UPSERT_SURVEY').map((q) => q.recordId)
-        );
-        const deletedIds = new Set([
-          ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
-          ...(this.syncQueue || []).filter((q) => q.action === 'DELETE_SURVEY').map((q) => q.recordId)
-        ]);
-        data.surveys.forEach((remoteSurvey) => {
-          const clean = this.sanitizeSurveyRecord(remoteSurvey);
-          if (!clean || deletedIds.has(clean.id)) return;
-          const existing = localMap.get(clean.id);
-          if (existing) {
-            if (pendingSurveyIds.has(clean.id)) {
-              return;
-            }
-            const localTime = Date.parse(existing.updatedAt || '') || 0;
-            const remoteTime = Date.parse(clean.updatedAt || '') || 0;
-            if (localTime > 0 && remoteTime > 0 && localTime > remoteTime) {
-              return;
-            }
-          }
-          localMap.set(clean.id, clean);
-        });
-        this.surveys = Array.from(localMap.values());
-      }
-
-      // Merge remote collectors (sanitized)
-      if (Array.isArray(data.collectors) && data.collectors.length > 0) {
-        const colMap = new Map(this.collectors.map((c) => [c.id, c]));
-        data.collectors.forEach((rc) => {
-          const cleanCol = this.sanitizeCollectorRecord(rc);
-          if (cleanCol) colMap.set(cleanCol.id, cleanCol);
-        });
-        this.collectors = Array.from(colMap.values());
-      }
-
-      // Merge remote responses (sanitized against prototype pollution & invalid IDs)
-      if (Array.isArray(data.responses)) {
-        const respMap = new Map();
-        data.responses.forEach((rr) => {
-          const cleanResp = this.sanitizeResponseRecord(rr);
-          if (cleanResp) {
-            respMap.set(cleanResp.clientResponseId || cleanResp.id, { ...cleanResp, syncStatus: 'synced' });
-          }
-        });
-        const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
-        this.responses.forEach((localResp) => {
-          const key = localResp.clientResponseId || localResp.id;
-          if (!respMap.has(key)) {
-            respMap.set(key, localResp);
-          } else {
-            // Preserve rich local answers and pending supervisor review state
-            const remoteItem = respMap.get(key);
-            const remoteHasAnswers = remoteItem && remoteItem.answers && Object.keys(remoteItem.answers).length > 0;
-            const localHasAnswers = localResp && localResp.answers && Object.keys(localResp.answers).length > 0;
-            if (!remoteHasAnswers && localHasAnswers) {
-              remoteItem.answers = { ...localResp.answers };
-            } else if (!remoteHasAnswers && seedMap.has(key)) {
-              remoteItem.answers = JSON.parse(JSON.stringify(seedMap.get(key).answers || {}));
-            }
-            if (localResp.syncStatus === 'queued') {
-              remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
-              remoteItem.qaFlags = Array.isArray(localResp.qaFlags) && localResp.qaFlags.length ? localResp.qaFlags : remoteItem.qaFlags;
-              remoteItem.audit = localResp.audit || remoteItem.audit;
-              remoteItem.auditTrail = Array.isArray(localResp.auditTrail) && localResp.auditTrail.length ? localResp.auditTrail : remoteItem.auditTrail;
-              remoteItem.syncStatus = 'queued';
-            } else if (localResp.audit && !remoteItem.audit) {
-              remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
-              remoteItem.audit = localResp.audit;
-              remoteItem.auditTrail = Array.isArray(localResp.auditTrail) ? localResp.auditTrail : [];
-            }
-          }
-        });
-        this.responses = Array.from(respMap.values()).sort(
-          (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-        );
-        this.healResponsesAnswers();
-      }
-
-      // Merge remote personnel (staff credentials, roles, and PIN updates)
-      if (Array.isArray(data.personnel) && data.personnel.length > 0) {
-        this.mergePersonnelFromCloud(data.personnel);
-      }
-
-      const latencyMs = Math.round(performance.now() - startTime);
-      this.settings.lastSyncedAt = new Date().toISOString();
-      this.lastSyncError = null;
-      this.syncLogs.unshift({
-        id: 'log_' + Date.now().toString(36),
-        timestamp: this.settings.lastSyncedAt,
-        action: 'PULL_ALL',
-        details: `Pulled ${data.surveys?.length || 0} surveys & ${data.responses?.length || 0} responses from Google Sheets.`,
-        status: 'success',
-        latencyMs
-      });
-
-      this.saveToLocalStorage();
-      return {
-        surveysCount: this.surveys.length,
-        responsesCount: this.responses.length,
-        latencyMs
-      };
-    } catch (err) {
-      const nowIso = new Date().toISOString();
-      const latencyMs = Math.round(performance.now() - startTime);
-      this.lastSyncError = {
-        message: err.message || 'Pull failed',
-        timestamp: nowIso,
-        gasUrl
-      };
-      this.syncLogs.unshift({
-        id: 'log_' + Date.now().toString(36),
-        timestamp: nowIso,
-        action: 'PULL_ERROR',
-        details: `[Pull Failed] ${err.message || 'Unknown error'}`,
-        status: 'error',
-        latencyMs
-      });
-      this.saveToLocalStorage();
-      throw err;
-    } finally {
-      this._syncInFlight = false;
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
-      }
-    }
+    this._pullInFlightPromise = runPull();
+    return this._pullInFlightPromise;
   }
 
   /**

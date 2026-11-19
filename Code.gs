@@ -123,13 +123,83 @@ function isAuthorizedAdmin_(callerId, syncToken) {
   return isCallerAdmin_(callerId);
 }
 
+var CACHE_TTL_DB_INIT_SEC_ = 21600; // 6 hours
+var CACHE_TTL_SURVEY_SEC_ = 300;    // 5 minutes
+var CACHE_MAX_BYTES_ = 95000;       // Safe margin under GAS 100KB CacheService limit
+
+function getDbVersion_() {
+  try {
+    var cached = CacheService.getScriptCache().get('AE_DB_VERSION');
+    if (cached !== null && cached !== undefined && String(cached) !== '') {
+      return String(cached);
+    }
+  } catch (e) {}
+
+  var version = '1';
+  try {
+    var stored = PropertiesService.getScriptProperties().getProperty('AE_DB_VERSION');
+    if (stored !== null && stored !== undefined && String(stored) !== '') {
+      version = String(stored);
+    }
+  } catch (e) {}
+
+  try {
+    CacheService.getScriptCache().put('AE_DB_VERSION', version, CACHE_TTL_DB_INIT_SEC_);
+  } catch (e) {}
+
+  return version;
+}
+
+function bumpDbVersion_() {
+  var next = '1';
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var current = parseInt(props.getProperty('AE_DB_VERSION') || '1', 10);
+    if (isNaN(current) || current < 1) current = 1;
+    next = String(current + 1);
+    props.setProperty('AE_DB_VERSION', next);
+  } catch (e) {
+    next = String(Date.now());
+  }
+
+  try {
+    CacheService.getScriptCache().put('AE_DB_VERSION', next, CACHE_TTL_DB_INIT_SEC_);
+  } catch (e) {}
+
+  return next;
+}
+
+function getPullSurveyCacheKey_(surveyId) {
+  return 'PULL_SURVEY_' + String(surveyId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+}
+
+function invalidateSurveyCache_(surveyId) {
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.remove('SURVEY_MAP_V1');
+    if (surveyId) {
+      cache.remove(getPullSurveyCacheKey_(surveyId));
+    }
+  } catch (e) {}
+}
+
+function invalidateCollectorCache_(surveyId) {
+  if (!surveyId) return;
+  try {
+    CacheService.getScriptCache().remove(getPullSurveyCacheKey_(surveyId));
+  } catch (e) {}
+}
+
 /**
  * Handles HTTP GET requests.
  * Supports:
- * - ?action=ping       -> Health check & spreadsheet metadata
- * - ?action=pullAll    -> Returns all surveys, collectors, and responses
- * - Default (no param) -> Serves HTML web app if `index.html` is in GAS project,
- *                         otherwise returns JSON API status.
+ * - ?action=ping                         -> Health check & spreadsheet metadata
+ * - ?action=pullAll[&version=<v>]        -> Returns all surveys, collectors, personnel, and responses (short-circuits if unchanged)
+ * - ?action=pullDelta&since=<ISO>[&version=<v>] -> Returns surveys, collectors, personnel, and responses with ServerReceivedAt >= since
+ * - ?action=pullSurvey&surveyId=<id>     -> Returns single survey + its collectors (cached, no Responses/Personnel)
+ * - ?action=pullPersonnel                -> Returns personnel list
+ * - ?action=migrate                      -> Repairs legacy Responses layout
+ * - Default (no param)                   -> Serves HTML web app if `mode=ui`, otherwise returns JSON API status.
  */
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
@@ -143,25 +213,21 @@ function doGet(e) {
       });
     }
 
-    ensureDatabaseInitialized_();
-
-    if (action === 'ping') {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      return jsonResponse_({
-        ok: true,
-        service: DB_CONFIG.APP_NAME,
-        version: DB_CONFIG.VERSION,
-        spreadsheetName: ss.getName(),
-        serverTime: new Date().toISOString(),
-        counts: getRowCounts_()
-      });
-    }
-
     if (action === 'pullAll') {
+      var currentVersion = getDbVersion_();
+      if (params.version && String(params.version) === String(currentVersion)) {
+        return jsonResponse_({
+          ok: true,
+          unchanged: true,
+          version: currentVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+      ensureDatabaseInitialized_();
       var data = readAllDatabaseData_();
-      logSyncEvent_('PULL_ALL', sanitizeSheetCell_(params.deviceId || 'web-client'), data.surveys.length, data.responses.length, 0, 'OK');
       return jsonResponse_({
         ok: true,
+        version: currentVersion,
         serverTime: new Date().toISOString(),
         surveys: data.surveys,
         collectors: data.collectors,
@@ -170,19 +236,112 @@ function doGet(e) {
       });
     }
 
-    if (action === 'pullPersonnel') {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var personnel = readPersonnelRows_(ss);
-      logSyncEvent_('PULL_PERSONNEL', sanitizeSheetCell_(params.deviceId || 'web-client'), 0, 0, 0, 'OK');
+    if (action === 'pullDelta') {
+      var deltaVersion = getDbVersion_();
+      if (params.version && String(params.version) === String(deltaVersion)) {
+        return jsonResponse_({
+          ok: true,
+          unchanged: true,
+          delta: true,
+          version: deltaVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+      ensureDatabaseInitialized_();
+      var sinceIso = params.since ? String(params.since).trim() : '';
+      var deltaData = readDatabaseDataDelta_(sinceIso);
       return jsonResponse_({
         ok: true,
+        delta: true,
+        version: deltaVersion,
+        serverTime: new Date().toISOString(),
+        surveys: deltaData.surveys,
+        collectors: deltaData.collectors,
+        personnel: deltaData.personnel,
+        responses: deltaData.responses
+      });
+    }
+
+    if (action === 'pullSurvey') {
+      var surveyId = String(params.surveyId || '').trim();
+      if (!surveyId) {
+        return jsonResponse_({
+          ok: false,
+          error: 'Missing required parameter: surveyId.'
+        });
+      }
+      var surveyVersion = getDbVersion_();
+      var cacheKey = getPullSurveyCacheKey_(surveyId);
+      try {
+        var cachedRaw = CacheService.getScriptCache().get(cacheKey);
+        if (cachedRaw) {
+          var cachedObj = JSON.parse(cachedRaw);
+          return jsonResponse_({
+            ok: true,
+            survey: cachedObj.survey || null,
+            collectors: Array.isArray(cachedObj.collectors) ? cachedObj.collectors : [],
+            version: surveyVersion,
+            serverTime: new Date().toISOString()
+          });
+        }
+      } catch (cacheErr) {}
+
+      ensureDatabaseInitialized_();
+      var surveyMap = getSurveyMap_();
+      var targetSurvey = surveyMap[surveyId] || null;
+      var ssSurvey = SpreadsheetApp.getActiveSpreadsheet();
+      var surveyCollectors = readCollectorsRows_(ssSurvey, surveyId);
+
+      if (targetSurvey) {
+        try {
+          var serialized = JSON.stringify({ survey: targetSurvey, collectors: surveyCollectors });
+          if (serialized.length <= CACHE_MAX_BYTES_) {
+            CacheService.getScriptCache().put(cacheKey, serialized, CACHE_TTL_SURVEY_SEC_);
+          }
+        } catch (cachePutErr) {}
+      }
+
+      return jsonResponse_({
+        ok: true,
+        survey: targetSurvey,
+        collectors: surveyCollectors,
+        version: surveyVersion,
+        serverTime: new Date().toISOString()
+      });
+    }
+
+    if (action === 'pullPersonnel') {
+      ensureDatabaseInitialized_();
+      var ssPers = SpreadsheetApp.getActiveSpreadsheet();
+      var personnel = readPersonnelRows_(ssPers);
+      return jsonResponse_({
+        ok: true,
+        version: getDbVersion_(),
         serverTime: new Date().toISOString(),
         personnel: personnel
       });
     }
 
+    if (action === 'ping') {
+      ensureDatabaseInitialized_();
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      return jsonResponse_({
+        ok: true,
+        service: DB_CONFIG.APP_NAME,
+        version: DB_CONFIG.VERSION,
+        dbVersion: getDbVersion_(),
+        spreadsheetName: ss.getName(),
+        serverTime: new Date().toISOString(),
+        counts: getRowCounts_()
+      });
+    }
+
     if (action === 'migrate') {
+      ensureDatabaseInitialized_();
       var migResult = migrateResponsesSheetLayout_();
+      if (migResult && migResult.migrated > 0) {
+        bumpDbVersion_();
+      }
       return jsonResponse_({
         ok: true,
         action: 'migrate',
@@ -198,11 +357,13 @@ function doGet(e) {
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
     }
 
+    ensureDatabaseInitialized_();
     return jsonResponse_({
       ok: true,
       service: DB_CONFIG.APP_NAME,
       version: DB_CONFIG.VERSION,
-      message: 'AE Survey GAS Backend is online. Use ?action=ping, ?action=pullAll, or POST JSON with text/plain;charset=utf-8.',
+      dbVersion: getDbVersion_(),
+      message: 'AE Survey GAS Backend is online. Use ?action=ping, ?action=pullAll, ?action=pullDelta, ?action=pullSurvey, or POST JSON with text/plain;charset=utf-8.',
       counts: getRowCounts_()
     });
   } catch (err) {
@@ -224,11 +385,10 @@ function doGet(e) {
  * - "SUBMIT_RESPONSE"  -> Appends a single response (idempotent via clientResponseId)
  * - "UPSERT_COLLECTOR" -> Creates or updates a collector
  * - "DELETE_SURVEY"    -> Deletes a survey row by ID
+ * - "UPLOAD_MEDIA"     -> Saves media to Drive (runs outside ScriptLock)
+ * - "BATCH_TRANSLATE"  -> Translates text via LanguageApp (runs outside ScriptLock)
  */
 function doPost(e) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(25000);
-
   try {
     if (e && e.postData && e.postData.contents && e.postData.contents.length > 5 * 1024 * 1024) {
       return jsonResponse_({
@@ -239,8 +399,9 @@ function doPost(e) {
 
     var rawBody = (e && e.postData && e.postData.contents) ? e.postData.contents : '{}';
     var payload = JSON.parse(rawBody);
+    var clientSyncToken = payload.syncToken || (e && e.parameter && e.parameter.syncToken) || '';
 
-    if (!verifySyncToken_(payload.syncToken || (e && e.parameter && e.parameter.syncToken) || '')) {
+    if (!verifySyncToken_(clientSyncToken)) {
       return jsonResponse_({
         ok: false,
         error: 'Unauthorized: Invalid or missing AE_SYNC_TOKEN.'
@@ -250,7 +411,7 @@ function doPost(e) {
     var action = String(payload.action || 'BATCH_SYNC');
     var deviceId = sanitizeSheetCell_(payload.deviceId || 'unknown-device');
 
-    // Sliding-window rate limit guard (max 60 sync operations per minute per device)
+    // Sliding-window rate limit guard (max 60 sync operations per minute per device) — runs outside ScriptLock
     try {
       var cache = CacheService.getScriptCache();
       var rateKey = 'rate_' + String(deviceId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
@@ -261,12 +422,9 @@ function doPost(e) {
       cache.put(rateKey, String(count + 1), 60);
     } catch (cacheErr) {}
 
-    ensureDatabaseInitialized_();
-
-    // Media Upload Endpoint -> Google Drive
+    // Media Upload Endpoint -> Google Drive (runs outside ScriptLock)
     if (action === 'UPLOAD_MEDIA' && payload.mediaItem) {
       var driveUrl = saveMediaFileToDrive_(payload.mediaItem);
-      logSyncEvent_('UPLOAD_MEDIA', deviceId, 0, 0, 0, driveUrl ? 'OK' : 'FAIL');
       return jsonResponse_({
         ok: Boolean(driveUrl),
         driveUrl: driveUrl,
@@ -275,85 +433,7 @@ function doPost(e) {
       });
     }
 
-    var clientSyncToken = payload.syncToken || (e && e.parameter && e.parameter.syncToken) || '';
-
-    if (action === 'UPSERT_SURVEY' && payload.survey) {
-      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
-        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
-      }
-      upsertSurveyRow_(payload.survey);
-      syncSurveyDedicatedSheetHeader_(payload.survey);
-      logSyncEvent_('UPSERT_SURVEY', deviceId, 1, 0, 0, 'OK');
-      return jsonResponse_({
-        ok: true,
-        action: action,
-        surveyId: String(payload.survey.id || ''),
-        serverTime: new Date().toISOString()
-      });
-    }
-
-    if (action === 'UPSERT_COLLECTOR' && payload.collector) {
-      upsertCollectorRow_(payload.collector);
-      logSyncEvent_('UPSERT_COLLECTOR', deviceId, 0, 0, 0, 'OK');
-      return jsonResponse_({
-        ok: true,
-        action: action,
-        collectorId: String(payload.collector.id || ''),
-        serverTime: new Date().toISOString()
-      });
-    }
-
-    if (action === 'UPSERT_PERSONNEL' && (payload.personnel || payload.person)) {
-      var targetPerson = Array.isArray(payload.personnel) ? payload.personnel[0] : (payload.personnel || payload.person);
-      var isSelf = payload.callerId && String(payload.callerId).trim() === String(targetPerson.id || '').trim();
-      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken) && !isSelf) {
-        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' }, 403);
-      }
-      upsertPersonnelRow_(targetPerson);
-      logSyncEvent_('UPSERT_PERSONNEL', deviceId, 0, 0, 0, 'OK');
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      return jsonResponse_({
-        ok: true,
-        action: action,
-        personnelId: String(targetPerson.id || ''),
-        personnel: readPersonnelRows_(ss),
-        serverTime: new Date().toISOString()
-      });
-    }
-
-    if (action === 'SUBMIT_RESPONSE' && payload.response) {
-      var surveyMap = getSurveyMap_();
-      if (payload.survey && isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
-        upsertSurveyRow_(payload.survey);
-        surveyMap[payload.survey.id] = payload.survey;
-      }
-      var resStats = appendResponsesIdempotent_([payload.response], surveyMap);
-      logSyncEvent_('SUBMIT_RESPONSE', deviceId, 0, resStats.inserted, resStats.skipped, 'OK');
-      return jsonResponse_({
-        ok: true,
-        action: action,
-        inserted: resStats.inserted,
-        skipped: resStats.skipped,
-        syncedIds: resStats.syncedIds,
-        serverTime: new Date().toISOString()
-      });
-    }
-
-    if (action === 'DELETE_SURVEY' && payload.surveyId) {
-      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
-        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
-      }
-      deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(payload.surveyId));
-      logSyncEvent_('DELETE_SURVEY', deviceId, 0, 0, 0, 'OK');
-      return jsonResponse_({
-        ok: true,
-        action: action,
-        deletedSurveyId: String(payload.surveyId),
-        serverTime: new Date().toISOString()
-      });
-    }
-
-    // Google Translate Engine Endpoint (Zero-API-key native Google Apps Script LanguageApp service)
+    // Google Translate Engine Endpoint (Zero-API-key native GAS LanguageApp) — runs outside ScriptLock
     if (action === 'BATCH_TRANSLATE' || action === 'TRANSLATE') {
       var sourceLang = String(payload.sourceLang || 'en').trim().toLowerCase();
       var targetLang = String(payload.targetLang || 'sw').trim().toLowerCase();
@@ -387,79 +467,174 @@ function doPost(e) {
       });
     }
 
-    // Default: BATCH_SYNC (handles offline queue flush + full sync)
-    var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
-    var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-    var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-    var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-    var rawPersonnel = Array.isArray(payload.personnel)
-      ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
-      : (payload.personnel && typeof payload.personnel === 'object' ? [payload.personnel] : []);
-    var personnel = isCallerAdmin
-      ? rawPersonnel
-      : rawPersonnel.filter(function(p) {
-          return p && payload.callerId && String(p.id || '').trim() === String(payload.callerId).trim();
+    // Acquire ScriptLock ONLY for sheet-mutating operations
+    var lock = LockService.getScriptLock();
+    lock.waitLock(25000);
+
+    try {
+      ensureDatabaseInitialized_();
+
+      if (action === 'UPSERT_SURVEY' && payload.survey) {
+        if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
+        }
+        upsertSurveyRow_(payload.survey);
+        syncSurveyDedicatedSheetHeader_(payload.survey);
+        var upsertSurveyVersion = bumpDbVersion_();
+        logSyncEvent_('UPSERT_SURVEY', deviceId, 1, 0, 0, 'OK');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          surveyId: String(payload.survey.id || ''),
+          version: upsertSurveyVersion,
+          serverTime: new Date().toISOString()
         });
-
-    var surveysUpserted = 0;
-    for (var i = 0; i < surveys.length; i++) {
-      upsertSurveyRow_(surveys[i]);
-      syncSurveyDedicatedSheetHeader_(surveys[i]);
-      surveysUpserted++;
-    }
-
-    var deletedSurveyIds = (isCallerAdmin && Array.isArray(payload.deletedSurveyIds))
-      ? payload.deletedSurveyIds.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
-      : [];
-    for (var dIdx = 0; dIdx < deletedSurveyIds.length; dIdx++) {
-      if (deletedSurveyIds[dIdx]) {
-        deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(deletedSurveyIds[dIdx]));
       }
+
+      if (action === 'UPSERT_COLLECTOR' && payload.collector) {
+        upsertCollectorRow_(payload.collector);
+        var upsertCollectorVersion = bumpDbVersion_();
+        logSyncEvent_('UPSERT_COLLECTOR', deviceId, 0, 0, 0, 'OK');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          collectorId: String(payload.collector.id || ''),
+          version: upsertCollectorVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+
+      if (action === 'UPSERT_PERSONNEL' && (payload.personnel || payload.person)) {
+        var targetPerson = Array.isArray(payload.personnel) ? payload.personnel[0] : (payload.personnel || payload.person);
+        var isSelf = payload.callerId && String(payload.callerId).trim() === String(targetPerson.id || '').trim();
+        if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken) && !isSelf) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' }, 403);
+        }
+        upsertPersonnelRow_(targetPerson);
+        var upsertPersonnelVersion = bumpDbVersion_();
+        logSyncEvent_('UPSERT_PERSONNEL', deviceId, 0, 0, 0, 'OK');
+        var ss = SpreadsheetApp.getActiveSpreadsheet();
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          personnelId: String(targetPerson.id || ''),
+          personnel: readPersonnelRows_(ss),
+          version: upsertPersonnelVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+
+      if (action === 'SUBMIT_RESPONSE' && payload.response) {
+        var surveyMap = getSurveyMap_();
+        if (payload.survey && isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+          upsertSurveyRow_(payload.survey);
+          surveyMap[payload.survey.id] = payload.survey;
+        }
+        var resStats = appendResponsesIdempotent_([payload.response], surveyMap);
+        var submitRespVersion = bumpDbVersion_();
+        logSyncEvent_('SUBMIT_RESPONSE', deviceId, 0, resStats.inserted, resStats.skipped, 'OK');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          inserted: resStats.inserted,
+          skipped: resStats.skipped,
+          syncedIds: resStats.syncedIds,
+          version: submitRespVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+
+      if (action === 'DELETE_SURVEY' && payload.surveyId) {
+        if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
+        }
+        deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(payload.surveyId));
+        var deleteSurveyVersion = bumpDbVersion_();
+        logSyncEvent_('DELETE_SURVEY', deviceId, 0, 0, 0, 'OK');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          deletedSurveyId: String(payload.surveyId),
+          version: deleteSurveyVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+
+      // Default: BATCH_SYNC (handles offline queue flush + full sync)
+      var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
+      var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+      var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+      var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+      var rawPersonnel = Array.isArray(payload.personnel)
+        ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
+        : (payload.personnel && typeof payload.personnel === 'object' ? [payload.personnel] : []);
+      var personnel = isCallerAdmin
+        ? rawPersonnel
+        : rawPersonnel.filter(function(p) {
+            return p && payload.callerId && String(p.id || '').trim() === String(payload.callerId).trim();
+          });
+
+      var surveysUpserted = 0;
+      for (var i = 0; i < surveys.length; i++) {
+        upsertSurveyRow_(surveys[i]);
+        syncSurveyDedicatedSheetHeader_(surveys[i]);
+        surveysUpserted++;
+      }
+
+      var deletedSurveyIds = (isCallerAdmin && Array.isArray(payload.deletedSurveyIds))
+        ? payload.deletedSurveyIds.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
+        : [];
+      for (var dIdx = 0; dIdx < deletedSurveyIds.length; dIdx++) {
+        if (deletedSurveyIds[dIdx]) {
+          deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(deletedSurveyIds[dIdx]));
+        }
+      }
+
+      for (var j = 0; j < collectors.length; j++) {
+        upsertCollectorRow_(collectors[j]);
+      }
+
+      var personnelUpserted = 0;
+      for (var k = 0; k < personnel.length; k++) {
+        upsertPersonnelRow_(personnel[k]);
+        personnelUpserted++;
+      }
+
+      var allSurveysMap = getSurveyMap_();
+      var batchStats = appendResponsesIdempotent_(responses, allSurveysMap);
+      var batchVersion = bumpDbVersion_();
+
+      logSyncEvent_(
+        'BATCH_SYNC',
+        deviceId,
+        surveysUpserted,
+        batchStats.inserted,
+        batchStats.skipped,
+        'OK'
+      );
+
+      return jsonResponse_({
+        ok: true,
+        action: 'BATCH_SYNC',
+        version: batchVersion,
+        surveysSynced: surveysUpserted,
+        collectorsSynced: collectors.length,
+        personnelSynced: personnelUpserted,
+        responsesInserted: batchStats.inserted,
+        duplicatesSkipped: batchStats.skipped,
+        syncedResponseIds: batchStats.syncedIds,
+        personnel: readPersonnelRows_(SpreadsheetApp.getActiveSpreadsheet()),
+        serverTime: new Date().toISOString(),
+        counts: getRowCounts_()
+      });
+    } finally {
+      lock.releaseLock();
     }
-
-    for (var j = 0; j < collectors.length; j++) {
-      upsertCollectorRow_(collectors[j]);
-    }
-
-    var personnelUpserted = 0;
-    for (var k = 0; k < personnel.length; k++) {
-      upsertPersonnelRow_(personnel[k]);
-      personnelUpserted++;
-    }
-
-    var allSurveysMap = getSurveyMap_();
-    var batchStats = appendResponsesIdempotent_(responses, allSurveysMap);
-
-    logSyncEvent_(
-      'BATCH_SYNC',
-      deviceId,
-      surveysUpserted,
-      batchStats.inserted,
-      batchStats.skipped,
-      'OK'
-    );
-
-    return jsonResponse_({
-      ok: true,
-      action: 'BATCH_SYNC',
-      surveysSynced: surveysUpserted,
-      collectorsSynced: collectors.length,
-      personnelSynced: personnelUpserted,
-      responsesInserted: batchStats.inserted,
-      duplicatesSkipped: batchStats.skipped,
-      syncedResponseIds: batchStats.syncedIds,
-      personnel: readPersonnelRows_(SpreadsheetApp.getActiveSpreadsheet()),
-      serverTime: new Date().toISOString(),
-      counts: getRowCounts_()
-    });
-
   } catch (err) {
     return jsonResponse_({
       ok: false,
       error: 'Batch synchronization failed.'
     });
-  } finally {
-    lock.releaseLock();
   }
 }
 
@@ -467,13 +642,22 @@ function doPost(e) {
  * Manual helper you can run directly in the Apps Script editor to initialize tabs.
  */
 function setupDatabaseSheets() {
-  ensureDatabaseInitialized_();
+  ensureDatabaseInitialized_(true);
 }
 
 /**
- * Ensures all 4 system tabs exist with styled headers and frozen top rows.
+ * Ensures all system tabs exist with styled headers and frozen top rows.
+ * Caches initialization status in CacheService for 6h to avoid repeated sheet scans.
  */
-function ensureDatabaseInitialized_() {
+function ensureDatabaseInitialized_(force) {
+  if (!force) {
+    try {
+      if (CacheService.getScriptCache().get('DB_INIT_OK') === '1') {
+        return;
+      }
+    } catch (e) {}
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   ensureSheetWithHeaders_(ss, DB_CONFIG.SHEETS.SURVEYS, [
@@ -555,8 +739,9 @@ function ensureDatabaseInitialized_() {
     } catch (e) {}
   }
 
-  // Automatically heal and align any legacy rows where AnswersJSON was in Col L instead of Col R
-  migrateResponsesSheetLayout_();
+  try {
+    CacheService.getScriptCache().put('DB_INIT_OK', '1', CACHE_TTL_DB_INIT_SEC_);
+  } catch (e) {}
 }
 
 /**
@@ -691,6 +876,7 @@ function upsertSurveyRow_(survey) {
   } else {
     sheet.appendRow(rowValues);
   }
+  invalidateSurveyCache_(survey.id);
 }
 
 /**
@@ -718,6 +904,7 @@ function upsertCollectorRow_(collector) {
   } else {
     sheet.appendRow(rowValues);
   }
+  invalidateCollectorCache_(collector.surveyId);
 }
 
 function upsertPersonnelRow_(person) {
@@ -838,17 +1025,33 @@ function translateOpenTextIfNeeded_(text, langCode) {
 /**
  * Appends responses idempotently (skips any response whose `clientResponseId` or `id`
  * already exists in the `Responses` sheet) and mirrors each new row into its
- * per-survey human-readable Google Sheet tab!
+ * per-survey human-readable Google Sheet tab using batched setValues() writes.
  */
 function appendResponsesIdempotent_(responses, surveyMap) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var respSheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
-  var existingIds = getExistingColumnSet_(respSheet, 1);
+  var existingRowMap = getExistingColumnIndexMap_(respSheet, 1);
 
   var inserted = 0;
   var skipped = 0;
   var syncedIds = [];
   var nowIso = new Date().toISOString();
+  var newMasterRows = [];
+  var pendingNewIndex = {};
+  var dedicatedBySurvey = {};
+
+  function queueDedicated_(surveyObj, respObj, respId) {
+    if (!surveyObj || !surveyObj.id) return;
+    var sid = String(surveyObj.id);
+    if (!dedicatedBySurvey[sid]) {
+      dedicatedBySurvey[sid] = { survey: surveyObj, items: [] };
+    }
+    dedicatedBySurvey[sid].items.push({
+      response: respObj,
+      clientRespId: respId,
+      nowIso: nowIso
+    });
+  }
 
   for (var i = 0; i < responses.length; i++) {
     var r = responses[i];
@@ -875,21 +1078,26 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     });
     var calcJson = JSON.stringify(calcPayload);
 
-    if (existingIds[clientRespId]) {
-      var existingRowIdx = findRowIndexByValue_(respSheet, 1, clientRespId);
-      if (existingRowIdx > 1) {
-        respSheet.getRange(existingRowIdx, 12, 1, 6).setValues([[
-          sanitizeSheetCell_(String(r.reviewStatus || 'pending_review')),
-          sanitizeSheetCell_(qaFlagsStr),
-          sanitizeSheetCell_(supervisorId),
-          sanitizeSheetCell_(npsCat),
-          sanitizeSheetCell_(String(r.recordHash || '')),
-          sanitizeSheetCell_(calcJson)
-        ]]);
+    if (existingRowMap[clientRespId] || pendingNewIndex[clientRespId] !== undefined) {
+      var qaUpdateCols = [
+        sanitizeSheetCell_(String(r.reviewStatus || 'pending_review')),
+        sanitizeSheetCell_(qaFlagsStr),
+        sanitizeSheetCell_(supervisorId),
+        sanitizeSheetCell_(npsCat),
+        sanitizeSheetCell_(String(r.recordHash || '')),
+        sanitizeSheetCell_(calcJson)
+      ];
+      if (existingRowMap[clientRespId] > 1) {
+        respSheet.getRange(existingRowMap[clientRespId], 12, 1, 6).setValues([qaUpdateCols]);
+      } else if (pendingNewIndex[clientRespId] !== undefined) {
+        var pendingRow = newMasterRows[pendingNewIndex[clientRespId]];
+        for (var cIdx = 0; cIdx < 6; cIdx++) {
+          pendingRow[11 + cIdx] = qaUpdateCols[cIdx];
+        }
       }
       var existingSurvey = surveyMap[r.surveyId] || null;
       if (existingSurvey && r.answers && Object.keys(r.answers).length > 0) {
-        appendToSurveyDedicatedSheet_(existingSurvey, r, clientRespId, nowIso);
+        queueDedicated_(existingSurvey, r, clientRespId);
       }
       skipped++;
       syncedIds.push(clientRespId);
@@ -948,15 +1156,29 @@ function appendResponsesIdempotent_(responses, surveyMap) {
       sanitizeSheetCell_(administeredLang.toUpperCase())
     ];
 
-    respSheet.appendRow(masterRow);
-    existingIds[clientRespId] = true;
+    pendingNewIndex[clientRespId] = newMasterRows.length;
+    newMasterRows.push(masterRow);
     inserted++;
     syncedIds.push(clientRespId);
 
-    // Also append to the human-readable Per-Survey sheet tab!
+    // Queue for batched append to the human-readable Per-Survey sheet tab!
     if (survey) {
-      var translatedResponse = { ...r, answers: processedAnswers };
-      appendToSurveyDedicatedSheet_(survey, translatedResponse, clientRespId, nowIso);
+      var translatedResponse = Object.assign({}, r, { answers: processedAnswers });
+      queueDedicated_(survey, translatedResponse, clientRespId);
+    }
+  }
+
+  // Single batched write for all new master Responses rows
+  if (newMasterRows.length > 0) {
+    var startRow = Math.max(2, respSheet.getLastRow() + 1);
+    respSheet.getRange(startRow, 1, newMasterRows.length, newMasterRows[0].length).setValues(newMasterRows);
+  }
+
+  // Flush dedicated per-survey sheet appends grouped by surveyId (header synced at most once per survey)
+  for (var sKey in dedicatedBySurvey) {
+    if (Object.prototype.hasOwnProperty.call(dedicatedBySurvey, sKey)) {
+      var group = dedicatedBySurvey[sKey];
+      appendBatchToSurveyDedicatedSheet_(group.survey, group.items);
     }
   }
 
@@ -1010,6 +1232,21 @@ function syncSurveyDedicatedSheetHeader_(survey) {
     headers.push(sanitizeSheetCell_('Q' + qLabel + ': ' + cleanTitle));
   }
 
+  // Skip header write & restyling when existing row-1 headers already match
+  if (sheet.getLastRow() >= 1 && sheet.getLastColumn() === headers.length) {
+    var existingHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    var allMatch = true;
+    for (var h = 0; h < headers.length; h++) {
+      if (String(existingHeaders[h]) !== String(headers[h])) {
+        allMatch = false;
+        break;
+      }
+    }
+    if (allMatch) {
+      return sheet;
+    }
+  }
+
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.getRange(1, 1, 1, headers.length)
     .setBackground(DB_CONFIG.SURVEY_TAB_HEADER_BG)
@@ -1019,43 +1256,66 @@ function syncSurveyDedicatedSheetHeader_(survey) {
   return sheet;
 }
 
-function appendToSurveyDedicatedSheet_(survey, response, clientRespId, nowIso) {
+function appendBatchToSurveyDedicatedSheet_(survey, items) {
+  if (!survey || !items || items.length === 0) return;
   var sheet = syncSurveyDedicatedSheetHeader_(survey);
   if (!sheet) return;
 
   var existingIds = getExistingColumnSet_(sheet, 1);
-  if (existingIds[clientRespId]) return;
-
   var questions = getFlattenedQuestions_(survey);
-  var gps = response.gps || {};
-  var answers = response.answers || {};
-  var administeredLang = String(response.language || 'en').toUpperCase();
+  var rowsToAppend = [];
 
-  var row = [
-    sanitizeSheetCell_(clientRespId),
-    sanitizeSheetCell_(String(response.submittedAt || nowIso)),
-    sanitizeSheetCell_(String(response.enumerator || 'Field Enumerator')),
-    sanitizeSheetCell_(String(response.collectorId || 'default')),
-    Number(response.durationSec || 0),
-    gps.lat !== undefined ? sanitizeSheetCell_(gps.lat) : '',
-    gps.lng !== undefined ? sanitizeSheetCell_(gps.lng) : '',
-    gps.accuracy !== undefined ? sanitizeSheetCell_(gps.accuracy) : '',
-    sanitizeSheetCell_(administeredLang)
-  ];
+  for (var idx = 0; idx < items.length; idx++) {
+    var item = items[idx];
+    var clientRespId = item.clientRespId;
+    if (!clientRespId || existingIds[clientRespId]) continue;
 
-  for (var i = 0; i < questions.length; i++) {
-    var q = questions[i];
-    var val = answers[q.id];
-    // Dual key fallback
-    if (val === undefined || val === null || val === '') {
-      if (q.id === 'q_nps_seed') val = answers.q_nps;
-      else if (q.id === 'q_field_notes') val = answers.q_verbatim || answers.q_notes;
-      else if (q.id === 'q_crop_photo') val = answers.q_field_photo || answers.q_photo;
+    var response = item.response || {};
+    var nowIso = item.nowIso || new Date().toISOString();
+    var gps = response.gps || {};
+    var answers = response.answers || {};
+    var administeredLang = String(response.language || 'en').toUpperCase();
+
+    var row = [
+      sanitizeSheetCell_(clientRespId),
+      sanitizeSheetCell_(String(response.submittedAt || nowIso)),
+      sanitizeSheetCell_(String(response.enumerator || 'Field Enumerator')),
+      sanitizeSheetCell_(String(response.collectorId || 'default')),
+      Number(response.durationSec || 0),
+      gps.lat !== undefined ? sanitizeSheetCell_(gps.lat) : '',
+      gps.lng !== undefined ? sanitizeSheetCell_(gps.lng) : '',
+      gps.accuracy !== undefined ? sanitizeSheetCell_(gps.accuracy) : '',
+      sanitizeSheetCell_(administeredLang)
+    ];
+
+    for (var i = 0; i < questions.length; i++) {
+      var q = questions[i];
+      var val = answers[q.id];
+      // Dual key fallback
+      if (val === undefined || val === null || val === '') {
+        if (q.id === 'q_nps_seed') val = answers.q_nps;
+        else if (q.id === 'q_field_notes') val = answers.q_verbatim || answers.q_notes;
+        else if (q.id === 'q_crop_photo') val = answers.q_field_photo || answers.q_photo;
+      }
+      row.push(sanitizeSheetCell_(formatAnswerForCell_(val)));
     }
-    row.push(sanitizeSheetCell_(formatAnswerForCell_(val)));
+
+    rowsToAppend.push(row);
+    existingIds[clientRespId] = true;
   }
 
-  sheet.appendRow(row);
+  if (rowsToAppend.length > 0) {
+    var startRow = Math.max(2, sheet.getLastRow() + 1);
+    sheet.getRange(startRow, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+  }
+}
+
+function appendToSurveyDedicatedSheet_(survey, response, clientRespId, nowIso) {
+  appendBatchToSurveyDedicatedSheet_(survey, [{
+    response: response,
+    clientRespId: clientRespId,
+    nowIso: nowIso
+  }]);
 }
 
 function cleanPipedTextForHeader_(text) {
@@ -1278,9 +1538,21 @@ function readAnswersFromDedicatedSheet_(ss, surveyId, clientRespId) {
   }
 }
 
-function readAllDatabaseData_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function formatCellTimestamp_(val) {
+  if (!val) return '';
+  if (val instanceof Date) return val.toISOString();
+  return String(val).replace(/^'+/, '').trim();
+}
 
+function toTimestampMs_(val) {
+  if (!val) return NaN;
+  if (val instanceof Date) return val.getTime();
+  var s = String(val).replace(/^'+/, '').trim();
+  if (!s) return NaN;
+  return Date.parse(s);
+}
+
+function readSurveysRows_(ss) {
   var surveys = [];
   var sSheet = ss.getSheetByName(DB_CONFIG.SHEETS.SURVEYS);
   if (sSheet && sSheet.getLastRow() > 1) {
@@ -1294,140 +1566,195 @@ function readAllDatabaseData_() {
       }
     }
   }
+  return surveys;
+}
 
+function readCollectorsRows_(ss, filterSurveyId) {
   var collectors = [];
   var cSheet = ss.getSheetByName(DB_CONFIG.SHEETS.COLLECTORS);
   if (cSheet && cSheet.getLastRow() > 1) {
     var cRows = cSheet.getRange(2, 1, cSheet.getLastRow() - 1, 8).getValues();
+    var targetSurveyId = filterSurveyId ? String(filterSurveyId).trim() : '';
     for (var j = 0; j < cRows.length; j++) {
+      if (targetSurveyId && String(cRows[j][1] || '').trim() !== targetSurveyId) {
+        continue;
+      }
       var colJson = cRows[j][7];
       if (colJson) {
         try {
-          collectors.push(JSON.parse(colJson));
+          var parsedCol = JSON.parse(colJson);
+          if (!targetSurveyId || String(parsedCol.surveyId || '').trim() === targetSurveyId) {
+            collectors.push(parsedCol);
+          }
         } catch (e) {}
       }
     }
   }
+  return collectors;
+}
 
+function readResponsesRows_(ss, sinceIso) {
   var responses = [];
   var rSheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
-  if (rSheet && rSheet.getLastRow() > 1) {
-    var maxCols = Math.max(20, rSheet.getLastColumn());
-    var rRows = rSheet.getRange(2, 1, rSheet.getLastRow() - 1, maxCols).getValues();
-    for (var k = 0; k < rRows.length; k++) {
-      var row = rRows[k];
+  if (!rSheet || rSheet.getLastRow() <= 1) return responses;
 
-      // Adaptive schema detection:
-      // - Newer rows (Row 12 onwards): AnswersJSON in Col R (index 17), Language in Col T (index 19).
-      // - Legacy rows (Rows 2 to 11): AnswersJSON in Col L (index 11).
-      var answers = {};
-      var reviewStatus = 'pending_review';
-      var qaFlags = [];
-      var supervisorId = '';
-      var npsCategory = '';
-      var recordHash = '';
-      var calculated = {};
-      var syncedAt = String(row[5] || '');
-      var language = String(row[19] || 'en').toLowerCase().trim();
+  var sinceStr = sinceIso ? String(sinceIso).trim() : '';
+  var sinceMs = sinceStr ? Date.parse(sinceStr) : NaN;
+  var filterBySince = !isNaN(sinceMs);
 
-      var valR = String(row[17] || '').trim();
-      var valL = String(row[11] || '').trim();
+  var maxCols = Math.max(20, rSheet.getLastColumn());
+  var rRows = rSheet.getRange(2, 1, rSheet.getLastRow() - 1, maxCols).getValues();
+  for (var k = 0; k < rRows.length; k++) {
+    var row = rRows[k];
 
-      if (valR.charAt(0) === "'") valR = valR.substring(1).trim();
-      if (valL.charAt(0) === "'") valL = valL.substring(1).trim();
-
-      if (valR.charAt(0) === '{') {
-        // Modern 19/20-column layout (Row 12 onwards)
-        try { answers = JSON.parse(valR); } catch (e) { answers = {}; }
-        reviewStatus = (valL && valL.charAt(0) !== '{') ? valL : 'pending_review';
-        if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
-          qaFlags = row[12].split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-        }
-        supervisorId = String(row[13] || '');
-        npsCategory = String(row[14] || '');
-        recordHash = String(row[15] || '');
-        if (row[16]) {
-          try { calculated = typeof row[16] === 'object' ? row[16] : JSON.parse(row[16]); } catch (e) {}
-        }
-        syncedAt = String(row[18] || row[5] || '');
-      } else if (valL.charAt(0) === '{') {
-        // Legacy layout (Rows 2 to 11): Answers stored in Col L
-        try { answers = JSON.parse(valL); } catch (e) { answers = {}; }
-        reviewStatus = 'approved';
-        qaFlags = ['LEGACY_ROW'];
-        syncedAt = String(row[12] || row[5] || '');
-      } else if (typeof row[17] === 'object' && row[17] !== null) {
-        answers = row[17];
-      } else if (typeof row[11] === 'object' && row[11] !== null) {
-        answers = row[11];
+    if (filterBySince) {
+      var rawReceived = row[18] || (String(row[11] || '').trim().charAt(0) === '{' ? row[12] : '') || row[5];
+      var receivedMs = toTimestampMs_(rawReceived);
+      if (!isNaN(receivedMs)) {
+        if (receivedMs < sinceMs) continue;
+      } else {
+        var receivedStr = formatCellTimestamp_(rawReceived);
+        if (receivedStr && receivedStr < sinceStr) continue;
       }
-
-      // Self-healing fallback: If AnswersJSON was empty or corrupted, reconstruct from dedicated per-survey tab
-      if (Object.keys(answers).length === 0 && row[1] && row[0]) {
-        var dedicatedAnswers = readAnswersFromDedicatedSheet_(ss, String(row[1]), String(row[0]));
-        if (dedicatedAnswers && Object.keys(dedicatedAnswers).length > 0) {
-          answers = dedicatedAnswers;
-        }
-      }
-
-      var metaObj = (calculated && calculated._meta && typeof calculated._meta === 'object') ? calculated._meta : {};
-      if (calculated && calculated._meta) {
-        delete calculated._meta;
-      }
-
-      responses.push({
-        id: String(row[0]),
-        clientResponseId: String(row[0]),
-        surveyId: String(row[1]),
-        surveyTitle: String(row[2]),
-        collectorId: String(row[3]),
-        enumerator: String(row[4]),
-        submittedByUserId: metaObj.submittedByUserId || '',
-        submittedByUserRole: metaObj.submittedByUserRole || '',
-        language: language || 'en',
-        submittedAt: String(row[5]),
-        durationSec: Number(row[6] || 0),
-        gps: (row[7] !== '' && row[8] !== '') ? {
-          lat: Number(row[7]),
-          lng: Number(row[8]),
-          accuracy: Number(row[9] || 0),
-          label: metaObj.gpsLabel || '',
-          altitude: metaObj.gpsAltitude !== undefined ? metaObj.gpsAltitude : null,
-          method: metaObj.gpsMethod || '',
-          manual: Boolean(metaObj.gpsManual)
-        } : null,
-        status: String(row[10] || 'complete'),
-        reviewStatus: reviewStatus,
-        qaFlags: qaFlags,
-        supervisorId: String(row[13] || ''),
-        audit: metaObj.audit || null,
-        auditTrail: Array.isArray(metaObj.auditTrail) ? metaObj.auditTrail : [],
-        npsCategory: String(row[14] || ''),
-        recordHash: String(row[15] || ''),
-        calculated: calculated,
-        answers: answers,
-        syncStatus: 'synced',
-        syncedAt: String(row[18] || row[5])
-      });
     }
+
+    // Adaptive schema detection:
+    // - Newer rows (Row 12 onwards): AnswersJSON in Col R (index 17), Language in Col T (index 19).
+    // - Legacy rows (Rows 2 to 11): AnswersJSON in Col L (index 11).
+    var answers = {};
+    var reviewStatus = 'pending_review';
+    var qaFlags = [];
+    var supervisorId = '';
+    var npsCategory = '';
+    var recordHash = '';
+    var calculated = {};
+    var syncedAt = formatCellTimestamp_(row[5]);
+    var language = String(row[19] || 'en').toLowerCase().trim();
+
+    var valR = String(row[17] || '').trim();
+    var valL = String(row[11] || '').trim();
+
+    if (valR.charAt(0) === "'") valR = valR.substring(1).trim();
+    if (valL.charAt(0) === "'") valL = valL.substring(1).trim();
+
+    if (valR.charAt(0) === '{') {
+      // Modern 19/20-column layout (Row 12 onwards)
+      try { answers = JSON.parse(valR); } catch (e) { answers = {}; }
+      reviewStatus = (valL && valL.charAt(0) !== '{') ? valL : 'pending_review';
+      if (row[12] && typeof row[12] === 'string' && row[12].indexOf('{') === -1) {
+        qaFlags = row[12].split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      }
+      supervisorId = String(row[13] || '');
+      npsCategory = String(row[14] || '');
+      recordHash = String(row[15] || '');
+      if (row[16]) {
+        try { calculated = typeof row[16] === 'object' ? row[16] : JSON.parse(row[16]); } catch (e) {}
+      }
+      syncedAt = formatCellTimestamp_(row[18]) || formatCellTimestamp_(row[5]);
+    } else if (valL.charAt(0) === '{') {
+      // Legacy layout (Rows 2 to 11): Answers stored in Col L
+      try { answers = JSON.parse(valL); } catch (e) { answers = {}; }
+      reviewStatus = 'approved';
+      qaFlags = ['LEGACY_ROW'];
+      syncedAt = formatCellTimestamp_(row[12]) || formatCellTimestamp_(row[5]);
+    } else if (typeof row[17] === 'object' && row[17] !== null) {
+      answers = row[17];
+    } else if (typeof row[11] === 'object' && row[11] !== null) {
+      answers = row[11];
+    }
+
+    // Self-healing fallback: If AnswersJSON was empty or corrupted, reconstruct from dedicated per-survey tab
+    if (Object.keys(answers).length === 0 && row[1] && row[0]) {
+      var dedicatedAnswers = readAnswersFromDedicatedSheet_(ss, String(row[1]), String(row[0]));
+      if (dedicatedAnswers && Object.keys(dedicatedAnswers).length > 0) {
+        answers = dedicatedAnswers;
+      }
+    }
+
+    var metaObj = (calculated && calculated._meta && typeof calculated._meta === 'object') ? calculated._meta : {};
+    if (calculated && calculated._meta) {
+      delete calculated._meta;
+    }
+
+    responses.push({
+      id: String(row[0]),
+      clientResponseId: String(row[0]),
+      surveyId: String(row[1]),
+      surveyTitle: String(row[2]),
+      collectorId: String(row[3]),
+      enumerator: String(row[4]),
+      submittedByUserId: metaObj.submittedByUserId || '',
+      submittedByUserRole: metaObj.submittedByUserRole || '',
+      language: language || 'en',
+      submittedAt: formatCellTimestamp_(row[5]),
+      durationSec: Number(row[6] || 0),
+      gps: (row[7] !== '' && row[8] !== '') ? {
+        lat: Number(row[7]),
+        lng: Number(row[8]),
+        accuracy: Number(row[9] || 0),
+        label: metaObj.gpsLabel || '',
+        altitude: metaObj.gpsAltitude !== undefined ? metaObj.gpsAltitude : null,
+        method: metaObj.gpsMethod || '',
+        manual: Boolean(metaObj.gpsManual)
+      } : null,
+      status: String(row[10] || 'complete'),
+      reviewStatus: reviewStatus,
+      qaFlags: qaFlags,
+      supervisorId: String(row[13] || ''),
+      audit: metaObj.audit || null,
+      auditTrail: Array.isArray(metaObj.auditTrail) ? metaObj.auditTrail : [],
+      npsCategory: String(row[14] || ''),
+      recordHash: String(row[15] || ''),
+      calculated: calculated,
+      answers: answers,
+      syncStatus: 'synced',
+      syncedAt: syncedAt || formatCellTimestamp_(row[18]) || formatCellTimestamp_(row[5])
+    });
   }
+  return responses;
+}
 
-  var personnel = readPersonnelRows_(ss);
-
+function readDatabaseDataDelta_(sinceIso) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   return {
-    surveys: surveys,
-    collectors: collectors,
-    responses: responses,
-    personnel: personnel
+    surveys: readSurveysRows_(ss),
+    collectors: readCollectorsRows_(ss, ''),
+    responses: readResponsesRows_(ss, sinceIso),
+    personnel: readPersonnelRows_(ss)
   };
 }
 
+function readAllDatabaseData_() {
+  return readDatabaseDataDelta_('');
+}
+
 function getSurveyMap_() {
-  var data = readAllDatabaseData_();
+  try {
+    var cachedRaw = CacheService.getScriptCache().get('SURVEY_MAP_V1');
+    if (cachedRaw) {
+      var parsed = JSON.parse(cachedRaw);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    }
+  } catch (e) {}
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var surveys = readSurveysRows_(ss);
   var map = {};
-  for (var i = 0; i < data.surveys.length; i++) {
-    map[data.surveys[i].id] = data.surveys[i];
+  for (var i = 0; i < surveys.length; i++) {
+    if (surveys[i] && surveys[i].id) {
+      map[surveys[i].id] = surveys[i];
+    }
   }
+
+  try {
+    var serialized = JSON.stringify(map);
+    if (serialized.length <= CACHE_MAX_BYTES_) {
+      CacheService.getScriptCache().put('SURVEY_MAP_V1', serialized, CACHE_TTL_SURVEY_SEC_);
+    }
+  } catch (e) {}
+
   return map;
 }
 
@@ -1458,6 +1785,18 @@ function findRowIndexByValue_(sheet, colIndex, targetValue) {
   return -1;
 }
 
+function getExistingColumnIndexMap_(sheet, colIndex) {
+  var map = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return map;
+  var values = sheet.getRange(2, colIndex, lastRow - 1, 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var val = String(values[i][0]);
+    if (val) map[val] = i + 2;
+  }
+  return map;
+}
+
 function getExistingColumnSet_(sheet, colIndex) {
   var map = {};
   var lastRow = sheet.getLastRow();
@@ -1477,6 +1816,9 @@ function deleteRowById_(sheetName, colIndex, idValue) {
   var rowIndex = findRowIndexByValue_(sheet, colIndex, idValue);
   if (rowIndex > 1) {
     sheet.deleteRow(rowIndex);
+  }
+  if (sheetName === DB_CONFIG.SHEETS.SURVEYS) {
+    invalidateSurveyCache_(idValue);
   }
 }
 
