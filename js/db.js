@@ -956,24 +956,9 @@ function getInitialSeedData() {
     }
   ];
 
-  const syncQueue = [
-    {
-      id: 'sq_initial_1',
-      action: 'SUBMIT_RESPONSE',
-      recordId: 'resp_seed_105_offline',
-      title: 'Response: Meru County (Timau / Buuri Plot #8)',
-      createdAt: daysAgo(0.3),
-      attempts: 0
-    },
-    {
-      id: 'sq_initial_2',
-      action: 'SUBMIT_RESPONSE',
-      recordId: 'resp_dealer_202_offline',
-      title: 'Response: Mkulima Bora Stockist (Agro-Dealer Audit)',
-      createdAt: daysAgo(0.1),
-      attempts: 0
-    }
-  ];
+  // All seeded responses above are already marked syncStatus: 'synced',
+  // so the initial syncQueue starts empty (no orphaned/ghost pending items).
+  const syncQueue = [];
 
   const syncLogs = [
     {
@@ -2642,6 +2627,7 @@ class AESurveyStore {
     this.personnel = [];
     this.pinOverrides = {};
     this.syncQueue = [];
+    this.deletedSurveyIds = [];
     this.syncLogs = [];
     this.runnerDrafts = {};
     this.lastSyncError = null;
@@ -2839,7 +2825,23 @@ class AESurveyStore {
         const respMap = new Map(resps.map((r) => [r.id || r.clientResponseId, r]));
         (this.responses || []).forEach((lsResp) => {
           const key = lsResp && (lsResp.id || lsResp.clientResponseId);
-          if (key && !respMap.has(key)) respMap.set(key, lsResp);
+          if (!key) return;
+          const idbResp = respMap.get(key);
+          if (!idbResp) {
+            respMap.set(key, lsResp);
+            return;
+          }
+          // Never revert a synced localStorage response back to 'queued' from stale IDB,
+          // unless the queued copy has a strictly newer updatedAt (e.g. a supervisor review edit).
+          const lsTime = Math.max(Date.parse(lsResp.updatedAt || 0) || 0, Date.parse(lsResp.syncedAt || 0) || 0);
+          const idbTime = Math.max(Date.parse(idbResp.updatedAt || 0) || 0, Date.parse(idbResp.syncedAt || 0) || 0);
+          if (lsResp.syncStatus === 'synced' && idbResp.syncStatus !== 'synced') {
+            if (idbTime <= lsTime) {
+              respMap.set(key, lsResp);
+            }
+          } else if (lsTime >= idbTime) {
+            respMap.set(key, lsResp);
+          }
         });
         this.responses = Array.from(respMap.values());
         this.healResponsesAnswers();
@@ -2877,7 +2879,25 @@ class AESurveyStore {
       this.applyPinOverridesToPersonnel();
 
       if (queue.length || (this.syncQueue && this.syncQueue.length)) {
-        const qMap = new Map(queue.map((q) => [`${q.action}_${q.recordId}`, q]));
+        const lastSyncedMs = this.settings && this.settings.lastSyncedAt
+          ? (Date.parse(this.settings.lastSyncedAt) || 0)
+          : 0;
+        const lsKeys = new Set(
+          (this.syncQueue || [])
+            .filter((q) => q && q.action && q.recordId)
+            .map((q) => `${q.action}_${q.recordId}`)
+        );
+        const qMap = new Map();
+        // Only adopt an IDB queue item if it is still present in localStorage OR was created
+        // AFTER the last successful sync (preventing resurrection of already-cleared items).
+        (queue || []).forEach((idbQ) => {
+          if (!idbQ || !idbQ.action || !idbQ.recordId) return;
+          const k = `${idbQ.action}_${idbQ.recordId}`;
+          const createdMs = Date.parse(idbQ.createdAt || 0) || 0;
+          if (lsKeys.has(k) || (lastSyncedMs === 0 && createdMs > 0) || (lastSyncedMs > 0 && createdMs > lastSyncedMs)) {
+            qMap.set(k, idbQ);
+          }
+        });
         (this.syncQueue || []).forEach((lsQ) => {
           if (lsQ && lsQ.action && lsQ.recordId) {
             qMap.set(`${lsQ.action}_${lsQ.recordId}`, lsQ);
@@ -2885,6 +2905,7 @@ class AESurveyStore {
         });
         this.syncQueue = Array.from(qMap.values());
       }
+      this.pruneStaleSyncQueue({ save: false });
       await this.persistAllToIDB();
       this.saveToLocalStorage({ skipIDB: true, broadcast: false });
     }
@@ -3190,6 +3211,11 @@ class AESurveyStore {
             delete this.runnerDrafts[k].enumeratorName;
           }
         });
+      }
+      // Self-heal any orphaned, duplicate, or already-synced ghost items from previous sessions
+      const prunedOnLoad = this.pruneStaleSyncQueue({ save: false });
+      if (prunedOnLoad && prunedOnLoad.removed > 0) {
+        this._safeLocalStorageSet(AE_STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(this.syncQueue));
       }
     } catch (e) {
       const seed = getInitialSeedData();
@@ -4922,10 +4948,26 @@ class AESurveyStore {
     if (surveyId && !this.deletedSurveyIds.includes(surveyId)) {
       this.deletedSurveyIds.push(surveyId);
     }
+    const removedRespIds = new Set();
+    (this.responses || []).forEach((r) => {
+      if (r && r.surveyId === surveyId) {
+        if (r.id) removedRespIds.add(r.id);
+        if (r.clientResponseId) removedRespIds.add(r.clientResponseId);
+      }
+    });
+    const removedColIds = new Set(
+      (this.collectors || []).filter((c) => c && c.surveyId === surveyId && c.id).map((c) => c.id)
+    );
     this.surveys = this.surveys.filter((s) => s.id !== surveyId);
     this.responses = this.responses.filter((r) => r.surveyId !== surveyId);
     this.collectors = this.collectors.filter((c) => c.surveyId !== surveyId);
-    this.syncQueue = this.syncQueue.filter((q) => q.recordId !== surveyId);
+    this.syncQueue = (this.syncQueue || []).filter((q) => {
+      if (!q) return false;
+      if (q.recordId === surveyId) return false;
+      if (q.action === 'SUBMIT_RESPONSE' && removedRespIds.has(q.recordId)) return false;
+      if (q.action === 'UPSERT_COLLECTOR' && removedColIds.has(q.recordId)) return false;
+      return true;
+    });
     if (surveyId) {
       this.enqueueSyncItem('DELETE_SURVEY', surveyId, `Delete Survey -> ${surveyId}`);
     }
@@ -5370,7 +5412,8 @@ class AESurveyStore {
   }
 
   enqueueSyncItem(action, recordId, title) {
-    const existing = this.syncQueue.find((item) => item.action === action && item.recordId === recordId);
+    if (!action || !recordId) return;
+    const existing = this.syncQueue.find((item) => item && item.action === action && item.recordId === recordId);
     if (existing) {
       existing.createdAt = new Date().toISOString();
       existing.title = title;
@@ -5384,6 +5427,313 @@ class AESurveyStore {
       createdAt: new Date().toISOString(),
       attempts: 0
     });
+  }
+
+  /**
+   * Removes orphaned, malformed, duplicate, or already-synced ghost items from `this.syncQueue`
+   * (and stale `this.deletedSurveyIds`) across localStorage AND IndexedDB so a stuck badge
+   * never traps the user.
+   */
+  pruneStaleSyncQueue(options = { save: true }) {
+    const supportedActions = new Set([
+      'SUBMIT_RESPONSE',
+      'UPSERT_SURVEY',
+      'DELETE_SURVEY',
+      'UPSERT_COLLECTOR',
+      'UPSERT_PERSONNEL'
+    ]);
+    const respById = new Map();
+    (this.responses || []).forEach((r) => {
+      if (!r) return;
+      if (r.id) respById.set(r.id, r);
+      if (r.clientResponseId) respById.set(r.clientResponseId, r);
+    });
+    const surveyIds = new Set((this.surveys || []).filter((s) => s && s.id).map((s) => s.id));
+    const collectorIds = new Set((this.collectors || []).filter((c) => c && c.id).map((c) => c.id));
+    const personnelIds = new Set((this.personnel || []).filter((p) => p && p.id).map((p) => p.id));
+
+    const beforeQueueLen = Array.isArray(this.syncQueue) ? this.syncQueue.length : 0;
+    const seen = new Set();
+    const cleaned = [];
+
+    (Array.isArray(this.syncQueue) ? this.syncQueue : []).forEach((item) => {
+      if (!item || typeof item !== 'object' || !item.action || !item.recordId) return;
+      if (!supportedActions.has(item.action)) return;
+      const dedupeKey = `${item.action}_${item.recordId}`;
+      if (seen.has(dedupeKey)) return;
+
+      if (item.action === 'SUBMIT_RESPONSE') {
+        const resp = respById.get(item.recordId);
+        // Orphaned response or already synced -> prune
+        if (!resp || resp.syncStatus === 'synced') return;
+      } else if (item.action === 'UPSERT_SURVEY') {
+        if (!surveyIds.has(item.recordId)) return;
+      } else if (item.action === 'UPSERT_COLLECTOR') {
+        if (!collectorIds.has(item.recordId)) return;
+      } else if (item.action === 'UPSERT_PERSONNEL') {
+        if (!personnelIds.has(item.recordId)) return;
+      } else if (item.action === 'DELETE_SURVEY') {
+        // If survey was recreated/restored locally, drop stale DELETE_SURVEY
+        if (surveyIds.has(item.recordId)) return;
+      }
+
+      seen.add(dedupeKey);
+      cleaned.push(item);
+    });
+
+    const removedFromQueue = beforeQueueLen - cleaned.length;
+    this.syncQueue = cleaned;
+
+    let removedDeleted = 0;
+    if (Array.isArray(this.deletedSurveyIds)) {
+      const beforeDel = this.deletedSurveyIds.length;
+      this.deletedSurveyIds = Array.from(
+        new Set(this.deletedSurveyIds.filter((id) => id && !surveyIds.has(id)))
+      );
+      removedDeleted = beforeDel - this.deletedSurveyIds.length;
+    }
+
+    const totalRemoved = removedFromQueue + removedDeleted;
+    if (totalRemoved > 0 && (!options || options.save !== false)) {
+      this.saveToLocalStorage({ stores: ['syncQueue'] });
+    }
+    return {
+      removed: totalRemoved,
+      removedFromQueue,
+      removedDeleted,
+      remaining: this.syncQueue.length
+    };
+  }
+
+  /**
+   * Computes a human-readable explanation for why a pending item has not synced yet.
+   */
+  _explainPendingReason(action, recordId, attempts, isOrphaned = false) {
+    if (isOrphaned) {
+      return 'Orphaned queue entry (local record no longer exists — safe to dismiss)';
+    }
+    if (!this.isEffectivelyOnline()) {
+      return this.settings && this.settings.simulateOffline
+        ? 'Offline Mode is enabled — disable Offline Mode to sync'
+        : 'Device is offline — will sync automatically when reconnected';
+    }
+    const currentSessionUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    const isNonAdminUser = Boolean(currentSessionUser && currentSessionUser.role !== 'admin');
+    if (isNonAdminUser) {
+      if (action === 'UPSERT_SURVEY' || action === 'DELETE_SURVEY' || action === 'UPSERT_COLLECTOR') {
+        return `Requires Admin login to sync (signed in as ${currentSessionUser.role || 'staff'})`;
+      }
+      if (action === 'UPSERT_PERSONNEL' && recordId !== currentSessionUser.id) {
+        return `Requires Admin login to sync another staff member's record`;
+      }
+    }
+    if (attempts > 0 && this.lastSyncError && this.lastSyncError.message) {
+      return `Retry #${attempts} failed: ${String(this.lastSyncError.message).slice(0, 140)}`;
+    }
+    if (attempts > 0) {
+      return `Waiting to retry (${attempts} previous attempt${attempts === 1 ? '' : 's'})`;
+    }
+    if (!this.settings || !this.settings.gasWebAppUrl) {
+      return 'Google Apps Script URL not configured — click Sync Now to run local sync';
+    }
+    return 'Queued for next cloud sync — click Retry Sync to push now';
+  }
+
+  /**
+   * Returns a deduplicated, human-readable array of EVERY item currently counted
+   * in `getPendingCount()`. Single source of truth for the Sync Inspector UI.
+   */
+  getPendingSyncItems() {
+    const items = [];
+    const queue = Array.isArray(this.syncQueue) ? this.syncQueue : [];
+    const queueByRespId = new Map();
+    queue.forEach((q) => {
+      if (q && q.action === 'SUBMIT_RESPONSE' && q.recordId) {
+        queueByRespId.set(q.recordId, q);
+      }
+    });
+
+    const representedQueueIds = new Set();
+    const representedDeletedSurveyIds = new Set();
+
+    // 1. Unsynced local responses (deduplicated with any matching SUBMIT_RESPONSE queue item)
+    (this.responses || []).forEach((r) => {
+      if (!r || r.syncStatus === 'synced') return;
+      const respId = r.id || r.clientResponseId;
+      if (!respId) return;
+      const matchedQ = queueByRespId.get(respId) || (r.clientResponseId ? queueByRespId.get(r.clientResponseId) : null);
+      if (matchedQ && matchedQ.id) {
+        representedQueueIds.add(matchedQ.id);
+      }
+      const attempts = matchedQ ? (Number(matchedQ.attempts) || 0) : 0;
+      const title = (matchedQ && matchedQ.title)
+        || `Response (${r.enumerator || 'Field Enumerator'}) -> ${String(r.surveyTitle || r.surveyId || 'Survey').slice(0, 42)}`;
+      items.push({
+        key: `response:${respId}`,
+        kind: 'response',
+        action: 'SUBMIT_RESPONSE',
+        recordId: respId,
+        title,
+        createdAt: (matchedQ && matchedQ.createdAt) || r.updatedAt || r.submittedAt || new Date().toISOString(),
+        attempts,
+        reason: this._explainPendingReason('SUBMIT_RESPONSE', respId, attempts, false)
+      });
+    });
+
+    // 2. Remaining syncQueue items (schemas, collectors, personnel, deletions, or orphaned entries)
+    const respIdSet = new Set();
+    (this.responses || []).forEach((r) => {
+      if (!r) return;
+      if (r.id) respIdSet.add(r.id);
+      if (r.clientResponseId) respIdSet.add(r.clientResponseId);
+    });
+    const surveyIdSet = new Set((this.surveys || []).filter((s) => s && s.id).map((s) => s.id));
+    const collectorIdSet = new Set((this.collectors || []).filter((c) => c && c.id).map((c) => c.id));
+    const personnelIdSet = new Set((this.personnel || []).filter((p) => p && p.id).map((p) => p.id));
+
+    queue.forEach((q) => {
+      if (!q || typeof q !== 'object') return;
+      if (q.id && representedQueueIds.has(q.id)) return;
+      const action = q.action || 'UNKNOWN';
+      const recordId = q.recordId || q.id || 'unknown';
+      if (action === 'DELETE_SURVEY' && recordId) {
+        representedDeletedSurveyIds.add(recordId);
+      }
+      const isOrphaned = (
+        (action === 'SUBMIT_RESPONSE' && !respIdSet.has(recordId)) ||
+        (action === 'UPSERT_SURVEY' && !surveyIdSet.has(recordId)) ||
+        (action === 'UPSERT_COLLECTOR' && !collectorIdSet.has(recordId)) ||
+        (action === 'UPSERT_PERSONNEL' && !personnelIdSet.has(recordId))
+      );
+      const attempts = Number(q.attempts) || 0;
+      const qKey = q.id || `${action}:${recordId}`;
+      items.push({
+        key: `queue:${qKey}`,
+        kind: 'queue',
+        action,
+        recordId,
+        title: q.title || `${action}: ${recordId}`,
+        createdAt: q.createdAt || new Date().toISOString(),
+        attempts,
+        reason: this._explainPendingReason(action, recordId, attempts, isOrphaned)
+      });
+    });
+
+    // 3. Any pending deletedSurveyIds not already represented by a DELETE_SURVEY queue item
+    (Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []).forEach((sid) => {
+      if (!sid || representedDeletedSurveyIds.has(sid) || surveyIdSet.has(sid)) return;
+      items.push({
+        key: `deleted_survey:${sid}`,
+        kind: 'deleted_survey',
+        action: 'DELETE_SURVEY',
+        recordId: sid,
+        title: `Delete Survey -> ${sid}`,
+        createdAt: (this.settings && this.settings.lastSyncedAt) || new Date().toISOString(),
+        attempts: 0,
+        reason: this._explainPendingReason('DELETE_SURVEY', sid, 0, false)
+      });
+    });
+
+    return items;
+  }
+
+  /**
+   * Canonical pending sync count (exact 1:1 parity with `getPendingSyncItems()`, zero double-counting).
+   */
+  getPendingCount() {
+    return this.getPendingSyncItems().length;
+  }
+
+  /**
+   * Safely dismisses/clears a single pending sync item by its `key` (from `getPendingSyncItems()`)
+   * across BOTH localStorage AND IndexedDB so the user is never trapped with a stuck item.
+   */
+  dismissPendingSyncItem(key) {
+    const targetKey = String(key || '').trim();
+    if (!targetKey) {
+      return { ok: false, dismissedKey: '', remainingCount: this.getPendingCount() };
+    }
+    let changed = false;
+    const stores = new Set(['syncQueue']);
+    const nowIso = new Date().toISOString();
+
+    if (targetKey.startsWith('response:')) {
+      const respId = targetKey.slice('response:'.length);
+      (this.responses || []).forEach((r) => {
+        if (r && (r.id === respId || r.clientResponseId === respId) && r.syncStatus !== 'synced') {
+          r.syncStatus = 'synced';
+          r.syncedAt = r.syncedAt || nowIso;
+          changed = true;
+          stores.add('responses');
+        }
+      });
+      const before = (this.syncQueue || []).length;
+      this.syncQueue = (this.syncQueue || []).filter(
+        (q) => !(q && q.action === 'SUBMIT_RESPONSE' && q.recordId === respId)
+      );
+      if (this.syncQueue.length !== before) changed = true;
+    } else if (targetKey.startsWith('queue:')) {
+      const qToken = targetKey.slice('queue:'.length);
+      const removedItems = [];
+      this.syncQueue = (this.syncQueue || []).filter((q) => {
+        if (!q) return false;
+        const match = (q.id === qToken) || (`${q.action}:${q.recordId}` === qToken) || (q.recordId === qToken);
+        if (match) {
+          removedItems.push(q);
+          changed = true;
+          return false;
+        }
+        return true;
+      });
+      removedItems.forEach((rem) => {
+        if (rem.action === 'DELETE_SURVEY' && Array.isArray(this.deletedSurveyIds)) {
+          this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => id !== rem.recordId);
+        }
+        if (rem.action === 'SUBMIT_RESPONSE') {
+          (this.responses || []).forEach((r) => {
+            if (r && (r.id === rem.recordId || r.clientResponseId === rem.recordId) && r.syncStatus !== 'synced') {
+              r.syncStatus = 'synced';
+              r.syncedAt = r.syncedAt || nowIso;
+              stores.add('responses');
+            }
+          });
+        }
+      });
+    } else if (targetKey.startsWith('deleted_survey:')) {
+      const sid = targetKey.slice('deleted_survey:'.length);
+      if (Array.isArray(this.deletedSurveyIds) && this.deletedSurveyIds.includes(sid)) {
+        this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => id !== sid);
+        changed = true;
+      }
+      const before = (this.syncQueue || []).length;
+      this.syncQueue = (this.syncQueue || []).filter(
+        (q) => !(q && q.action === 'DELETE_SURVEY' && q.recordId === sid)
+      );
+      if (this.syncQueue.length !== before) changed = true;
+    } else {
+      // Fallback: match raw queue item id or recordId
+      const before = (this.syncQueue || []).length;
+      this.syncQueue = (this.syncQueue || []).filter(
+        (q) => !(q && (q.id === targetKey || q.recordId === targetKey))
+      );
+      if (this.syncQueue.length !== before) changed = true;
+      if (Array.isArray(this.deletedSurveyIds) && this.deletedSurveyIds.includes(targetKey)) {
+        this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => id !== targetKey);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      // Advance lastSyncedAt if needed so reconcileIndexedDB will never resurrect the dismissed item
+      this.saveToLocalStorage({ stores: Array.from(stores) });
+    }
+    return {
+      ok: changed,
+      dismissedKey: targetKey,
+      remainingCount: this.getPendingCount()
+    };
   }
 
   saveRunnerDraft(surveyId, draftState) {
@@ -5448,24 +5798,37 @@ class AESurveyStore {
         window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
       }
       const startTime = performance.now();
+      // Drop any orphaned/already-synced ghost entries before building the batch payload
+      this.pruneStaleSyncQueue({ save: false });
+
       const unsyncedResponses = opts.forceAll
         ? [...this.responses]
         : this.responses.filter((r) => r.syncStatus !== 'synced');
-      const syncedResponseIds = new Set(unsyncedResponses.map((r) => r.id));
+      const syncedResponseIds = new Set();
+      unsyncedResponses.forEach((r) => {
+        if (!r) return;
+        if (r.id) syncedResponseIds.add(r.id);
+        if (r.clientResponseId) syncedResponseIds.add(r.clientResponseId);
+      });
       const syncedQueueSnapshot = new Map((this.syncQueue || []).map((q) => [q.id, q.createdAt]));
 
       const currentSessionUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
         ? window.AESession.getCurrentUser()
         : null;
 
+      const hasQueuedSurveyUpserts = (this.syncQueue || []).some((q) => q && q.action === 'UPSERT_SURVEY');
+      const hasQueuedAdminItems = (this.syncQueue || []).some(
+        (q) => q && (q.action === 'UPSERT_SURVEY' || q.action === 'DELETE_SURVEY' || q.action === 'UPSERT_COLLECTOR')
+      ) || (Array.isArray(this.deletedSurveyIds) && this.deletedSurveyIds.length > 0);
+
       const isCallerAdmin = Boolean(
         (currentSessionUser && currentSessionUser.role === 'admin') ||
-        (!currentSessionUser && (opts.forceAll || opts.syncSurveys || this._surveysDirty))
+        (!currentSessionUser && (opts.forceAll || opts.syncSurveys || this._surveysDirty || hasQueuedAdminItems))
       );
 
-      // Send survey schemas if forced, dirty, first connect, or manual sync (when authorized)
+      // Send survey schemas if forced, dirty, queued in syncQueue, first connect, or manual sync (when authorized)
       const shouldSyncSurveys = Boolean(
-        isCallerAdmin && (opts.forceAll || opts.syncSurveys || this._surveysDirty || !this.settings.lastSyncedAt || opts.manual)
+        isCallerAdmin && (opts.forceAll || opts.syncSurveys || this._surveysDirty || hasQueuedSurveyUpserts || !this.settings.lastSyncedAt || opts.manual)
       );
       const surveysPayload = shouldSyncSurveys ? this.surveys : [];
       const deletedSurveyIds = isCallerAdmin
@@ -5589,6 +5952,20 @@ class AESurveyStore {
             }
           }
 
+          if (data.isCallerAdmin === false) {
+            sentSurveySync = false;
+            sentCollectorSync = false;
+            sentDeletedSurveyIds = new Set();
+            sentAllPersonnel = false;
+          } else if (Array.isArray(data.deletedSurveyIds)) {
+            sentDeletedSurveyIds = new Set(data.deletedSurveyIds);
+          }
+          if (Array.isArray(data.syncedResponseIds) && cloudResponses.length > 0) {
+            syncedResponseIds.clear();
+            data.syncedResponseIds.forEach((sid) => {
+              if (sid) syncedResponseIds.add(String(sid));
+            });
+          }
           if (data.version !== undefined && data.version !== null && data.version !== '') {
             this.settings.cloudDbVersion = String(data.version);
           }
@@ -5623,38 +6000,60 @@ class AESurveyStore {
 
         const nowIso = new Date().toISOString();
         this.responses.forEach((r) => {
-          if (syncedResponseIds.has(r.id)) {
+          if (r && (syncedResponseIds.has(r.id) || (r.clientResponseId && syncedResponseIds.has(r.clientResponseId)))) {
             r.syncStatus = 'synced';
             r.syncedAt = nowIso;
           }
         });
 
+        const respStatusById = new Map();
+        (this.responses || []).forEach((r) => {
+          if (!r) return;
+          if (r.id) respStatusById.set(r.id, r.syncStatus);
+          if (r.clientResponseId) respStatusById.set(r.clientResponseId, r.syncStatus);
+        });
+        const liveSurveyIds = new Set((this.surveys || []).filter((s) => s && s.id).map((s) => s.id));
+        const liveCollectorIds = new Set((this.collectors || []).filter((c) => c && c.id).map((c) => c.id));
+        const livePersonnelIds = new Set((this.personnel || []).filter((p) => p && p.id).map((p) => p.id));
+
         // Prune ONLY syncQueue items that were actually included in the succeeded payload
-        // so non-admin syncs never drop queued admin items (and vice versa).
+        // (or are already synced / orphaned), so non-admin syncs never drop valid admin items.
         this.syncQueue = (this.syncQueue || []).filter((item) => {
+          if (!item || !item.action || !item.recordId) return false;
           if (!syncedQueueSnapshot.has(item.id) || item.createdAt !== syncedQueueSnapshot.get(item.id)) {
             return true;
           }
           if (item.action === 'SUBMIT_RESPONSE') {
-            return !syncedResponseIds.has(item.recordId);
+            if (syncedResponseIds.has(item.recordId)) return false;
+            const st = respStatusById.get(item.recordId);
+            // Prune if orphaned (missing) or already synced
+            if (!st || st === 'synced') return false;
+            return true;
           }
           if (item.action === 'DELETE_SURVEY') {
-            return !sentDeletedSurveyIds.has(item.recordId);
+            return !(sentDeletedSurveyIds.has(item.recordId) || !gasUrl);
           }
           if (item.action === 'UPSERT_SURVEY') {
+            if (!liveSurveyIds.has(item.recordId)) return false;
             return !(sentSurveySync || !gasUrl);
           }
           if (item.action === 'UPSERT_COLLECTOR') {
+            if (!liveCollectorIds.has(item.recordId)) return false;
             return !(sentCollectorSync || !gasUrl);
           }
           if (item.action === 'UPSERT_PERSONNEL') {
+            if (!livePersonnelIds.has(item.recordId)) return false;
             return !(sentAllPersonnel || sentPersonnelIds.has(item.recordId) || !gasUrl);
           }
-          return true;
+          // Drop unrecognized legacy action types so they never stick forever
+          return false;
         });
         if (sentDeletedSurveyIds.size > 0 && Array.isArray(this.deletedSurveyIds)) {
           this.deletedSurveyIds = this.deletedSurveyIds.filter((id) => !sentDeletedSurveyIds.has(id));
+        } else if (!gasUrl && Array.isArray(this.deletedSurveyIds)) {
+          this.deletedSurveyIds = [];
         }
+        this.pruneStaleSyncQueue({ save: false });
         this.applyPinOverridesToPersonnel();
         this.settings.lastSyncedAt = nowIso;
         this.lastSyncError = null;

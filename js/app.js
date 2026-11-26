@@ -137,7 +137,7 @@ window.AEApp = {
         window.aeStore &&
         typeof window.aeStore.triggerBackgroundSyncNow !== 'function' &&
         window.aeStore.settings.autoSyncOnOnline &&
-        window.aeStore.syncQueue.length > 0
+        this.getPendingSyncCount() > 0
       ) {
         this.triggerGoogleSheetsSync();
       } else {
@@ -157,6 +157,9 @@ window.AEApp = {
         : null;
       if (user) {
         this.renderHeaderBar(user);
+      }
+      if (this.showSyncModal) {
+        this.renderModals();
       }
     });
 
@@ -568,11 +571,19 @@ window.AEApp = {
 
       this.hasPendingCloudUpdates = false;
       this.pendingCloudUpdateSummary = '';
+      const remainingPending = this.getPendingSyncCount();
       const pullSuffix = pullRes && pullRes.changed ? ' · Fresh cloud updates pulled.' : '';
-      this.showToast(
-        `Synced ${res.surveysSynced} surveys and ${res.responsesInserted} responses to Google Sheets (${res.latencyMs}ms).${pullSuffix}`,
-        'success'
-      );
+      if (remainingPending > 0) {
+        this.showToast(
+          `Sync finished (${res.latencyMs}ms), but ${remainingPending} item${remainingPending === 1 ? '' : 's'} still pending. Open Sync settings to inspect or dismiss.`,
+          'warning'
+        );
+      } else {
+        this.showToast(
+          `Synced ${res.surveysSynced} surveys and ${res.responsesInserted} responses to Google Sheets (${res.latencyMs}ms).${pullSuffix}`,
+          'success'
+        );
+      }
     } catch (err) {
       this.showToast(err.message || 'Sync failed', 'error');
     } finally {
@@ -1216,9 +1227,7 @@ window.AEApp = {
 
 
 
-    const queueCount = window.aeStore.syncQueue.length;
-    const unsyncedRespCount = window.aeStore.responses.filter((r) => r.syncStatus !== 'synced').length;
-    const totalPending = Math.max(queueCount, unsyncedRespCount);
+    const totalPending = this.getPendingSyncCount();
     const activeSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
     const isAdmin = currentUser.role === 'admin';
     const isCurrentlySyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
@@ -2991,12 +3000,12 @@ window.AEApp = {
                                     ${
                                       canAssign
                                         ? `<div class="inline-flex items-center gap-1">
-                                            <button type="button" onclick="AEApp.openAssignTaskModal('${t.personId}', '${t.surveyId}')"
+                                            <button type="button" onclick="AEApp.openAssignTaskModal('${this.escapeJs(t.personId)}', '${this.escapeJs(t.surveyId)}')"
                                               title="Edit Quota &amp; Assignment"
                                               class="h-7 px-2 rounded-[4px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-[11px] font-medium text-[#111613] inline-flex items-center gap-1 ae-press">
                                               <i class="fa-solid fa-sliders text-[10px] text-[#646E68]"></i> Edit Quota
                                             </button>
-                                            <button type="button" onclick="AEApp.unassignTask('${t.personId}', '${t.surveyId}')"
+                                            <button type="button" onclick="AEApp.unassignTask('${this.escapeJs(t.personId)}', '${this.escapeJs(t.surveyId)}')"
                                               title="Unassign task"
                                               class="h-7 px-2 rounded-[4px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-[11px] font-medium text-[#831C1E] ae-press">
                                               Unassign
@@ -3895,7 +3904,7 @@ window.AEApp = {
     }
 
     const settings = window.aeStore.settings;
-    const queue = window.aeStore.syncQueue;
+    const pendingItems = this.getPendingSyncItems();
     const logs = window.aeStore.syncLogs;
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
@@ -3938,7 +3947,7 @@ window.AEApp = {
               <label for="ae_gas_url_input" class="block text-sm font-medium text-[#111613]">
                 Apps Script Web App URL
               </label>
-              ${isAdmin ? `<button type="button" onclick="document.getElementById('ae_gas_url_input').value='https://script.google.com/macros/s/AKfycbzzBECJ5o02M2yaaJGrL41bTL1bgU2dltcQ8GicgR3x15jkocvYzNocWNk7_k75DNoV7Q/exec'; document.getElementById('ae_sync_token_input').value='6B3D46E11CAD5800CA490A356DEC10D6';" class="text-xs text-[#247B50] font-semibold hover:underline">Use default</button>` : ''}
+              ${isAdmin ? `<button type="button" onclick="var u=document.getElementById('ae_gas_url_input'),t=document.getElementById('ae_sync_token_input');if(u)u.value='https://script.google.com/macros/s/AKfycbzzBECJ5o02M2yaaJGrL41bTL1bgU2dltcQ8GicgR3x15jkocvYzNocWNk7_k75DNoV7Q/exec';if(t)t.value='6B3D46E11CAD5800CA490A356DEC10D6';" class="text-xs text-[#247B50] font-semibold hover:underline">Use default</button>` : ''}
             </div>
             <input type="url"
               id="ae_gas_url_input"
@@ -4014,19 +4023,59 @@ window.AEApp = {
             </div>
           </div>
 
-          <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-[#111613] tabular-nums">Sync queue (${queue.length} pending)</span>
-              <span class="text-xs text-[#525B56] tabular-nums">
-                Last synced: ${settings.lastSyncedAt ? new Date(settings.lastSyncedAt).toLocaleTimeString() : 'Not synced yet'}
-              </span>
+          <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold text-[#111613] tabular-nums">Pending Sync Items (${pendingItems.length})</span>
+                <span class="text-[11px] text-[#525B56] tabular-nums">
+                  · Last synced: ${settings.lastSyncedAt ? new Date(settings.lastSyncedAt).toLocaleTimeString() : 'Not synced yet'}
+                </span>
+              </div>
+              ${
+                pendingItems.length > 0
+                  ? `<button type="button" onclick="AEApp.triggerGoogleSheetsSync(false)"
+                      ${this.isSyncing ? 'disabled' : ''}
+                      class="h-7 px-2.5 rounded-[5px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-[11px] font-semibold inline-flex items-center gap-1.5 ae-press ${this.isSyncing ? 'opacity-70 cursor-wait' : ''}">
+                      <i class="fa-solid fa-arrows-rotate text-[10px] ${this.isSyncing ? 'fa-spin' : ''}"></i>
+                      <span>Retry Sync</span>
+                    </button>`
+                  : ''
+              }
             </div>
             ${
-              queue.length === 0
+              pendingItems.length === 0
                 ? `<div class="text-xs text-[#247B50] font-medium"><i class="fa-solid fa-check mr-1.5"></i>All surveys and responses are up to date.</div>`
-                : `<ul class="space-y-1 max-h-28 overflow-y-auto text-xs text-[#525B56] tabular-nums">
-                    ${queue.map((item) => `<li>· [${this.escapeHtml(item.action)}] ${this.escapeHtml(item.title)} ${item.attempts > 0 ? `(Attempts: ${item.attempts})` : ''}</li>`).join('')}
-                  </ul>`
+                : `<div class="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                    ${pendingItems
+                      .map((item) => {
+                        const meta = this.formatPendingSyncMeta(item);
+                        const safeKey = this.escapeJs(item.key || item.recordId || '');
+                        return `
+                          <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-2.5 flex items-start justify-between gap-3">
+                            <div class="min-w-0 space-y-1">
+                              <div class="flex flex-wrap items-center gap-1.5">
+                                <span class="px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold ${meta.badgeClass}">${this.escapeHtml(meta.typeLabel)}</span>
+                                <span class="text-xs font-semibold text-[#111613] truncate max-w-[300px]" title="${this.escapeAttr(item.title || item.recordId || '')}">${this.escapeHtml(item.title || item.recordId || 'Pending item')}</span>
+                              </div>
+                              <div class="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-[#525B56] tabular-nums">
+                                ${item.recordId ? `<span class="font-mono text-[10px] text-[#646E68]">ID: ${this.escapeHtml(item.recordId)}</span>` : ''}
+                                <span><i class="fa-regular fa-clock text-[10px] mr-1"></i>${this.escapeHtml(meta.timeLabel)}</span>
+                              </div>
+                              <div class="text-[11px] text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A]/70 rounded-[4px] px-2 py-1 leading-snug">
+                                <i class="fa-solid fa-circle-info text-[10px] mr-1"></i>${this.escapeHtml(meta.reasonLabel)}
+                              </div>
+                            </div>
+                            <button type="button" onclick="AEApp.dismissPendingSyncItem('${safeKey}')"
+                              title="Remove this item from the pending sync queue"
+                              class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] hover:border-[#F5C2C0] hover:text-[#831C1E] text-[11px] font-medium text-[#525B56] shrink-0 inline-flex items-center gap-1 ae-press">
+                              <i class="fa-solid fa-xmark text-[10px]"></i>
+                              <span>Dismiss</span>
+                            </button>
+                          </div>
+                        `;
+                      })
+                      .join('')}
+                  </div>`
             }
           </div>
 
@@ -4075,6 +4124,128 @@ window.AEApp = {
         </div>
       </div>
     `;
+  },
+
+  getPendingSyncItems() {
+    if (!window.aeStore) return [];
+    if (typeof window.aeStore.getPendingSyncItems === 'function') {
+      try {
+        const items = window.aeStore.getPendingSyncItems();
+        if (Array.isArray(items)) return items;
+      } catch (e) {
+        console.warn('[AEApp] getPendingSyncItems fallback:', e);
+      }
+    }
+    const items = [];
+    const seenResponseIds = new Set();
+    const queue = Array.isArray(window.aeStore.syncQueue) ? window.aeStore.syncQueue : [];
+    const responses = Array.isArray(window.aeStore.responses) ? window.aeStore.responses : [];
+    const isOnline = typeof window.aeStore.isEffectivelyOnline === 'function' ? window.aeStore.isEffectivelyOnline() : true;
+    const defaultReason = !isOnline
+      ? 'Device is offline — will sync automatically when reconnected.'
+      : (window.aeStore.lastSyncError || 'Queued locally, awaiting cloud sync confirmation.');
+
+    for (const q of queue) {
+      if (!q) continue;
+      const recId = q.recordId || q.id || '';
+      if (q.action === 'submit_response' && recId) seenResponseIds.add(recId);
+      items.push({
+        key: q.key || `queue:${q.id || `${q.action || 'item'}:${recId}`}`,
+        kind: q.action === 'delete_survey' ? 'deleted_survey' : 'queue',
+        action: q.action || 'sync_item',
+        recordId: recId,
+        title: q.title || recId || q.action || 'Queued change',
+        createdAt: q.createdAt || q.timestamp || '',
+        attempts: Number(q.attempts) || 0,
+        reason: q.reason || q.lastError || defaultReason
+      });
+    }
+    for (const r of responses) {
+      if (!r || r.syncStatus === 'synced') continue;
+      const recId = r.id || r.clientResponseId || '';
+      if (recId && seenResponseIds.has(recId)) continue;
+      items.push({
+        key: `response:${recId}`,
+        kind: 'response',
+        action: 'submit_response',
+        recordId: recId,
+        title: r.surveyTitle || `Response ${recId}`,
+        createdAt: r.submittedAt || '',
+        attempts: Number(r.syncAttempts) || 0,
+        reason: r.syncError || defaultReason
+      });
+    }
+    return items;
+  },
+
+  getPendingSyncCount() {
+    if (!window.aeStore) return 0;
+    if (typeof window.aeStore.getPendingCount === 'function') {
+      return Number(window.aeStore.getPendingCount()) || 0;
+    }
+    return this.getPendingSyncItems().length;
+  },
+
+  formatPendingSyncMeta(item) {
+    const action = String((item && item.action) || (item && item.kind) || 'queue').toLowerCase();
+    let typeLabel = 'Queue';
+    let badgeClass = 'bg-[#F4F6F4] text-[#525B56] border border-[#CFD5D0]';
+    if (item && item.kind === 'response' || action.includes('response')) {
+      typeLabel = 'Response';
+      badgeClass = 'bg-[#EAF3EE] text-[#247B50] border border-[#CBE2D4]';
+    } else if (item && item.kind === 'deleted_survey' || action.includes('delete')) {
+      typeLabel = 'Delete';
+      badgeClass = 'bg-[#FFEDEA] text-[#831C1E] border border-[#F5C2C0]';
+    } else if (action.includes('survey')) {
+      typeLabel = 'Survey';
+      badgeClass = 'bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]';
+    } else if (action.includes('collector')) {
+      typeLabel = 'Collector';
+      badgeClass = 'bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]';
+    } else if (action.includes('personnel') || action.includes('pin')) {
+      typeLabel = 'Team';
+      badgeClass = 'bg-[#F3E8FF] text-[#6B21A8] border border-[#DDD6FE]';
+    }
+    const ts = item && item.createdAt ? new Date(item.createdAt) : null;
+    const timeLabel = ts && !isNaN(ts.getTime()) ? ts.toLocaleString() : 'Timestamp unavailable';
+    const attempts = Number(item && item.attempts) || 0;
+    const baseReason = (item && item.reason) || 'Waiting to sync to Google Sheets.';
+    const reasonLabel = attempts > 0 ? `${baseReason} (Attempts: ${attempts})` : baseReason;
+    return { typeLabel, badgeClass, timeLabel, reasonLabel };
+  },
+
+  dismissPendingSyncItem(key) {
+    if (!key || !window.aeStore) return;
+    let dismissed = false;
+    if (typeof window.aeStore.dismissPendingSyncItem === 'function') {
+      const res = window.aeStore.dismissPendingSyncItem(key);
+      dismissed = Boolean(res === undefined ? true : (typeof res === 'object' ? res.ok !== false : res));
+    } else {
+      // Graceful local fallback if db.js does not expose dismissPendingSyncItem
+      const rawId = String(key).replace(/^(queue|response|deleted_survey):/, '');
+      const beforeQ = (window.aeStore.syncQueue || []).length;
+      window.aeStore.syncQueue = (window.aeStore.syncQueue || []).filter(
+        (q) => q && q.key !== key && q.id !== rawId && q.recordId !== rawId
+      );
+      if (window.aeStore.syncQueue.length !== beforeQ) dismissed = true;
+      const resp = (window.aeStore.responses || []).find(
+        (r) => r && (r.id === rawId || r.clientResponseId === rawId) && r.syncStatus !== 'synced'
+      );
+      if (resp && String(key).startsWith('response:')) {
+        resp.syncStatus = 'synced';
+        resp.syncedAt = new Date().toISOString();
+        dismissed = true;
+      }
+      if (dismissed && typeof window.aeStore.persistAll === 'function') {
+        window.aeStore.persistAll();
+      }
+    }
+    if (dismissed) {
+      this.showToast('Pending sync item dismissed.', 'info');
+    } else {
+      this.showToast('Pending sync item was already cleared.', 'info');
+    }
+    this.render();
   },
 
   openSyncSettingsModal() {
@@ -5620,12 +5791,6 @@ window.AEApp = {
     window.AECollector.persistDraft(surveyId);
     this.render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  },
-
-  setRunnerLanguage(lang) {
-    if (window.AEI18n) window.AEI18n.setLanguage(lang);
-    this.runnerLang = lang;
-    this.render();
   },
 
   submitRunnerResponse(surveyId, bypassValidation = false) {

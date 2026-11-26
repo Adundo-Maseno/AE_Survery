@@ -5942,7 +5942,7 @@ window.AEAnalytics = {
                   </div>
                   <input type="range" min="0" max="${p.type === 'binary' ? '1' : '100'}" step="1" value="1"
                     id="ae_slider_${p.key}"
-                    oninput="document.getElementById('ae_pred_val_${p.key}').textContent = this.value; AEAnalytics.simulateScenario();"
+                    oninput="var _el=document.getElementById('ae_pred_val_${p.key}');if(_el)_el.textContent=this.value; AEAnalytics.simulateScenario();"
                     class="w-full accent-[#247B50] h-1.5 bg-[#E4E7E4] rounded-lg cursor-pointer" />
                 </div>
               `

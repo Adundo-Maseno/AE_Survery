@@ -31,6 +31,7 @@ window.AEFieldApp = {
   // Modals & Navigation
   showMobileMenu: false,
   showPacingModal: false,
+  showSyncOutboxModal: false,
   showAdminPinModal: false,
   adminPinError: '',
   failedPinAttempts: 0,
@@ -254,6 +255,10 @@ window.AEFieldApp = {
     // Listen for background auto-sync state changes (inFlight === false)
     window.addEventListener('ae-sync-state-change', (ev) => {
       this.renderHeader();
+      this.renderBottomNav();
+      if (this.showSyncOutboxModal || this.showPacingModal) {
+        this.renderModals();
+      }
       if (this.justSubmittedReceipt && ev && ev.detail && ev.detail.inFlight === false) {
         this.refreshSubmittedReceiptSyncState();
       }
@@ -698,7 +703,7 @@ window.AEFieldApp = {
     }
 
     const isOnline = window.aeStore.isEffectivelyOnline();
-    const queuedCount = window.aeStore.responses.filter((r) => r.syncStatus !== 'synced').length;
+    const queuedCount = this.getPendingSyncCount();
     const isSyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
 
     const syncText = document.getElementById('ae_hdr_sync_text');
@@ -1025,7 +1030,7 @@ window.AEFieldApp = {
       ? window.AEThemePresets.resolve(survey.theme)
       : { pageBg: '#F4F6F4', cardBg: '#FFFFFF', cardBorder: '#E4E7E4', cardRadius: '12px', ink: '#111613', mutedInk: '#525B56', accentColor: '#247B50', headingFont: '"Fraunces", Georgia, serif' };
     const accent = resolvedTheme.accentColor;
-    if (typeof document !== 'undefined' && document.body && !this.sunlightMode) {
+    if (typeof document !== 'undefined' && document.body && document.body.style && !this.sunlightMode) {
       document.body.style.backgroundColor = resolvedTheme.pageBg;
     }
 
@@ -2367,27 +2372,229 @@ window.AEFieldApp = {
     }
   },
 
+  getPendingSyncItems() {
+    if (!window.aeStore) return [];
+    if (typeof window.aeStore.getPendingSyncItems === 'function') {
+      try {
+        const items = window.aeStore.getPendingSyncItems();
+        if (Array.isArray(items)) return items;
+      } catch (e) {
+        console.warn('[AEFieldApp] getPendingSyncItems fallback:', e);
+      }
+    }
+    const items = [];
+    const seenResponseIds = new Set();
+    const queue = Array.isArray(window.aeStore.syncQueue) ? window.aeStore.syncQueue : [];
+    const responses = Array.isArray(window.aeStore.responses) ? window.aeStore.responses : [];
+    const isOnline = typeof window.aeStore.isEffectivelyOnline === 'function' ? window.aeStore.isEffectivelyOnline() : true;
+    const defaultReason = !isOnline
+      ? 'Device is offline — will sync automatically when reconnected.'
+      : (window.aeStore.lastSyncError || 'Queued locally, awaiting cloud sync confirmation.');
+
+    for (const q of queue) {
+      if (!q) continue;
+      const recId = q.recordId || q.id || '';
+      if (q.action === 'submit_response' && recId) seenResponseIds.add(recId);
+      items.push({
+        key: q.key || `queue:${q.id || `${q.action || 'item'}:${recId}`}`,
+        kind: q.action === 'delete_survey' ? 'deleted_survey' : 'queue',
+        action: q.action || 'sync_item',
+        recordId: recId,
+        title: q.title || recId || q.action || 'Queued change',
+        createdAt: q.createdAt || q.timestamp || '',
+        attempts: Number(q.attempts) || 0,
+        reason: q.reason || q.lastError || defaultReason
+      });
+    }
+    for (const r of responses) {
+      if (!r || r.syncStatus === 'synced') continue;
+      const recId = r.id || r.clientResponseId || '';
+      if (recId && seenResponseIds.has(recId)) continue;
+      items.push({
+        key: `response:${recId}`,
+        kind: 'response',
+        action: 'submit_response',
+        recordId: recId,
+        title: r.surveyTitle || `Response ${recId}`,
+        createdAt: r.submittedAt || '',
+        attempts: Number(r.syncAttempts) || 0,
+        reason: r.syncError || defaultReason
+      });
+    }
+    return items;
+  },
+
+  getPendingSyncCount() {
+    if (!window.aeStore) return 0;
+    if (typeof window.aeStore.getPendingCount === 'function') {
+      return Number(window.aeStore.getPendingCount()) || 0;
+    }
+    return this.getPendingSyncItems().length;
+  },
+
+  formatPendingSyncMeta(item) {
+    const action = String((item && item.action) || (item && item.kind) || 'queue').toLowerCase();
+    let typeLabel = 'Queue';
+    let badgeClass = 'bg-[#F4F6F4] text-[#525B56] border border-[#CFD5D0]';
+    if ((item && item.kind === 'response') || action.includes('response')) {
+      typeLabel = 'Response';
+      badgeClass = 'bg-[#EAF3EE] text-[#247B50] border border-[#CBE2D4]';
+    } else if ((item && item.kind === 'deleted_survey') || action.includes('delete')) {
+      typeLabel = 'Delete';
+      badgeClass = 'bg-[#FFEDEA] text-[#831C1E] border border-[#F5C2C0]';
+    } else if (action.includes('survey')) {
+      typeLabel = 'Survey';
+      badgeClass = 'bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE]';
+    } else if (action.includes('collector')) {
+      typeLabel = 'Collector';
+      badgeClass = 'bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]';
+    } else if (action.includes('personnel') || action.includes('pin')) {
+      typeLabel = 'Team';
+      badgeClass = 'bg-[#F3E8FF] text-[#6B21A8] border border-[#DDD6FE]';
+    }
+    const ts = item && item.createdAt ? new Date(item.createdAt) : null;
+    const timeLabel = ts && !isNaN(ts.getTime()) ? ts.toLocaleString() : 'Timestamp unavailable';
+    const attempts = Number(item && item.attempts) || 0;
+    const baseReason = (item && item.reason) || 'Waiting to sync to Google Sheets.';
+    const reasonLabel = attempts > 0 ? `${baseReason} (Attempts: ${attempts})` : baseReason;
+    return { typeLabel, badgeClass, timeLabel, reasonLabel };
+  },
+
+  renderPendingSyncInspector(pendingItems) {
+    const items = Array.isArray(pendingItems) ? pendingItems : this.getPendingSyncItems();
+    const isSyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
+    return `
+      <div class="p-3.5 rounded-[10px] bg-[#F8F9F8] border border-[#E4E7E4] space-y-2.5">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="text-xs font-semibold text-[#111613] tabular-nums">Pending Sync Items (${items.length})</span>
+          ${
+            items.length > 0
+              ? `<button type="button" onclick="AEFieldApp.triggerCloudSync(true)"
+                  ${isSyncing ? 'disabled' : ''}
+                  class="h-7 px-2.5 rounded-[5px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-[11px] font-semibold inline-flex items-center gap-1.5 ae-press ${isSyncing ? 'opacity-70 cursor-wait' : ''}">
+                  <i class="fa-solid fa-arrows-rotate text-[10px] ${isSyncing ? 'fa-spin' : ''}"></i>
+                  <span>Retry Sync</span>
+                </button>`
+              : ''
+          }
+        </div>
+        ${
+          items.length === 0
+            ? `<div class="text-xs text-[#247B50] font-medium flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-check"></i>
+                <span>All responses and changes are synced.</span>
+              </div>`
+            : `<div class="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+                ${items
+                  .map((item) => {
+                    const meta = this.formatPendingSyncMeta(item);
+                    const safeKey = this.escapeJs(item.key || item.recordId || '');
+                    return `
+                      <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-2.5 flex items-start justify-between gap-2.5">
+                        <div class="min-w-0 space-y-1">
+                          <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold ${meta.badgeClass}">${this.escapeHtml(meta.typeLabel)}</span>
+                            <span class="text-xs font-semibold text-[#111613] truncate max-w-[200px]" title="${this.escapeAttr(item.title || item.recordId || '')}">${this.escapeHtml(item.title || item.recordId || 'Pending item')}</span>
+                          </div>
+                          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[#525B56] tabular-nums">
+                            ${item.recordId ? `<span class="font-mono text-[#646E68]">ID: ${this.escapeHtml(item.recordId)}</span>` : ''}
+                            <span><i class="fa-regular fa-clock mr-0.5"></i>${this.escapeHtml(meta.timeLabel)}</span>
+                          </div>
+                          <div class="text-[11px] text-[#92400E] bg-[#FFFBEB] border border-[#FDE68A]/70 rounded-[4px] px-2 py-1 leading-snug">
+                            <i class="fa-solid fa-circle-info text-[10px] mr-1"></i>${this.escapeHtml(meta.reasonLabel)}
+                          </div>
+                        </div>
+                        <button type="button" onclick="AEFieldApp.dismissPendingSyncItem('${safeKey}')"
+                          title="Dismiss stuck item from sync queue"
+                          class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] hover:border-[#F5C2C0] hover:text-[#831C1E] text-[11px] font-medium text-[#525B56] shrink-0 inline-flex items-center gap-1 ae-press">
+                          <i class="fa-solid fa-xmark text-[10px]"></i>
+                          <span>Dismiss</span>
+                        </button>
+                      </div>
+                    `;
+                  })
+                  .join('')}
+              </div>`
+        }
+      </div>
+    `;
+  },
+
+  openSyncOutboxModal() {
+    this.closeModals();
+    this.showSyncOutboxModal = true;
+    this.renderModals();
+    this.renderBottomNav();
+  },
+
+  dismissPendingSyncItem(key) {
+    if (!key || !window.aeStore) return;
+    let dismissed = false;
+    if (typeof window.aeStore.dismissPendingSyncItem === 'function') {
+      const res = window.aeStore.dismissPendingSyncItem(key);
+      dismissed = Boolean(res === undefined ? true : (typeof res === 'object' ? res.ok !== false : res));
+    } else {
+      const rawId = String(key).replace(/^(queue|response|deleted_survey):/, '');
+      const beforeQ = (window.aeStore.syncQueue || []).length;
+      window.aeStore.syncQueue = (window.aeStore.syncQueue || []).filter(
+        (q) => q && q.key !== key && q.id !== rawId && q.recordId !== rawId
+      );
+      if (window.aeStore.syncQueue.length !== beforeQ) dismissed = true;
+      const resp = (window.aeStore.responses || []).find(
+        (r) => r && (r.id === rawId || r.clientResponseId === rawId) && r.syncStatus !== 'synced'
+      );
+      if (resp && String(key).startsWith('response:')) {
+        resp.syncStatus = 'synced';
+        resp.syncedAt = new Date().toISOString();
+        dismissed = true;
+      }
+      if (dismissed && typeof window.aeStore.persistAll === 'function') {
+        window.aeStore.persistAll();
+      }
+    }
+    this.showToast(dismissed ? 'Pending sync item dismissed.' : 'Pending sync item was already cleared.', 'info');
+    this.renderHeader();
+    this.renderBottomNav();
+    this.renderModals();
+  },
+
   async triggerCloudSync(showToast = true) {
     if (!window.aeStore.isEffectivelyOnline()) {
-      if (showToast) this.showToast('You’re offline — we’ll sync as soon as you reconnect.', 'warning');
+      if (showToast) {
+        this.showToast('You’re offline — we’ll sync as soon as you reconnect.', 'warning');
+        if (this.getPendingSyncCount() > 0) {
+          this.openSyncOutboxModal();
+        }
+      }
       return;
     }
     this.isSyncing = true;
     this.renderHeader();
     this.renderBottomNav();
+    if (this.showSyncOutboxModal || this.showPacingModal) this.renderModals();
     try {
       const res = await window.aeStore.syncWithGoogleSheets();
+      const remaining = this.getPendingSyncCount();
       if (showToast) {
-        this.showToast(`Synced ${res.responsesInserted} responses to Google Sheets.`, 'success');
+        if (remaining > 0) {
+          this.showToast(`Sync finished, but ${remaining} item${remaining === 1 ? '' : 's'} remained pending. Inspecting outbox…`, 'warning');
+          this.openSyncOutboxModal();
+        } else {
+          this.showToast(`Synced ${res.responsesInserted} responses to Google Sheets.`, 'success');
+        }
       }
     } catch (err) {
       if (showToast) {
         this.showToast(err.message || 'Sync failed', 'error');
+        if (this.getPendingSyncCount() > 0) {
+          this.openSyncOutboxModal();
+        }
       }
     } finally {
       this.isSyncing = false;
       this.renderHeader();
       this.renderBottomNav();
+      if (this.showSyncOutboxModal || this.showPacingModal) this.renderModals();
     }
   },
 
@@ -2405,6 +2612,7 @@ window.AEFieldApp = {
 
     this.showMobileMenu = false;
     this.showPacingModal = false;
+    this.showSyncOutboxModal = false;
     this.showSurveyPickerModal = false;
     this.showEnumPickerModal = false;
     this.showEnumPinModal = false;
@@ -2601,6 +2809,7 @@ window.AEFieldApp = {
     this.showIosInstallModal = false;
     this.showMobileMenu = false;
     this.showPacingModal = false;
+    this.showSyncOutboxModal = false;
     this.renderModals();
     this.renderBottomNav();
   },
@@ -2651,7 +2860,7 @@ window.AEFieldApp = {
 
     // 2. Sync Icon and Outbox Badge
     const isOnline = window.aeStore.isEffectivelyOnline();
-    const queuedCount = window.aeStore.responses.filter((r) => r.syncStatus !== 'synced').length;
+    const queuedCount = this.getPendingSyncCount();
     const isSyncing = Boolean(this.isSyncing || (window.aeStore && window.aeStore._syncInFlight));
     const syncIcon = document.getElementById('ae_bnav_sync_icon');
     const syncBadge = document.getElementById('ae_bnav_sync_badge');
@@ -3854,8 +4063,58 @@ window.AEFieldApp = {
     const modalRoot = document.getElementById('ae_field_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showAdminPinModal && !this.showSurveyPickerModal && !this.showEnumPickerModal && !this.showEnumPinModal && !this.showIosInstallModal && !this.showMobileMenu && !this.showPacingModal) {
+    if (!this.showAdminPinModal && !this.showSurveyPickerModal && !this.showEnumPickerModal && !this.showEnumPinModal && !this.showIosInstallModal && !this.showMobileMenu && !this.showPacingModal && !this.showSyncOutboxModal) {
       modalRoot.innerHTML = '';
+      this.renderBottomNav();
+      return;
+    }
+
+    if (this.showSyncOutboxModal) {
+      const pendingItems = this.getPendingSyncItems();
+      const isOnline = window.aeStore.isEffectivelyOnline();
+      const lastSyncedAt = window.aeStore.settings && window.aeStore.settings.lastSyncedAt;
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEFieldApp.closeModals()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true"
+            class="ae-glass-modal rounded-t-[20px] sm:rounded-[12px] max-w-md w-full p-5 space-y-4 ae-dialog-animate max-h-[90vh] overflow-y-auto">
+            <div class="w-10 h-1 bg-[#CFD5D0] rounded-full mx-auto sm:hidden -mt-1 mb-1"></div>
+
+            <div class="flex items-center justify-between pb-3 border-b border-[#EFEFEF]">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-[6px] ${pendingItems.length > 0 ? 'bg-[#FFFBEB] text-[#D97706]' : 'bg-[#EAF3EE] text-[#247B50]'} flex items-center justify-center text-sm">
+                  <i class="fa-solid ${pendingItems.length > 0 ? 'fa-cloud-arrow-up' : 'fa-cloud-check'}"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm font-semibold text-[#111613]">Sync Outbox</h3>
+                  <p class="text-[11px] text-[#525B56] tabular-nums">
+                    ${isOnline ? 'Online' : 'Offline'} · Last synced: ${lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Not yet'}
+                  </p>
+                </div>
+              </div>
+              <button type="button" onclick="AEFieldApp.closeModals()" aria-label="Close"
+                class="w-8 h-8 rounded-[6px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center ae-press">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+
+            ${this.renderPendingSyncInspector(pendingItems)}
+
+            <div class="pt-1 flex items-center gap-2">
+              <button type="button" onclick="AEFieldApp.triggerCloudSync(true)"
+                class="flex-1 h-10 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+                <i class="fa-solid fa-arrows-rotate text-xs"></i>
+                <span>Retry Sync</span>
+              </button>
+              <button type="button" onclick="AEFieldApp.closeModals()"
+                class="flex-1 h-10 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+                <span>${this.t('close')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
       this.renderBottomNav();
       return;
     }
@@ -4013,13 +4272,16 @@ window.AEFieldApp = {
               </div>
             </div>
 
+            <!-- Pending Sync Items Inspector (when anything is waiting to sync) -->
+            ${this.getPendingSyncCount() > 0 ? this.renderPendingSyncInspector() : ''}
+
             <!-- Primary Actions -->
             <div class="pt-2 flex items-center gap-2">
-              ${queued > 0 ? `
-                <button type="button" onclick="AEFieldApp.triggerCloudSync()"
+              ${this.getPendingSyncCount() > 0 ? `
+                <button type="button" onclick="AEFieldApp.openSyncOutboxModal()"
                   class="flex-1 h-10 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
                   <i class="fa-solid fa-cloud-arrow-up text-xs"></i>
-                  <span>Sync Outbox (${queued})</span>
+                  <span>Sync Outbox (${this.getPendingSyncCount()})</span>
                 </button>
               ` : ''}
               <button type="button" onclick="AEFieldApp.closeModals()"
@@ -4183,6 +4445,18 @@ window.AEFieldApp = {
                     <div class="text-xs font-semibold">${this.t('offlineBundle')}</div>
                     <div class="text-[10px] text-[#525B56]">${this.t('saveHtmlFile')}</div>
                   </div>
+                </button>
+
+                <button type="button" onclick="AEFieldApp.openSyncOutboxModal()"
+                  class="col-span-2 p-2.5 rounded-[6px] border ${this.getPendingSyncCount() > 0 ? 'border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]' : 'border-[#E4E7E4] bg-white text-[#111613] hover:bg-[#F8F9F8]'} text-left flex items-center justify-between gap-2.5 ae-press">
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <i class="fa-solid fa-cloud-arrow-up text-sm ${this.getPendingSyncCount() > 0 ? 'text-[#D97706]' : 'text-[#247B50]'}"></i>
+                    <div class="min-w-0">
+                      <div class="text-xs font-semibold">Sync Outbox &amp; Pending Items</div>
+                      <div class="text-[10px] opacity-80">${this.getPendingSyncCount() > 0 ? `${this.getPendingSyncCount()} item${this.getPendingSyncCount() === 1 ? '' : 's'} waiting to sync` : 'All synced · tap to inspect'}</div>
+                    </div>
+                  </div>
+                  <i class="fa-solid fa-chevron-right text-[10px] opacity-60"></i>
                 </button>
               </div>
             </div>
@@ -4549,7 +4823,7 @@ window.AEFieldApp = {
                 .join('')}
             </div>
 
-            <form onsubmit="event.preventDefault(); AEFieldApp.setEnumerator(document.getElementById('ae_enum_custom_input').value);" class="pt-2 border-t border-[#EFEFEF] flex items-center gap-2">
+            <form onsubmit="event.preventDefault(); var _el=document.getElementById('ae_enum_custom_input'); if(_el) AEFieldApp.setEnumerator(_el.value);" class="pt-2 border-t border-[#EFEFEF] flex items-center gap-2">
               <input id="ae_enum_custom_input" type="text" maxlength="80" placeholder="${this.t('orEnterCustomName')}"
                 class="flex-1 h-9 rounded-[5px] border border-[#CFD5D0] px-2.5 text-xs text-[#111613] focus:border-[#247B50] focus:outline-none" />
               <button type="submit" class="h-9 px-3 rounded-[5px] bg-[#247B50] text-white text-xs font-medium ae-press">${this.t('set')}</button>
