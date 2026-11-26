@@ -389,7 +389,9 @@ window.AECollector = {
     if (this.currentPageIndex >= pages.length) this.currentPageIndex = 0;
     const page = pages[this.currentPageIndex];
     const progressPct = Math.round(((this.currentPageIndex + 1) / Math.max(1, pages.length)) * 100);
-    const accent = (survey.theme && survey.theme.accentColor) || '#247B50';
+    const resolvedTheme = window.AEThemePresets ? window.AEThemePresets.resolve(survey.theme) : null;
+    const accent = (resolvedTheme && resolvedTheme.accentColor) || (survey.theme && survey.theme.accentColor) || '#247B50';
+    const headingFont = (resolvedTheme && resolvedTheme.headingFont) || '"Fraunces", Georgia, serif';
     const headerBg = accent === '#007A4B' || accent === '#247B50' ? '#1F6A45' : accent;
 
     const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
@@ -503,7 +505,7 @@ window.AECollector = {
                 Page ${this.currentPageIndex + 1} of ${pages.length} · ${progressPct}%
               </span>
             </div>
-            <h2 class="font-display text-[22px] sm:text-[26px] font-semibold tracking-tight text-white leading-snug ae-break-words" style="text-wrap: balance;">
+            <h2 class="text-[22px] sm:text-[26px] font-semibold tracking-tight text-white leading-snug ae-break-words" style="text-wrap: balance; font-family: ${headingFont};">
               ${AEApp.escapeHtml(survey.title)}
             </h2>
             ${

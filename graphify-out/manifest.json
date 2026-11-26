@@ -12,15 +12,15 @@
     "semantic_hash": ""
   },
   "js/app.js": {
-    "mtime": 1795696533.0255928,
-    "seen": 1795696783.703089,
-    "ast_hash": "7d5cb6b4d70fb0ede6147283b74df367",
+    "mtime": 1795709763.6042583,
+    "seen": 1795709925.8222482,
+    "ast_hash": "b50e3ad23210c12773591d9fbb3b2c0b",
     "semantic_hash": ""
   },
   "js/builder.js": {
-    "mtime": 1795696288.608161,
-    "seen": 1795696783.703093,
-    "ast_hash": "c1b89369febcb42689057d108bf73cfc",
+    "mtime": 1795709766.8104897,
+    "seen": 1795709925.8222506,
+    "ast_hash": "37f0d3822b1df970078bdf8ae232a223",
     "semantic_hash": ""
   },
   "js/chart.umd.min.js": {
@@ -30,21 +30,21 @@
     "semantic_hash": ""
   },
   "js/collector.js": {
-    "mtime": 1795696076.4524608,
-    "seen": 1795696783.7031007,
-    "ast_hash": "d3b635ad688ce57258f0a3db2d446526",
+    "mtime": 1795709844.4002712,
+    "seen": 1795709925.8222542,
+    "ast_hash": "85ef70541509f07ec2e3d854284a2404",
     "semantic_hash": ""
   },
   "js/db.js": {
-    "mtime": 1795693663.189725,
-    "seen": 1795694427.8928437,
-    "ast_hash": "647fafb0a35acf160b1e32c78566832a",
+    "mtime": 1795709760.0436633,
+    "seen": 1795709925.8222551,
+    "ast_hash": "5a2c8891463d7092df257cd6d54111c5",
     "semantic_hash": ""
   },
   "js/field-app.js": {
-    "mtime": 1795696175.72497,
-    "seen": 1795696783.7031076,
-    "ast_hash": "5f214bf0540e9f5e93ec075ab6a1b54d",
+    "mtime": 1795709820.5364962,
+    "seen": 1795709925.8222566,
+    "ast_hash": "c4b909f03c97068305c66e382bb8b452",
     "semantic_hash": ""
   },
   "js/i18n.js": {
@@ -72,9 +72,9 @@
     "semantic_hash": ""
   },
   "sw.js": {
-    "mtime": 1795696675.0277724,
-    "seen": 1795696783.703134,
-    "ast_hash": "a2aa58f73857fbdc97bef11c054caf6a",
+    "mtime": 1795709850.0238361,
+    "seen": 1795709925.8222666,
+    "ast_hash": "314b0186061f4a6c3bc9cdc2ded33c15",
     "semantic_hash": ""
   },
   "tailwind.config.js": {

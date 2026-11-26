@@ -917,7 +917,13 @@ window.AEFieldApp = {
     if (this.currentPageIndex >= pages.length) this.currentPageIndex = 0;
     const page = pages[this.currentPageIndex];
     const progressPct = Math.round(((this.currentPageIndex + 1) / Math.max(1, pages.length)) * 100);
-    const accent = (survey.theme && survey.theme.accentColor) || '#247B50';
+    const resolvedTheme = window.AEThemePresets
+      ? window.AEThemePresets.resolve(survey.theme)
+      : { pageBg: '#F4F6F4', cardBg: '#FFFFFF', cardBorder: '#E4E7E4', cardRadius: '12px', ink: '#111613', mutedInk: '#525B56', accentColor: '#247B50', headingFont: '"Fraunces", Georgia, serif' };
+    const accent = resolvedTheme.accentColor;
+    if (typeof document !== 'undefined' && document.body && !this.sunlightMode) {
+      document.body.style.backgroundColor = resolvedTheme.pageBg;
+    }
 
     const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
       !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
@@ -989,8 +995,8 @@ window.AEFieldApp = {
             : ''
         }
 
-        <!-- Respondent Header Greeting Card (Fraunces Serif Accent) -->
-        <div class="bg-white border border-[#E4E7E4] rounded-[12px] p-6 sm:p-8 space-y-4 border-t-4" style="border-top-color: ${accent};">
+        <!-- Respondent Header Greeting Card -->
+        <div class="border p-6 sm:p-8 space-y-4 border-t-4" style="background:${resolvedTheme.cardBg}; border-color:${resolvedTheme.cardBorder}; border-top-color:${accent}; border-radius:${resolvedTheme.cardRadius};">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0">
               <picture>
@@ -1027,12 +1033,12 @@ window.AEFieldApp = {
               </span>
             </div>
           </div>
-          <h1 class="text-[22px] sm:text-[26px] font-semibold font-display text-[#111613] leading-snug tracking-tight ae-break-words" style="text-wrap: balance;">
+          <h1 class="text-[22px] sm:text-[26px] font-semibold leading-snug tracking-tight ae-break-words" style="text-wrap: balance; font-family: ${resolvedTheme.headingFont}; color: ${resolvedTheme.ink};">
             ${this.escapeHtml(survey.title)}
           </h1>
           ${
             survey.description
-              ? `<p class="text-sm text-[#525B56] leading-relaxed ae-break-words max-w-2xl" style="text-wrap: pretty;">${this.escapeHtml(survey.description)}</p>`
+              ? `<p class="text-sm leading-relaxed ae-break-words max-w-2xl" style="text-wrap: pretty; color: ${resolvedTheme.mutedInk};">${this.escapeHtml(survey.description)}</p>`
               : ''
           }
 
@@ -1040,14 +1046,18 @@ window.AEFieldApp = {
           <div class="pt-4 border-t border-[#EFEFEF] space-y-2.5">
             <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#525B56] tabular-nums">
               <span class="font-medium text-[#111613]">${this.escapeHtml((page.title || '').replace(/^section\s*\d+\s*:\s*/i, '').trim() || page.title)}</span>
-              <span class="inline-flex items-center gap-1.5 text-[#247B50] font-medium">
-                <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+              <span class="inline-flex items-center gap-1.5 font-medium" style="color:${accent};">
+                <span class="w-1.5 h-1.5 rounded-full" style="background:${accent};"></span>
                 <span>${answeredCount > 0 ? `${this.t('draftSaved')} · ${answeredCount} of ${allQuestions.length}` : 'Auto-saves as you go'}</span>
               </span>
             </div>
-            <div class="w-full h-1.5 bg-[#EFEFEF] rounded-full overflow-hidden">
-              <div class="h-full bg-[#247B50] transition-transform duration-300 ease-out origin-left" style="transform: scaleX(${progressPct / 100});"></div>
-            </div>
+            ${
+              resolvedTheme.showProgressBar !== false
+                ? `<div class="w-full h-1.5 bg-[#EFEFEF] rounded-full overflow-hidden">
+                    <div class="h-full transition-transform duration-300 ease-out origin-left" style="background:${accent}; transform: scaleX(${progressPct / 100});"></div>
+                  </div>`
+                : ''
+            }
           </div>
         </div>
 
@@ -1114,11 +1124,15 @@ window.AEFieldApp = {
       ? window.AEPiping.interpolate(q.helpText || '', this.draftAnswers, survey)
       : q.helpText;
     const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(idx + 1), isSub: false };
+    const resolvedTheme = window.AEThemePresets
+      ? window.AEThemePresets.resolve(survey.theme)
+      : { cardBg: '#FFFFFF', cardBorder: '#E4E7E4', cardRadius: '12px', accentColor: '#247B50' };
 
     return `
-      <div id="field_q_${q.id}" class="bg-white border ${
-        errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : (q.parentQuestionId ? 'border-[#247B50]/25' : 'border-[#E4E7E4]')
-      } ${q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-[3px] border-l-[#247B50] bg-[#FAFBF9]' : ''} rounded-[12px] p-6 sm:p-7 space-y-4 transition-colors">
+      <div id="field_q_${q.id}" class="border ${
+        errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : ''
+      } ${q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-[3px]' : ''} p-6 sm:p-7 space-y-4 transition-colors"
+        style="background:${q.parentQuestionId ? '#FAFBF9' : resolvedTheme.cardBg}; border-color:${errorMsg ? '#F5C2C0' : resolvedTheme.cardBorder}; ${q.parentQuestionId ? `border-left-color:${resolvedTheme.accentColor};` : ''} border-radius:${resolvedTheme.cardRadius};">
         <div class="flex items-start justify-between gap-3">
           <label class="block text-[15px] sm:text-base font-semibold text-[#111613] leading-snug ae-break-words flex-1 min-w-0">
             ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums text-xs font-semibold ${q.parentQuestionId ? 'text-[#247B50]' : 'text-[#525B56]'} mr-1.5">${numInfo.label}.</span>` : ''}

@@ -4427,6 +4427,20 @@ window.AEApp = {
     this.render();
   },
 
+  applySurveyThemePreset(presetId) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s || !window.AEThemePresets) return;
+    const preset = window.AEThemePresets.getById(presetId);
+    s.theme = {
+      ...(s.theme || {}),
+      preset: preset.id,
+      accentColor: preset.accentColor
+    };
+    window.aeStore.upsertSurvey(s);
+    this.showToast(`Applied "${preset.name}" theme.`, 'success');
+    this.render();
+  },
+
   toggleSurveySupportedLanguage(lang) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;

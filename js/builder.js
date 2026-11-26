@@ -791,7 +791,40 @@ window.AEBuilder = {
         </div>
 
         <div>
-          <label class="block text-xs font-medium text-[#111613] mb-2">Respondent Header Accent</label>
+          <label class="block text-xs font-medium text-[#111613] mb-2">Survey Theme Preset</label>
+          <div class="grid grid-cols-1 gap-2">
+            ${(window.AEThemePresets ? window.AEThemePresets.PRESETS : [])
+              .map((p) => {
+                const isActive = (theme.preset || 'canopy_emerald') === p.id;
+                return `
+                  <button type="button" onclick="AEApp.applySurveyThemePreset('${p.id}')"
+                    class="w-full text-left p-2.5 rounded-[8px] border transition-colors ${
+                      isActive
+                        ? 'border-[#247B50] bg-[#DCFAE5]/35 ring-1 ring-[#247B50]/20'
+                        : 'border-[#E4E7E4] bg-white hover:border-[#CFD5D0] hover:bg-[#FAFBF9]'
+                    }">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="w-8 h-6 rounded-[4px] border shrink-0 flex items-center justify-center overflow-hidden"
+                          style="background:${p.pageBg};border-color:${p.cardBorder};">
+                          <span class="w-4 h-2 rounded-[2px]" style="background:${p.accentColor};"></span>
+                        </span>
+                        <div class="min-w-0">
+                          <div class="text-xs font-semibold text-[#111613] truncate">${p.name}</div>
+                          <div class="text-[10px] text-[#646E68] truncate">${p.tagline}</div>
+                        </div>
+                      </div>
+                      ${isActive ? '<i class="fa-solid fa-check text-[#247B50] text-xs shrink-0"></i>' : ''}
+                    </div>
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-[#EFEFEF]">
+          <label class="block text-xs font-medium text-[#111613] mb-2">Custom Accent Override</label>
           <div class="space-y-1.5">
             ${swatches
               .map(

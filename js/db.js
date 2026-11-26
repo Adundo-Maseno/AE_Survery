@@ -2219,6 +2219,109 @@ window.AEPiping = {
 };
 
 /**
+ * Curated Selectable Survey Theme Presets
+ * Controls respondent canvas, card surface, border radius, typography pairing, and accent palette.
+ */
+window.AEThemePresets = {
+  PRESETS: [
+    {
+      id: 'canopy_emerald',
+      name: 'Canopy Classic',
+      tagline: 'Signature stone & emerald',
+      pageBg: '#F4F6F4',
+      cardBg: '#FFFFFF',
+      cardBorder: '#E4E7E4',
+      cardRadius: '10px',
+      ink: '#111613',
+      mutedInk: '#525B56',
+      accentColor: '#247B50',
+      headingFont: '"Fraunces", Georgia, serif'
+    },
+    {
+      id: 'editorial_parchment',
+      name: 'Editorial Parchment',
+      tagline: 'Warm ivory research journal',
+      pageBg: '#FBF9F5',
+      cardBg: '#FFFFFF',
+      cardBorder: '#E8E2D5',
+      cardRadius: '8px',
+      ink: '#1A1815',
+      mutedInk: '#5C574F',
+      accentColor: '#1E5631',
+      headingFont: '"Fraunces", Georgia, serif'
+    },
+    {
+      id: 'modern_slate',
+      name: 'Modern Corporate Slate',
+      tagline: 'Clean navy-slate for workshops & HR',
+      pageBg: '#F4F6F9',
+      cardBg: '#FFFFFF',
+      cardBorder: '#DCE2EC',
+      cardRadius: '8px',
+      ink: '#0F172A',
+      mutedInk: '#475569',
+      accentColor: '#1E3A5F',
+      headingFont: '"Plus Jakarta Sans", system-ui, sans-serif'
+    },
+    {
+      id: 'terracotta_earth',
+      name: 'Terracotta Warmth',
+      tagline: 'Warm clay & cream for community events',
+      pageBg: '#FAF5EF',
+      cardBg: '#FFFFFF',
+      cardBorder: '#EADBC8',
+      cardRadius: '12px',
+      ink: '#2C1D18',
+      mutedInk: '#6B554C',
+      accentColor: '#B84A27',
+      headingFont: '"Fraunces", Georgia, serif'
+    },
+    {
+      id: 'ocean_teal',
+      name: 'Clinical & Civic Teal',
+      tagline: 'Calm mist & deep teal for health/public',
+      pageBg: '#F2F8F7',
+      cardBg: '#FFFFFF',
+      cardBorder: '#D3E6E3',
+      cardRadius: '12px',
+      ink: '#0F2524',
+      mutedInk: '#4A6664',
+      accentColor: '#0F766E',
+      headingFont: '"Plus Jakarta Sans", system-ui, sans-serif'
+    },
+    {
+      id: 'high_contrast_field',
+      name: 'High-Contrast Daylight',
+      tagline: 'Crisp outdoor sunlight legibility',
+      pageBg: '#FFFFFF',
+      cardBg: '#FFFFFF',
+      cardBorder: '#111613',
+      cardRadius: '6px',
+      ink: '#000000',
+      mutedInk: '#262626',
+      accentColor: '#14532D',
+      headingFont: '"Plus Jakarta Sans", system-ui, sans-serif'
+    }
+  ],
+
+  getById(presetId) {
+    return this.PRESETS.find((p) => p.id === presetId) || this.PRESETS[0];
+  },
+
+  resolve(themeObj = {}) {
+    const t = themeObj && typeof themeObj === 'object' ? themeObj : {};
+    const base = this.getById(t.preset || 'canopy_emerald');
+    return {
+      ...base,
+      preset: base.id,
+      accentColor: t.accentColor || base.accentColor,
+      showProgressBar: t.showProgressBar !== false,
+      showQuestionNumbers: t.showQuestionNumbers !== false
+    };
+  }
+};
+
+/**
  * Main Database & Cloud Sync Service
  */
 const AE_DEFAULT_GAS_CONFIG = {
