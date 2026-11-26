@@ -219,14 +219,14 @@ window.AEBuilder = {
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2.5">
-              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Survey Builder &amp; Design</h1>
+              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Survey Builder</h1>
               <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56]">
                 <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
-                <span>Auto-saved to IndexedDB</span>
+                <span>Saved automatically</span>
               </span>
             </div>
             <p class="text-sm text-[#525B56] mt-1">
-              Design multi-page field questionnaires, skip branching, multilingual translations, and GPS telemetry.
+              Build multi-page surveys with branching rules, translations, and offline field controls.
             </p>
           </div>
 
@@ -310,21 +310,21 @@ window.AEBuilder = {
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
           <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF]">
             <div class="p-4 min-w-0">
-              <span class="text-xs font-medium text-[#525B56] block">Active Instrument</span>
+              <span class="text-xs font-medium text-[#525B56] block">Active survey</span>
               <div class="mt-1 min-w-0">
                 <strong class="text-sm font-semibold text-[#111613] block truncate" title="${AEApp.escapeAttr(survey.title)}">${AEApp.escapeHtml(survey.title)}</strong>
-                <span class="text-xs text-[#247B50] font-medium block truncate">${AEApp.escapeHtml(survey.category || 'Agricultural Field Survey')}</span>
+                <span class="text-xs text-[#247B50] font-medium block truncate">${AEApp.escapeHtml(survey.category || 'Field Survey')}</span>
               </div>
             </div>
             <div class="p-4 min-w-0">
-              <span class="text-xs font-medium text-[#525B56] block">Structure &amp; Scale</span>
+              <span class="text-xs font-medium text-[#525B56] block">Structure</span>
               <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <strong class="text-[24px] font-semibold text-[#111613] tabular-nums leading-none">${totalQuestions}</strong>
-                <span class="text-xs text-[#525B56]">questions across ${survey.pages.length} ${survey.pages.length === 1 ? 'section' : 'sections'}</span>
+                <span class="text-xs text-[#525B56]">questions across ${survey.pages.length} ${survey.pages.length === 1 ? 'page' : 'pages'}</span>
               </div>
             </div>
             <div class="p-4 min-w-0">
-              <span class="text-xs font-medium text-[#525B56] block">Publication Lifecycle</span>
+              <span class="text-xs font-medium text-[#525B56] block">Status</span>
               <div class="mt-1 flex flex-wrap items-center gap-2">
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-xs font-semibold ${
                   survey.status === 'Active'
@@ -337,16 +337,16 @@ window.AEBuilder = {
                 }">
                   ${AEApp.escapeHtml(survey.status)}
                 </span>
-                <span class="text-xs text-[#525B56] tabular-nums">Revision ${survey.version || 1}</span>
+                <span class="text-xs text-[#525B56] tabular-nums">v${survey.version || 1}</span>
               </div>
             </div>
             <div class="p-4 min-w-0">
-              <span class="text-xs font-medium text-[#525B56] block">Storage &amp; Cloud State</span>
+              <span class="text-xs font-medium text-[#525B56] block">Local backup</span>
               <div class="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <strong class="text-xs font-semibold text-[#247B50] flex items-center gap-1.5">
-                  <i class="fa-solid fa-database text-[11px]"></i> IndexedDB Local
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span> Saved on device
                 </strong>
-                <span class="text-xs text-[#525B56]">Ready for rural sync</span>
+                <span class="text-xs text-[#525B56]">Ready to sync</span>
               </div>
             </div>
           </div>
@@ -485,9 +485,9 @@ window.AEBuilder = {
           <div class="space-y-4">
             ${
               (currentPage.questions || []).length === 0
-                ? `<div class="bg-white border border-dashed border-[#CFD5D0] rounded-[8px] p-8 text-center">
-                    <h3 class="text-sm font-semibold text-[#111613]">No questions on Page ${this.activePageIndex + 1} yet</h3>
-                    <p class="text-xs text-[#525B56] mt-1 max-w-md mx-auto">Select any question type from the left Question Bank (Multiple Choice, Net Promoter Score, Likert Matrix, Yield Metric, or GPS Coordinates) to append it to this page.</p>
+                ? `<div class="bg-white border border-dashed border-[#CFD5D0] rounded-[10px] p-10 text-center">
+                    <h3 class="text-sm font-semibold text-[#111613]">Page ${this.activePageIndex + 1} is empty</h3>
+                    <p class="text-xs text-[#525B56] mt-1.5 max-w-sm mx-auto leading-relaxed">Pick any question type from the panel on the left to add your first question to this page.</p>
                   </div>`
                 : (() => {
                     const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
@@ -534,7 +534,7 @@ window.AEBuilder = {
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <span class="text-xs text-[#646E68]">Simulating live field entry · IndexedDB active</span>
+            <span class="text-xs text-[#646E68]">Interactive preview</span>
             <button onclick="window.AEBuilder.previewMode = false; window.AEApp.render();"
               class="h-7 px-2.5 rounded-[4px] text-xs font-medium border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613]">
               Exit Preview
@@ -584,16 +584,16 @@ window.AEBuilder = {
                         ? window.AEPiping.interpolate(rawHelp, {}, survey)
                         : rawHelp;
                       return `
-                  <div class="p-4 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2 ${q.parentQuestionId ? 'ml-4 border-l-4 border-l-[#247B50]' : ''}">
+                  <div class="p-4 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2 ${q.parentQuestionId ? 'ml-4 border-l-[3px] border-l-[#247B50]' : ''}">
                     <div class="flex items-start justify-between gap-2">
                       <label class="text-xs font-semibold text-[#111613]">
-                        <span class="text-[#247B50] font-mono mr-1">${numInfo.label}.</span>
+                        <span class="text-[#247B50] tabular-nums mr-1">${numInfo.label}.</span>
                         ${AEApp.escapeHtml(pipedTitle)}
-                        ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
+                        ${q.parentQuestionId ? `<span class="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-[#DCFAE5] text-[#04250E] ml-1.5">Part ${AEApp.escapeHtml(numInfo.letter || 'b')}</span>` : ''}
                         ${q.required ? '<span class="text-[#C4242A] ml-0.5">*</span>' : ''}
                       </label>
-                      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[#646E68]">
-                        ${q.type}
+                      <span class="text-[11px] px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[#646E68] shrink-0">
+                        ${q.type.replace(/_/g, ' ')}
                       </span>
                     </div>
                     ${pipedHelp ? `<p class="text-[11px] text-[#525B56]">${AEApp.escapeHtml(pipedHelp)}</p>` : ''}
@@ -717,7 +717,7 @@ window.AEBuilder = {
           <span class="text-[10px] text-[#525B56] tabular-nums">Page ${this.activePageIndex + 1}</span>
         </div>
         <p class="text-xs text-[#525B56] leading-relaxed">
-          Select a question type to append to <strong class="text-[#111613]">Page ${this.activePageIndex + 1}</strong>. Universal across commercial, public health, NGO, and agricultural domains.
+          Pick a question type to add it to <strong class="text-[#111613]">Page ${this.activePageIndex + 1}</strong>.
         </p>
 
         ${groups
@@ -858,8 +858,8 @@ window.AEBuilder = {
         <!-- 1. Supported Languages Offering Configuration -->
         <div class="space-y-2 bg-[#F8F9F8] border border-[#CFD5D0] rounded-[6px] p-3">
           <div class="flex items-center justify-between">
-            <label class="block text-xs font-semibold text-[#111613]">Supported Languages for this Survey</label>
-            <span class="text-[10px] uppercase font-bold tracking-wider text-[#247B50] bg-[#DCFAE5] px-1.5 py-0.5 rounded">Field Scope</span>
+            <label class="block text-xs font-semibold text-[#111613]">Supported languages</label>
+            <span class="text-[11px] font-medium text-[#04250E] bg-[#DCFAE5] px-2 py-0.5 rounded-full">Field tablets</span>
           </div>
           <p class="text-[11px] text-[#525B56] leading-snug">
             Configure which languages field tablets can toggle between. English is always the base language and is recorded in Google Sheets.
@@ -935,7 +935,7 @@ window.AEBuilder = {
             </button>
           </div>
           <p class="text-[11px] text-[#525B56] leading-snug">
-            Leverages Google Translate via Google Apps Script with local agricultural fallback to translate questions, options, matrices, and section titles into ${langLabel}.
+            Translates questions, choices, matrices, and section titles into ${langLabel} using Google Translate with a built-in offline fallback.
           </p>
         </div>
 
@@ -1096,101 +1096,80 @@ window.AEBuilder = {
 
     return `
       <div id="builder_q_${q.id}" class="bg-white border ${
-        q.parentQuestionId ? 'border-l-4 border-l-[#247B50] ml-3 sm:ml-6 bg-[#FAFBF9]' : 'border-[#E4E7E4]'
-      } rounded-[8px] p-5 ae-card-hover transition-all">
-        <!-- Top Row: Question Number, Type Badge, Required Toggle & Reorder/Delete Actions -->
-        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#EFEFEF]">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-[4px] ${
+        q.parentQuestionId ? 'border-[#E4E7E4] border-l-[3px] border-l-[#247B50] ml-3 sm:ml-6 bg-[#FAFBF9]' : 'border-[#E4E7E4]'
+      } rounded-[10px] p-5 sm:p-6 ae-card-hover transition-colors duration-150">
+        <!-- Top Row: Question Number, Quiet Type Label, Required Toggle & Actions -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3.5 mb-4 border-b border-[#EFEFEF]">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-[5px] ${
               q.parentQuestionId ? 'bg-[#247B50]' : 'bg-[#141A17]'
             } text-white text-xs font-semibold tabular-nums">
               Q${numInfo.label}
             </span>
+            <span class="inline-flex items-center gap-1.5 text-xs font-medium text-[#525B56]">
+              <i class="fa-solid ${typeMeta.icon} text-[#247B50] text-[11px]"></i>
+              <span>${typeMeta.label}</span>
+            </span>
             ${
               q.parentQuestionId
-                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-xs font-semibold">
-                    <i class="fa-solid fa-turn-down text-[10px]"></i> Part (${numInfo.letter || 'b'}) of Q${numInfo.mainNum}
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#DCFAE5]/80 text-[#04250E] text-[11px] font-medium">
+                    Part ${AEApp.escapeHtml(numInfo.letter || 'b')} of Q${numInfo.mainNum}
                   </span>`
                 : ''
             }
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[4px] bg-[#F8F9F8] border border-[#E4E7E4] text-[#111613] text-xs font-medium">
-              <i class="fa-solid ${typeMeta.icon} text-[#247B50]"></i> ${typeMeta.label}
-            </span>
             ${
               q.parentQuestionId && displayRule.enabled
-                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#EFF6FF] text-[#1E40AF] text-xs font-medium">
-                    <i class="fa-solid fa-eye text-[10px]"></i> Conditional visibility
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#1E40AF] text-[11px] font-medium">
+                    <i class="fa-solid fa-eye text-[10px]"></i> Conditional
                   </span>`
                 : ''
             }
             ${
               logic.enabled
-                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-xs font-medium">
-                    <i class="fa-solid fa-code-branch"></i> Skip rule active
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E] text-[11px] font-medium">
+                    <i class="fa-solid fa-code-branch text-[10px]"></i> Branching
                   </span>`
                 : ''
             }
           </div>
 
-          <div class="flex items-center gap-1.5">
-            <label class="inline-flex items-center gap-1.5 text-xs font-medium text-[#525B56] cursor-pointer mr-2">
+          <div class="flex items-center gap-1">
+            <label class="inline-flex items-center gap-1.5 text-xs font-medium text-[#525B56] cursor-pointer mr-2 select-none">
               <input type="checkbox" ${q.required ? 'checked' : ''}
                 onchange="AEApp.updateQuestionField('${q.id}', 'required', this.checked)"
                 class="accent-[#247B50] w-3.5 h-3.5" />
               <span>Required</span>
             </label>
 
-            <button onclick="AEApp.moveQuestion('${q.id}', -1)" title="Move Up" aria-label="Move Question Up"
-              class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:bg-[#F4F6F4] flex items-center justify-center text-xs">
+            <button onclick="AEApp.moveQuestion('${q.id}', -1)" title="Move up" aria-label="Move Question Up"
+              class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#111613] hover:bg-[#F4F6F4] flex items-center justify-center text-xs transition-colors">
               <i class="fa-solid fa-arrow-up"></i>
             </button>
-            <button onclick="AEApp.moveQuestion('${q.id}', 1)" title="Move Down" aria-label="Move Question Down"
-              class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:bg-[#F4F6F4] flex items-center justify-center text-xs">
+            <button onclick="AEApp.moveQuestion('${q.id}', 1)" title="Move down" aria-label="Move Question Down"
+              class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#111613] hover:bg-[#F4F6F4] flex items-center justify-center text-xs transition-colors">
               <i class="fa-solid fa-arrow-down"></i>
             </button>
-            <button onclick="AEApp.duplicateQuestion('${q.id}')" title="Duplicate Question" aria-label="Duplicate Question"
-              class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] text-[#525B56] hover:text-[#247B50] hover:bg-[#F4F6F4] flex items-center justify-center text-xs">
+            <button onclick="AEApp.duplicateQuestion('${q.id}')" title="Duplicate question" aria-label="Duplicate Question"
+              class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#247B50] hover:bg-[#F4F6F4] flex items-center justify-center text-xs transition-colors">
               <i class="fa-regular fa-copy"></i>
             </button>
-            <button onclick="AEApp.deleteQuestion('${q.id}')" title="Delete Question" aria-label="Delete Question"
-              class="w-7 h-7 rounded-[5px] border border-[#CFD5D0] text-[#525B56] hover:text-[#C4242A] hover:bg-[#FFEDEA] flex items-center justify-center text-xs">
+            <button onclick="AEApp.deleteQuestion('${q.id}')" title="Delete question" aria-label="Delete Question"
+              class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#C4242A] hover:bg-[#FFEDEA] flex items-center justify-center text-xs transition-colors">
               <i class="fa-regular fa-trash-can"></i>
             </button>
           </div>
         </div>
 
-        <!-- Question Prompt & Help Hint -->
-        <div class="space-y-2 mb-4">
+        <!-- Primary Star: Question Prompt & Helper Text -->
+        <div class="space-y-2.5 mb-4">
           <input type="text"
             id="ae_q_title_${q.id}"
             maxlength="220"
             aria-label="Question ${qIdx + 1} Prompt"
             value="${AEApp.escapeAttr(q.title)}"
             onchange="AEApp.updateQuestionField('${q.id}', 'title', this.value)"
-            class="w-full h-10 text-sm font-semibold text-[#111613] bg-white border border-[#CFD5D0] rounded-[6px] px-3 focus:border-[#247B50] focus:outline-none"
-            placeholder="Enter question prompt…" />
-
-          <!-- Variable Recall / Dynamic Piping Assistant -->
-          <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-[#525B56]">
-            <span>Dynamic piping: <code class="text-[#247B50] bg-[#F8F9F8] px-1 py-0.5 rounded border border-[#E4E7E4] font-mono">&#123;&#123;question_id&#125;&#125;</code></span>
-            ${
-              (survey.pages || []).flatMap((p) => p.questions || []).filter((item) => item.id !== q.id).length > 0
-                ? `<select aria-label="Insert piped variable"
-                    onchange="if(this.value){ AEBuilder.insertPipedVariable('${q.id}', this.value); this.value=''; }"
-                    class="h-6 px-2 text-[11px] font-medium text-[#247B50] bg-white border border-[#CFD5D0] rounded-[4px] focus:outline-none hover:border-[#247B50]">
-                    <option value="">+ Pipe Field from Prior Question…</option>
-                    ${(survey.pages || [])
-                      .flatMap((p) => p.questions || [])
-                      .filter((item) => item.id !== q.id)
-                      .map(
-                        (pq) =>
-                          `<option value="{{${pq.id}}}">${AEApp.escapeHtml(pq.title.substring(0, 32))}</option>`
-                      )
-                      .join('')}
-                  </select>`
-                : ''
-            }
-          </div>
+            class="w-full h-11 text-[15px] font-semibold text-[#111613] bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 focus:border-[#247B50] focus:ring-2 focus:ring-[#247B50]/15 focus:outline-none transition-colors"
+            placeholder="Write your question here…" />
 
           <input type="text"
             id="ae_q_help_${q.id}"
@@ -1198,164 +1177,192 @@ window.AEBuilder = {
             aria-label="Question ${qIdx + 1} Helper Text"
             value="${AEApp.escapeAttr(q.helpText || '')}"
             onchange="AEApp.updateQuestionField('${q.id}', 'helpText', this.value)"
-            class="w-full h-8 text-xs text-[#525B56] bg-[#F8F9F8] border border-[#E4E7E4] focus:bg-white focus:border-[#247B50] rounded-[6px] px-3 focus:outline-none"
-            placeholder="Optional enumerator hint or respondent helper text…" />
+            class="w-full h-8 text-xs text-[#525B56] bg-transparent border border-transparent hover:border-[#E4E7E4] focus:bg-white focus:border-[#247B50] rounded-[6px] px-2.5 focus:outline-none transition-colors"
+            placeholder="Add optional guidance or hint for respondents…" />
         </div>
 
         <!-- Type-Specific Options / Settings Editor -->
-        <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] p-3.5 min-w-0">
+        <div class="bg-[#F8F9F8]/80 border border-[#EAECE9] rounded-[8px] p-4 min-w-0">
           ${this.renderQuestionTypeConfig(q)}
         </div>
 
-        ${
-          q.parentQuestionId
-            ? `<!-- Conditional Visibility (Show Part b only when…) -->
-        <div class="mt-3 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-3 bg-[#F4F9F6] -mx-1 px-3 py-2.5 rounded-[6px] border border-[#DCFAE5]">
-          <label class="inline-flex items-center gap-2 text-xs font-semibold text-[#04250E] cursor-pointer">
-            <input type="checkbox" ${displayRule.enabled ? 'checked' : ''}
-              onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'enabled', this.checked)"
-              class="accent-[#247B50] w-3.5 h-3.5" />
-            <span><i class="fa-solid fa-eye text-[#247B50] mr-1"></i> Conditional Visibility (Show Part ${AEApp.escapeHtml(numInfo.letter || 'b')} only when…)</span>
-          </label>
+        <!-- Quiet Secondary Controls: Piping, Visibility, Skip Logic & Append -->
+        <div class="mt-4 pt-3.5 border-t border-[#EFEFEF] space-y-2.5 text-xs">
+          ${
+            (survey.pages || []).flatMap((p) => p.questions || []).filter((item) => item.id !== q.id).length > 0
+              ? `<!-- Answer Piping Strip -->
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[#525B56]">
+            <span class="inline-flex items-center gap-1.5">
+              <i class="fa-solid fa-link text-[#646E68] text-[10px]"></i>
+              <span>Recall a prior answer</span>
+            </span>
+            <select aria-label="Insert piped variable"
+              onchange="if(this.value){ AEBuilder.insertPipedVariable('${q.id}', this.value); this.value=''; }"
+              class="h-7 px-2.5 text-xs font-medium text-[#111613] bg-white border border-[#CFD5D0] rounded-[6px] focus:outline-none focus:border-[#247B50] hover:border-[#247B50] transition-colors">
+              <option value="">+ Insert prior answer…</option>
+              ${(survey.pages || [])
+                .flatMap((p) => p.questions || [])
+                .filter((item) => item.id !== q.id)
+                .map(
+                  (pq) =>
+                    `<option value="{{${pq.id}}}">${AEApp.escapeHtml(pq.title.substring(0, 32))}</option>`
+                )
+                .join('')}
+            </select>
+          </div>`
+              : ''
+          }
 
           ${
-            displayRule.enabled
-              ? `<div class="flex flex-wrap items-center gap-2 text-xs">
-                  <select aria-label="Conditional visibility mode"
-                    onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'mode', this.value)"
-                    class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] focus:outline-none focus:border-[#247B50]">
-                    <option value="any_answer" ${(displayRule.mode || 'any_answer') === 'any_answer' ? 'selected' : ''}>After any parent answer</option>
-                    <option value="equals" ${displayRule.mode === 'equals' ? 'selected' : ''}>When parent equals</option>
-                    <option value="not_equals" ${displayRule.mode === 'not_equals' ? 'selected' : ''}>When parent does NOT equal</option>
-                  </select>
-                  ${
-                    displayRule.mode === 'equals' || displayRule.mode === 'not_equals'
-                      ? parentQ && Array.isArray(parentQ.options) && parentQ.options.length > 0
-                        ? `<select aria-label="Conditional visibility trigger value"
-                            onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'value', this.value)"
-                            class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] max-w-[220px] truncate focus:outline-none focus:border-[#247B50]">
-                            <option value="">Select parent choice…</option>
-                            ${parentQ.options
+            q.parentQuestionId
+              ? `<!-- Conditional Visibility (Show Part b only when…) -->
+          <div class="pt-2.5 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2.5">
+            <label class="inline-flex items-center gap-2 text-xs font-medium text-[#111613] cursor-pointer">
+              <input type="checkbox" ${displayRule.enabled ? 'checked' : ''}
+                onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'enabled', this.checked)"
+                class="accent-[#247B50] w-3.5 h-3.5" />
+              <span>Show Part ${AEApp.escapeHtml(numInfo.letter || 'b')} only when…</span>
+            </label>
+
+            ${
+              displayRule.enabled
+                ? `<div class="flex flex-wrap items-center gap-2 text-xs">
+                    <select aria-label="Conditional visibility mode"
+                      onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'mode', this.value)"
+                      class="bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 h-7 text-xs font-medium text-[#111613] focus:outline-none focus:border-[#247B50]">
+                      <option value="any_answer" ${(displayRule.mode || 'any_answer') === 'any_answer' ? 'selected' : ''}>Parent is answered</option>
+                      <option value="equals" ${displayRule.mode === 'equals' ? 'selected' : ''}>Parent equals</option>
+                      <option value="not_equals" ${displayRule.mode === 'not_equals' ? 'selected' : ''}>Parent does not equal</option>
+                    </select>
+                    ${
+                      displayRule.mode === 'equals' || displayRule.mode === 'not_equals'
+                        ? parentQ && Array.isArray(parentQ.options) && parentQ.options.length > 0
+                          ? `<select aria-label="Conditional visibility trigger value"
+                              onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'value', this.value)"
+                              class="bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 h-7 text-xs font-medium text-[#111613] max-w-[220px] truncate focus:outline-none focus:border-[#247B50]">
+                              <option value="">Choose parent option…</option>
+                              ${parentQ.options
+                                .map(
+                                  (opt) =>
+                                    `<option value="${AEApp.escapeAttr(opt)}" ${displayRule.value === opt ? 'selected' : ''}>${AEApp.escapeHtml(opt)}</option>`
+                                )
+                                .join('')}
+                            </select>`
+                          : `<input type="text"
+                              aria-label="Conditional visibility trigger value"
+                              maxlength="140"
+                              value="${AEApp.escapeAttr(displayRule.value || '')}"
+                              onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'value', this.value)"
+                              placeholder="Expected answer…"
+                              class="bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 h-7 text-xs text-[#111613] w-44 focus:outline-none focus:border-[#247B50]" />`
+                        : ''
+                    }
+                  </div>`
+                : `<span class="text-[11px] text-[#646E68]">Always shown under Q${numInfo.mainNum || ''}</span>`
+            }
+          </div>`
+              : ''
+          }
+
+          <!-- Skip Logic / Branching Strip -->
+          <div class="pt-2.5 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2.5">
+            <label class="inline-flex items-center gap-2 text-xs font-medium text-[#525B56] cursor-pointer">
+              <input type="checkbox" ${logic.enabled ? 'checked' : ''}
+                onchange="AEApp.updateQuestionLogic('${q.id}', 'enabled', this.checked)"
+                class="accent-[#247B50] w-3.5 h-3.5" />
+              <span>Skip to another page based on answer</span>
+            </label>
+
+            ${
+              logic.enabled
+                ? `<div class="flex flex-wrap items-center gap-2 text-xs">
+                    <span class="text-[#525B56]">If answer is</span>
+                    ${
+                      Array.isArray(q.options) && q.options.length > 0
+                        ? `<select aria-label="Skip rule trigger value"
+                            onchange="AEApp.updateQuestionLogic('${q.id}', 'value', this.value)"
+                            class="bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 h-7 text-xs font-medium text-[#111613] max-w-[220px] truncate focus:outline-none focus:border-[#247B50]">
+                            <option value="">Choose option…</option>
+                            ${q.options
                               .map(
                                 (opt) =>
-                                  `<option value="${AEApp.escapeAttr(opt)}" ${displayRule.value === opt ? 'selected' : ''}>${AEApp.escapeHtml(opt)}</option>`
+                                  `<option value="${AEApp.escapeAttr(opt)}" ${logic.value === opt ? 'selected' : ''}>${AEApp.escapeHtml(opt)}</option>`
                               )
                               .join('')}
                           </select>`
                         : `<input type="text"
-                            aria-label="Conditional visibility trigger value"
-                            maxlength="140"
-                            value="${AEApp.escapeAttr(displayRule.value || '')}"
-                            onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'value', this.value)"
-                            placeholder="Expected parent answer…"
-                            class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs text-[#111613] w-44 focus:outline-none focus:border-[#247B50]" />`
-                      : ''
-                  }
-                </div>`
-              : `<span class="text-[11px] text-[#525B56]">Always visible under Q${numInfo.mainNum || ''}</span>`
-          }
-        </div>`
-            : ''
-        }
-
-        <!-- Conditional Skip Logic / Branching Strip -->
-        <div class="mt-3 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-3">
-          <label class="inline-flex items-center gap-2 text-xs font-medium text-[#525B56] cursor-pointer">
-            <input type="checkbox" ${logic.enabled ? 'checked' : ''}
-              onchange="AEApp.updateQuestionLogic('${q.id}', 'enabled', this.checked)"
-              class="accent-[#247B50] w-3.5 h-3.5" />
-            <span><i class="fa-solid fa-code-branch text-[#247B50] mr-1"></i> Conditional skip / branching rule</span>
-          </label>
-
-          ${
-            logic.enabled
-              ? `<div class="flex flex-wrap items-center gap-2 text-xs">
-                  <span class="text-[#525B56]">If answer equals</span>
-                  ${
-                    Array.isArray(q.options) && q.options.length > 0
-                      ? `<select aria-label="Skip rule trigger value"
-                          onchange="AEApp.updateQuestionLogic('${q.id}', 'value', this.value)"
-                          class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] max-w-[220px] truncate focus:outline-none focus:border-[#247B50]">
-                          <option value="">Select choice…</option>
-                          ${q.options
-                            .map(
-                              (opt) =>
-                                `<option value="${AEApp.escapeAttr(opt)}" ${logic.value === opt ? 'selected' : ''}>${AEApp.escapeHtml(opt)}</option>`
-                            )
-                            .join('')}
-                        </select>`
-                      : `<input type="text"
-                          aria-label="Skip rule trigger value"
-                          maxlength="120"
-                          value="${AEApp.escapeAttr(logic.value || '')}"
-                          onchange="AEApp.updateQuestionLogic('${q.id}', 'value', this.value)"
-                          placeholder="Option value…"
-                          class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs text-[#111613] w-44 focus:outline-none focus:border-[#247B50]" />`
-                  }
-                  <span class="text-[#525B56]">jump to</span>
-                  <select aria-label="Skip rule target page"
-                    onchange="AEApp.updateQuestionLogic('${q.id}', 'target', this.value)"
-                    class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] focus:outline-none focus:border-[#247B50]">
-                    <option value="">Select target page</option>
-                    ${survey.pages
-                      .map((p, idx) =>
-                        idx > this.activePageIndex || logic.target === p.id
-                          ? `<option value="${p.id}" ${logic.target === p.id ? 'selected' : ''}>Page ${idx + 1}: ${AEApp.escapeHtml(p.title.substring(0, 25))}</option>`
-                          : ''
-                      )
-                      .join('')}
-                    <option value="END_SURVEY" ${logic.target === 'END_SURVEY' ? 'selected' : ''}>End of Survey (Submit)</option>
-                  </select>
-                </div>`
-              : ''
-          }
-        </div>
-
-        <!-- Append Question / Follow-up Sub-Question Action Dock -->
-        <div class="mt-4 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2.5">
-          <div class="flex flex-wrap items-center gap-2">
-            ${!q.parentQuestionId ? `<button type="button" onclick="AEApp.appendSubQuestion('${q.id}', 'short_text')"
-              title="Append a connected follow-up sub-question (Part b) directly under Q${numInfo.label}"
-              class="h-8 px-3 rounded-[6px] bg-[#DCFAE5] hover:bg-[#247B50] text-[#04250E] hover:text-white border border-[#247B50]/30 text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors shadow-xs">
-              <i class="fa-solid fa-turn-down text-[11px]"></i>
-              <span>+ Append Sub-Question (Part b)</span>
-            </button>` : ''}
-
-            <div class="inline-flex items-center rounded-[6px] border border-[#CFD5D0] bg-white overflow-hidden shadow-xs">
-              <button type="button" onclick="AEApp.appendQuestionAfter('${q.id}', 'short_text')"
-                title="Insert a new question immediately below Q${numInfo.label}"
-                class="h-8 px-2.5 hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-                <i class="fa-solid fa-plus text-[10px] text-[#247B50]"></i>
-                <span>Append Question Below</span>
-              </button>
-              <select aria-label="Select type for appended question"
-                onchange="if(this.value){ AEApp.appendQuestionAfter('${q.id}', this.value); this.value=''; }"
-                class="h-8 px-2 text-xs text-[#525B56] bg-[#F8F9F8] border-l border-[#CFD5D0] hover:bg-white focus:outline-none cursor-pointer">
-                <option value="">Type…</option>
-                ${QUESTION_TYPES_CATALOG.map((t) => `<option value="${t.type}">${t.label}</option>`).join('')}
-              </select>
-            </div>
+                            aria-label="Skip rule trigger value"
+                            maxlength="120"
+                            value="${AEApp.escapeAttr(logic.value || '')}"
+                            onchange="AEApp.updateQuestionLogic('${q.id}', 'value', this.value)"
+                            placeholder="Answer value…"
+                            class="bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 h-7 text-xs text-[#111613] w-44 focus:outline-none focus:border-[#247B50]" />`
+                    }
+                    <span class="text-[#525B56]">go to</span>
+                    <select aria-label="Skip rule target page"
+                      onchange="AEApp.updateQuestionLogic('${q.id}', 'target', this.value)"
+                      class="bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 h-7 text-xs font-medium text-[#111613] focus:outline-none focus:border-[#247B50]">
+                      <option value="">Choose destination…</option>
+                      ${survey.pages
+                        .map((p, idx) =>
+                          idx > this.activePageIndex || logic.target === p.id
+                            ? `<option value="${p.id}" ${logic.target === p.id ? 'selected' : ''}>Page ${idx + 1}: ${AEApp.escapeHtml(p.title.substring(0, 25))}</option>`
+                            : ''
+                        )
+                        .join('')}
+                      <option value="END_SURVEY" ${logic.target === 'END_SURVEY' ? 'selected' : ''}>End of survey (Submit)</option>
+                    </select>
+                  </div>`
+                : ''
+            }
           </div>
 
-          <!-- Parent Question Attachment Linker -->
-          <div class="flex items-center gap-1.5 text-xs">
-            <span class="text-[#646E68] text-[11px]">Attached under:</span>
-            <select aria-label="Attach under parent question"
-              onchange="AEApp.setQuestionParent('${q.id}', this.value)"
-              class="h-7 px-2 text-xs font-medium ${
-                q.parentQuestionId ? 'text-[#04250E] bg-[#DCFAE5]/50 border-[#247B50]' : 'text-[#525B56] bg-white border-[#CFD5D0]'
-              } rounded-[5px] border focus:outline-none max-w-[210px] truncate">
-              <option value="">None (Independent Question)</option>
-              ${(page.questions || [])
-                .filter((other) => other.id !== q.id && !other.parentQuestionId)
-                .map(
-                  (parent) =>
-                    `<option value="${parent.id}" ${q.parentQuestionId === parent.id ? 'selected' : ''}>Under: ${AEApp.escapeHtml(
-                      (parent.title || 'Question').substring(0, 24)
-                    )}…</option>`
-                )
-                .join('')}
-            </select>
+          <!-- Append Question & Parent Grouping Strip -->
+          <div class="pt-2.5 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex flex-wrap items-center gap-2">
+              ${!q.parentQuestionId ? `<button type="button" onclick="AEApp.appendSubQuestion('${q.id}', 'short_text')"
+                title="Add a follow-up question (Part b) directly under Q${numInfo.label}"
+                class="h-7 px-2.5 rounded-[6px] bg-white hover:bg-[#DCFAE5]/60 text-[#04250E] border border-[#CFD5D0] hover:border-[#247B50] text-xs font-medium inline-flex items-center gap-1.5 ae-press transition-colors">
+                <i class="fa-solid fa-turn-down text-[10px] text-[#247B50]"></i>
+                <span>Add follow-up (Part b)</span>
+              </button>` : ''}
+
+              <div class="inline-flex items-center rounded-[6px] border border-[#CFD5D0] bg-white overflow-hidden">
+                <button type="button" onclick="AEApp.appendQuestionAfter('${q.id}', 'short_text')"
+                  title="Insert a new question below Q${numInfo.label}"
+                  class="h-7 px-2.5 hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press transition-colors">
+                  <i class="fa-solid fa-plus text-[10px] text-[#247B50]"></i>
+                  <span>Add question below</span>
+                </button>
+                <select aria-label="Select type for appended question"
+                  onchange="if(this.value){ AEApp.appendQuestionAfter('${q.id}', this.value); this.value=''; }"
+                  class="h-7 px-2 text-xs text-[#525B56] bg-[#F8F9F8] border-l border-[#CFD5D0] hover:bg-white focus:outline-none cursor-pointer">
+                  <option value="">Type…</option>
+                  ${QUESTION_TYPES_CATALOG.map((t) => `<option value="${t.type}">${t.label}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <!-- Parent Question Attachment Linker -->
+            <div class="flex items-center gap-1.5 text-xs">
+              <span class="text-[#646E68] text-[11px]">Grouped under:</span>
+              <select aria-label="Attach under parent question"
+                onchange="AEApp.setQuestionParent('${q.id}', this.value)"
+                class="h-7 px-2 text-xs font-medium ${
+                  q.parentQuestionId ? 'text-[#04250E] bg-[#DCFAE5]/50 border-[#247B50]' : 'text-[#525B56] bg-white border-[#CFD5D0]'
+                } rounded-[6px] border focus:outline-none max-w-[210px] truncate">
+                <option value="">None (standalone)</option>
+                ${(page.questions || [])
+                  .filter((other) => other.id !== q.id && !other.parentQuestionId)
+                  .map(
+                    (parent) =>
+                      `<option value="${parent.id}" ${q.parentQuestionId === parent.id ? 'selected' : ''}>Under: ${AEApp.escapeHtml(
+                        (parent.title || 'Question').substring(0, 24)
+                      )}…</option>`
+                  )
+                  .join('')}
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -1561,10 +1568,10 @@ window.AEBuilder = {
       return `
         <div class="p-3 bg-white border border-[#E4E7E4] rounded-[6px] text-xs text-[#525B56] flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2 font-medium text-[#111613]">
-            <i class="fa-solid fa-barcode text-[#247B50] text-base"></i>
-            <span>Optical Camera Barcode & KEPHIS QR Scanner</span>
+            <i class="fa-solid fa-barcode text-[#247B50] text-sm"></i>
+            <span>Camera barcode &amp; QR scanner</span>
           </div>
-          <span class="px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold">Live Camera Stream + Serial Match</span>
+          <span class="px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[11px] font-medium">Camera + manual entry</span>
         </div>
       `;
     }
@@ -1573,10 +1580,10 @@ window.AEBuilder = {
       return `
         <div class="p-3 bg-white border border-[#E4E7E4] rounded-[6px] text-xs text-[#525B56] flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2 font-medium text-[#111613]">
-            <i class="fa-solid fa-microphone text-[#247B50] text-base"></i>
-            <span>HTML5 MediaRecorder Audio Note & Field Testimony</span>
+            <i class="fa-solid fa-microphone text-[#247B50] text-sm"></i>
+            <span>Voice note recording</span>
           </div>
-          <span class="px-2 py-0.5 rounded bg-[#F4F6F4] text-[#111613] text-[11px] font-medium">Max 120s &middot; IndexedDB Blobs</span>
+          <span class="px-2 py-0.5 rounded bg-[#F4F6F4] text-[#525B56] text-[11px] font-medium">Up to 2 min · Saved offline</span>
         </div>
       `;
     }
@@ -1614,7 +1621,7 @@ window.AEBuilder = {
 
     return `
       <div class="text-xs text-[#525B56]">
-        Respondent input control configured (${q.type.replace('_', ' ')}).
+        Answer field (${q.type.replace(/_/g, ' ')}).
       </div>
     `;
   },

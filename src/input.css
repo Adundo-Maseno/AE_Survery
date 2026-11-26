@@ -2,3 +2,102 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  html {
+    background-color: var(--ground, #F4F6F4);
+    color: var(--text, #111613);
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent, #247B50);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #C6CEC8;
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #8D9991;
+    border: 1px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .ae-hairline {
+    border: 1px solid var(--border, #E4E7E4);
+  }
+
+  .ae-card {
+    background-color: var(--surface, #FFFFFF);
+    border: 1px solid var(--border, #E4E7E4);
+    box-shadow: 0 1px 2px rgba(17, 22, 19, 0.04);
+    transition: border-color 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      box-shadow 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  }
+
+  .ae-press {
+    transition:
+      transform 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      opacity 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      background-color 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      border-color 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      color 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+      box-shadow 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  }
+
+  .ae-press:active {
+    transform: scale(0.985);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ae-row-hover:hover {
+    background-color: #F8F9F8;
+  }
+
+  .ae-card-hover:hover {
+    border-color: #B4BEB7;
+    box-shadow: 0 2px 6px rgba(17, 22, 19, 0.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ae-press:active {
+    transform: none;
+  }
+}

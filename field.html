@@ -79,6 +79,25 @@
       color: var(--text);
       font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    h1, h2, .font-display {
+      text-wrap: balance;
+    }
+
+    p {
+      text-wrap: pretty;
+    }
+
+    input:focus-visible,
+    textarea:focus-visible,
+    select:focus-visible,
+    [role="radio"]:focus-visible,
+    [role="checkbox"]:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(36, 123, 80, 0.14);
     }
 
     ::selection {
@@ -113,11 +132,11 @@
     }
 
     .ae-press {
-      transition: transform 120ms var(--ease-out), opacity 120ms var(--ease-out);
+      transition: transform 140ms var(--ease-out), opacity 140ms var(--ease-out), background-color 140ms var(--ease-out), border-color 140ms var(--ease-out);
     }
 
     .ae-press:active {
-      transform: scale(0.98);
+      transform: scale(0.975);
     }
 
     /* Hardware-Accelerated Animation Suite (Emil Kowalski / WAAPI / Composite-Only) */
@@ -292,7 +311,56 @@
     }
 
     .ae-toast-enter {
+      opacity: 1;
+      transform: translateY(0);
       transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+    }
+
+    @starting-style {
+      .ae-toast-enter {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+    }
+
+    @media (prefers-reduced-transparency: reduce) {
+      .ae-glass-dark-nav {
+        background-color: #141A17 !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+
+      .ae-glass-scrim {
+        background-color: rgba(20, 26, 23, 0.65) !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+
+      .ae-glass-modal {
+        background-color: #FFFFFF !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        border-color: #CFD5D0 !important;
+      }
+    }
+
+    body.ae-sunlight .ae-glass-dark-nav,
+    body.ae-sunlight .ae-glass-scrim,
+    body.ae-sunlight .ae-glass-modal {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    body.ae-sunlight .ae-glass-modal {
+      background-color: #FFFFFF !important;
+      border: 2px solid #000000 !important;
+      box-shadow: none !important;
+    }
+
+    body.ae-sunlight input:focus-visible,
+    body.ae-sunlight textarea:focus-visible,
+    body.ae-sunlight select:focus-visible {
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25) !important;
     }
 
     .ae-glass-toast-dark {
@@ -437,8 +505,8 @@
   </header>
 
   <!-- Main Viewport Canvas -->
-  <main id="ae_field_viewport" class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-6 pb-36 md:pb-28 space-y-5">
-    <div class="p-8 text-center text-xs text-[#525B56]">Initializing offline field collector…</div>
+  <main id="ae_field_viewport" class="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 py-7 sm:py-9 pb-36 md:pb-28 space-y-6">
+    <div class="p-10 text-center text-sm text-[#525B56]">Getting your survey ready…</div>
   </main>
 
   <!-- Native Mobile Bottom Navigation Dock (Thumb-Driven Field Ergonomics - Visible on < md:) -->

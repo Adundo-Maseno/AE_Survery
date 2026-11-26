@@ -470,13 +470,13 @@ window.AECollector = {
               placeholder="Enumerator name or code…" />
           </div>
           <div class="p-3.5 flex flex-col justify-between min-w-0">
-            <span class="text-xs font-medium text-[#525B56]">Offline draft &amp; storage</span>
-            <div class="flex items-center justify-between gap-2 text-xs font-medium text-[#04250E] bg-[#DCFAE5] px-2.5 h-9 rounded-[6px] tabular-nums">
+            <span class="text-xs font-medium text-[#525B56]">Offline draft</span>
+            <div class="flex items-center justify-between gap-2 text-xs font-medium text-[#04250E] bg-[#DCFAE5]/75 px-3 h-9 rounded-[6px] tabular-nums">
               <span class="inline-flex items-center gap-1.5 truncate">
-                <i class="fa-solid fa-hard-drive text-[#247B50]"></i>
-                <span class="truncate">${answeredCount > 0 ? `Draft saved (${answeredCount}/${allQuestions.length})` : 'IndexedDB outbox ready'}</span>
+                <span class="w-1.5 h-1.5 rounded-full bg-[#247B50] shrink-0"></span>
+                <span class="truncate">${answeredCount > 0 ? `Saved · ${answeredCount} of ${allQuestions.length} answered` : 'Ready · auto-saves offline'}</span>
               </span>
-              <span class="text-[11px] text-[#04250E]/80 shrink-0">Auto-save</span>
+              <span class="text-[11px] text-[#04250E]/75 shrink-0">Auto-save</span>
             </div>
           </div>
         </div>
@@ -484,8 +484,8 @@ window.AECollector = {
         <!-- Respondent Survey Instrument Card -->
         <div class="bg-white border border-[#E4E7E4] rounded-[12px] overflow-hidden">
           <!-- Survey Header (The single place Fraunces editorial serif is used as a welcoming respondent greeting) -->
-          <div class="p-6 sm:p-7 text-white" style="background-color: ${headerBg}">
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div class="p-7 sm:p-8 text-white" style="background-color: ${headerBg}">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div class="flex items-center gap-2.5">
                 <img src="./icons/agri_experience_logo.png"
                   alt="Agri Experience Logo"
@@ -503,38 +503,38 @@ window.AECollector = {
                 Page ${this.currentPageIndex + 1} of ${pages.length} · ${progressPct}%
               </span>
             </div>
-            <h2 class="font-display text-[22px] sm:text-[26px] font-semibold tracking-tight text-white leading-snug ae-break-words">
+            <h2 class="font-display text-[22px] sm:text-[26px] font-semibold tracking-tight text-white leading-snug ae-break-words" style="text-wrap: balance;">
               ${AEApp.escapeHtml(survey.title)}
             </h2>
             ${
               survey.description
-                ? `<p class="text-xs sm:text-sm text-white/85 mt-2 max-w-2xl leading-relaxed ae-break-words">${AEApp.escapeHtml(survey.description)}</p>`
+                ? `<p class="text-sm text-white/90 mt-2.5 max-w-2xl leading-relaxed ae-break-words" style="text-wrap: pretty;">${AEApp.escapeHtml(survey.description)}</p>`
                 : ''
             }
 
             ${
               survey.theme?.showProgressBar !== false
-                ? `<div class="mt-5 w-full bg-white/15 h-1.5 rounded-full overflow-hidden">
-                    <div class="bg-[#3FC07A] h-full transition-transform duration-200 origin-left" style="transform: scaleX(${progressPct / 100})"></div>
+                ? `<div class="mt-6 w-full bg-white/15 h-1.5 rounded-full overflow-hidden">
+                    <div class="bg-[#3FC07A] h-full transition-transform duration-300 ease-out origin-left" style="transform: scaleX(${progressPct / 100})"></div>
                   </div>`
                 : ''
             }
           </div>
 
           <!-- Current Page Title & Quick-Key Accelerator Hint -->
-          <div class="bg-[#F8F9F8] px-6 sm:px-7 py-3.5 border-b border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2">
+          <div class="bg-[#F8F9F8] px-6 sm:px-8 py-4 border-b border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2">
             <div class="min-w-0">
               <h3 class="text-sm font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(page.title)}</h3>
               ${
                 page.description
-                  ? `<p class="text-xs text-[#525B56] mt-0.5 ae-break-words">${AEApp.escapeHtml(page.description)}</p>`
+                  ? `<p class="text-xs text-[#525B56] mt-1 leading-relaxed ae-break-words" style="text-wrap: pretty;">${AEApp.escapeHtml(page.description)}</p>`
                   : ''
               }
             </div>
-            <div class="hidden sm:flex items-center gap-1.5 text-xs text-[#646E68] shrink-0" title="Enumerator keyboard accelerators">
-              <span>Quick keys:</span>
+            <div class="hidden sm:flex items-center gap-1.5 text-xs text-[#646E68] shrink-0" title="Enumerator keyboard shortcuts">
+              <span>Shortcuts:</span>
               <span class="ae-kbd">1–9</span>
-              <span>select option</span>
+              <span>choose</span>
               <span>·</span>
               <span class="ae-kbd">Shift+Enter</span>
               <span>next</span>
@@ -542,7 +542,7 @@ window.AECollector = {
           </div>
 
           <!-- Questions Form Body -->
-          <div class="p-6 sm:p-7 space-y-6">
+          <div class="p-6 sm:p-8 space-y-7">
             ${(() => {
               const pageQuestions = page.questions || [];
               const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
@@ -560,16 +560,16 @@ window.AECollector = {
           </div>
 
           <!-- Navigation Footer -->
-          <div class="px-6 sm:px-7 py-4 bg-[#F8F9F8] border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-3">
+          <div class="px-6 sm:px-8 py-4 bg-[#F8F9F8] border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-3">
             <div>
               ${
                 this.currentPageIndex > 0
                   ? `<button onclick="AEApp.prevRunnerPage()"
-                      class="h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-2 ae-press">
-                      <i class="fa-solid fa-arrow-left"></i> Previous Page
+                      class="h-10 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-2 ae-press">
+                      <i class="fa-solid fa-arrow-left"></i> Previous page
                     </button>`
                   : `<button onclick="AEApp.resetRunnerDraft('${survey.id}')"
-                      class="h-9 px-3 rounded-[6px] text-xs font-medium text-[#525B56] hover:text-[#111613]">
+                      class="h-10 px-3 rounded-[6px] text-xs font-medium text-[#525B56] hover:text-[#111613]">
                       <i class="fa-solid fa-rotate-left mr-1"></i> Clear form
                     </button>`
               }
@@ -587,7 +587,7 @@ window.AECollector = {
                       ${this.isSubmitting ? 'disabled' : ''}
                       class="h-10 px-5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                       <i class="fa-solid fa-check"></i>
-                      <span>${this.isSubmitting ? 'Saving response…' : window.aeStore.isEffectivelyOnline() ? 'Save & Sync Response' : 'Save Response to Offline Queue'}</span>
+                      <span>${this.isSubmitting ? 'Saving…' : window.aeStore.isEffectivelyOnline() ? 'Submit response' : 'Save offline'}</span>
                     </button>`
               }
             </div>
@@ -610,26 +610,26 @@ window.AECollector = {
     const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(idx + 1), isSub: false };
 
     return `
-      <div id="runner_q_${q.id}" class="space-y-2 pb-6 border-b border-[#EFEFEF] last:border-b-0 last:pb-0 ${
-        q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-4 border-l-[#247B50] pl-4 bg-[#FAFBF9] rounded-[6px] p-4' : ''
+      <div id="runner_q_${q.id}" class="space-y-3 pb-7 border-b border-[#EFEFEF] last:border-b-0 last:pb-0 ${
+        q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-[3px] border-l-[#247B50] pl-5 bg-[#FAFBF9] rounded-[8px] p-5' : ''
       }">
-        <div class="flex items-start justify-between gap-2 min-w-0">
-          <label for="runner_input_${q.id}" class="block text-sm sm:text-base font-semibold text-[#111613] leading-snug ae-break-words min-w-0 flex-1">
-            ${showNum ? `<span class="tabular-nums text-xs font-semibold ${q.parentQuestionId ? 'text-[#247B50]' : 'text-[#247B50]'} mr-1.5">Q${numInfo.label}.</span>` : ''}
+        <div class="flex items-start justify-between gap-3 min-w-0">
+          <label for="runner_input_${q.id}" class="block text-[15px] sm:text-base font-semibold text-[#111613] leading-snug ae-break-words min-w-0 flex-1">
+            ${showNum ? `<span class="tabular-nums text-xs font-semibold text-[#247B50] mr-1.5">Q${numInfo.label}.</span>` : ''}
             <span data-piped-title-for="${q.id}">${AEApp.escapeHtml(pipedTitle)}</span>
-            ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
+            ${q.parentQuestionId ? `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#DCFAE5]/80 text-[#04250E] ml-1.5">Part ${AEApp.escapeHtml(numInfo.letter || 'b')}</span>` : ''}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
           <div class="flex items-center gap-1.5 shrink-0">
             <button type="button" onclick="AEApp.speakQuestion('${q.id}')"
-              title="Read question aloud (Voice Assist)"
-              class="w-7 h-7 rounded-[4px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#DCFAE5] hover:border-[#247B50] text-[#525B56] hover:text-[#04250E] flex items-center justify-center text-xs shrink-0 ae-press"
+              title="Read question aloud"
+              class="w-8 h-8 rounded-[6px] text-[#646E68] hover:text-[#247B50] hover:bg-[#F4F6F4] flex items-center justify-center text-xs shrink-0 ae-press"
               aria-label="Read Question Aloud">
-              <i class="fa-solid fa-volume-high text-[11px]"></i>
+              <i class="fa-solid fa-volume-high text-[12px]"></i>
             </button>
             ${
               q.logic && q.logic.enabled
-                ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E]">Skip rule</span>`
+                ? `<span class="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-[#FFFBEB] text-[#92400E]">Branching</span>`
                 : ''
             }
           </div>
@@ -637,7 +637,7 @@ window.AECollector = {
 
         ${
           q.helpText
-            ? `<p data-piped-help-for="${q.id}" class="text-xs text-[#525B56] ae-break-words ${pipedHelp ? '' : 'hidden'}">${AEApp.escapeHtml(pipedHelp)}</p>`
+            ? `<p data-piped-help-for="${q.id}" class="text-[13px] text-[#525B56] leading-relaxed ae-break-words ${pipedHelp ? '' : 'hidden'}" style="text-wrap: pretty;">${AEApp.escapeHtml(pipedHelp)}</p>`
             : ''
         }
 
@@ -659,7 +659,7 @@ window.AECollector = {
   renderRespondentInputControl(q, val) {
     if (q.type === 'multiple_choice') {
       return `
-        <div role="radiogroup" aria-label="${AEApp.escapeAttr(q.title)}" class="space-y-1.5">
+        <div role="radiogroup" aria-label="${AEApp.escapeAttr(q.title)}" class="space-y-2">
           ${(q.options || [])
             .map((opt, optIdx) => {
               const checked = val === opt;
@@ -669,13 +669,13 @@ window.AECollector = {
                   tabindex="0"
                   onclick="AEApp.setRunnerAnswer('${q.id}', '${AEApp.escapeJs(opt)}')"
                   onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();AEApp.setRunnerAnswer('${q.id}', '${AEApp.escapeJs(opt)}');}"
-                  class="flex items-center justify-between gap-3 px-3.5 py-3 rounded-[8px] border cursor-pointer transition-colors min-h-[44px] min-w-0 ${
+                  class="flex items-center justify-between gap-3 px-4 py-3.5 rounded-[8px] border cursor-pointer ae-choice-press min-h-[46px] min-w-0 ${
                     checked
-                      ? 'border-[#247B50] bg-[#DCFAE5]/50 text-[#111613] font-semibold'
-                      : 'border-[#E4E7E4] bg-white hover:bg-[#F8F9F8] text-[#111613]'
+                      ? 'border-[#247B50] bg-[#DCFAE5]/45 text-[#111613] font-semibold'
+                      : 'border-[#E4E7E4] bg-white hover:bg-[#F8F9F8] hover:border-[#CFD5D0] text-[#111613]'
                   }">
                   <div class="flex items-center gap-3 min-w-0">
-                    <span class="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                    <span class="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
                       checked ? 'border-[#247B50] bg-[#247B50]' : 'border-[#9CA69F] bg-white'
                     }">
                       ${checked ? '<span class="w-1.5 h-1.5 rounded-full bg-white"></span>' : ''}
@@ -694,7 +694,7 @@ window.AECollector = {
     if (q.type === 'checkboxes') {
       const selectedArr = Array.isArray(val) ? val : [];
       return `
-        <div role="group" aria-label="${AEApp.escapeAttr(q.title)}" class="space-y-1.5">
+        <div role="group" aria-label="${AEApp.escapeAttr(q.title)}" class="space-y-2">
           ${(q.options || [])
             .map((opt) => {
               const checked = selectedArr.includes(opt);
@@ -704,12 +704,12 @@ window.AECollector = {
                   tabindex="0"
                   onclick="AEApp.toggleRunnerCheckbox('${q.id}', '${AEApp.escapeJs(opt)}')"
                   onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();AEApp.toggleRunnerCheckbox('${q.id}', '${AEApp.escapeJs(opt)}');}"
-                  class="flex items-center gap-3 px-3.5 py-3 rounded-[8px] border cursor-pointer transition-colors min-h-[44px] min-w-0 ${
+                  class="flex items-center gap-3 px-4 py-3.5 rounded-[8px] border cursor-pointer ae-choice-press min-h-[46px] min-w-0 ${
                     checked
-                      ? 'border-[#247B50] bg-[#DCFAE5]/50 text-[#111613] font-semibold'
-                      : 'border-[#E4E7E4] bg-white hover:bg-[#F8F9F8] text-[#111613]'
+                      ? 'border-[#247B50] bg-[#DCFAE5]/45 text-[#111613] font-semibold'
+                      : 'border-[#E4E7E4] bg-white hover:bg-[#F8F9F8] hover:border-[#CFD5D0] text-[#111613]'
                   }">
-                  <span class="w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0 ${
+                  <span class="w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0 transition-colors ${
                     checked ? 'border-[#247B50] bg-[#247B50] text-white' : 'border-[#9CA69F] bg-white'
                   }">
                     ${checked ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}
@@ -726,7 +726,7 @@ window.AECollector = {
     if (q.type === 'dropdown') {
       return `
         <select id="runner_input_${q.id}" onchange="AEApp.setRunnerAnswer('${q.id}', this.value)"
-          class="w-full h-10 text-sm bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 text-[#111613] focus:border-[#247B50] focus:outline-none">
+          class="w-full h-11 text-sm bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 text-[#111613] focus:border-[#247B50] focus:ring-2 focus:ring-[#247B50]/15 focus:outline-none">
           <option value="">Select an answer…</option>
           ${(q.options || [])
             .map(
@@ -947,8 +947,8 @@ window.AECollector = {
           id="runner_input_${q.id}"
           maxlength="1200"
           oninput="AEApp.setRunnerAnswerSilent('${q.id}', this.value)"
-          placeholder="${AEApp.escapeAttr(q.placeholder || 'Enter detailed field notes…')}"
-          class="w-full text-sm bg-white border border-[#CFD5D0] rounded-[8px] p-3 text-[#111613] focus:border-[#247B50] focus:outline-none">${AEApp.escapeHtml(val || '')}</textarea>
+          placeholder="${AEApp.escapeAttr(q.placeholder || 'Write your notes here…')}"
+          class="w-full text-sm bg-white border border-[#CFD5D0] rounded-[8px] p-3.5 text-[#111613] leading-relaxed focus:border-[#247B50] focus:ring-2 focus:ring-[#247B50]/15 focus:outline-none">${AEApp.escapeHtml(val || '')}</textarea>
       `;
     }
 
@@ -1080,7 +1080,7 @@ window.AECollector = {
         value="${AEApp.escapeAttr(val || '')}"
         oninput="AEApp.setRunnerAnswerSilent('${q.id}', this.value)"
         placeholder="${AEApp.escapeAttr(q.placeholder || 'Type your answer…')}"
-        class="w-full h-10 text-sm bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 text-[#111613] focus:border-[#247B50] focus:outline-none" />
+        class="w-full h-11 text-sm bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 text-[#111613] focus:border-[#247B50] focus:ring-2 focus:ring-[#247B50]/15 focus:outline-none" />
     `;
   },
 

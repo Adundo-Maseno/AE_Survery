@@ -2317,36 +2317,36 @@ window.AEAnalytics = {
               alt="Agri Experience Limited" class="h-10 w-auto object-contain" />
             <div>
               <div class="text-sm font-bold text-[#111613]">Agri Experience Limited</div>
-              <div class="text-[11px] text-[#525B56]">Survey Analytics &amp; Intelligence Report</div>
+              <div class="text-[11px] text-[#525B56]">Research Findings &amp; Summary</div>
             </div>
           </div>
           <div class="text-right text-[11px] text-[#525B56] tabular-nums">
-            <div>Generated: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-            <div>Database: Google Sheets (Code.gs)</div>
+            <div>Prepared: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            <div>Source: Google Sheets (Code.gs)</div>
           </div>
         </div>
 
         <!-- 1. Stage Title & Executive Action Bar -->
-        <div class="space-y-3 pb-5 border-b border-[#EFEFEF]">
+        <div class="space-y-4 pb-6 border-b border-[#EFEFEF]">
           <!-- Row 1: Title + Active Survey Switcher + Live Share / Reset -->
-          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2.5">
-                <h1 class="text-[22px] sm:text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Analyze Results &amp; Survey Intelligence</h1>
+                <h1 class="font-display text-[24px] sm:text-[26px] font-semibold text-[#111613] tracking-tight leading-tight" style="font-family: 'Fraunces', Georgia, serif; text-wrap: balance;">Results &amp; Analysis</h1>
                 ${
                   survey.status === 'Archived'
-                    ? `<span class="px-2.5 py-0.5 rounded-[4px] text-xs font-semibold bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0] inline-flex items-center gap-1">
-                        <i class="fa-solid fa-box-archive text-[10px]"></i> Archived (Read-Only)
+                    ? `<span class="px-2.5 py-0.5 rounded-[4px] text-xs font-medium bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0] inline-flex items-center gap-1">
+                        Archived (Read-only)
                       </span>`
                     : ''
                 }
                 <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56] bg-[#F8F9F8] border border-[#E4E7E4] px-2.5 py-0.5 rounded-full">
                   <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
-                  <span class="tabular-nums font-medium">${filtered.length} of ${allResponses.length} records in scope</span>
+                  <span class="tabular-nums font-medium">${filtered.length} of ${allResponses.length} responses</span>
                 </span>
               </div>
-              <p class="text-xs sm:text-sm text-[#525B56] mt-1">
-                Cross-tabulations with hypothesis testing (χ²), Pearson variable correlations, automated key drivers, and verbatim NLP.
+              <p class="text-xs sm:text-[13px] text-[#525B56] mt-1.5 max-w-2xl leading-relaxed" style="text-wrap: pretty;">
+                Explore response distributions, segment comparisons, open-ended themes, and exportable research briefings.
               </p>
             </div>
 
@@ -2396,40 +2396,40 @@ window.AEAnalytics = {
           </div>
 
           <!-- Row 2: Dedicated Executive Briefings & Data Exports Strip -->
-          <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+          <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
             <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68] mr-1">Briefings:</span>
+              <span class="text-xs font-medium text-[#646E68] mr-1">Reports</span>
               <button onclick="AEReportExport.exportPDF('${safeSurveyIdJs}')"
                 title="Open Branded Executive Briefing PDF Print View"
-                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/40 bg-white hover:bg-[#DCFAE5]/50 text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
-                <i class="fa-solid fa-file-pdf text-[#C4242A] text-xs"></i> Executive PDF
+                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/35 bg-white hover:bg-[#DCFAE5]/40 text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-pdf text-[#C4242A] text-[11px]"></i> Executive PDF
               </button>
               <button onclick="AEReportExport.exportWordDoc('${safeSurveyIdJs}')"
                 title="Download Branded Executive Briefing for MS Word (.doc)"
-                class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
-                <i class="fa-solid fa-file-word text-[#247B50] text-xs"></i> Word (.doc)
+                class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-word text-[#247B50] text-[11px]"></i> Word (.doc)
               </button>
               <button onclick="window.print()"
                 title="Print Executive Briefing View"
                 aria-label="Print Executive Briefing View"
                 class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#525B56] hover:text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
-                <i class="fa-solid fa-print text-xs"></i> Print
+                <i class="fa-solid fa-print text-[11px]"></i> Print
               </button>
             </div>
 
             <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68] mr-1">Data Exports:</span>
+              <span class="text-xs font-medium text-[#646E68] mr-1">Data</span>
               <button onclick="AEAnalytics.exportExcelWorkbook('${safeSurveyIdJs}')"
-                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/40 bg-[#DCFAE5]/50 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
-                <i class="fa-solid fa-file-excel text-[#247B50] text-xs"></i> 7-Sheet Excel (.xls)
+                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/35 bg-[#DCFAE5]/45 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-excel text-[#247B50] text-[11px]"></i> 7-Sheet Excel (.xls)
               </button>
               <button onclick="AEApp.exportSurveyResponsesCSV('${safeSurveyIdJs}')"
                 class="h-7 px-2.5 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
-                <i class="fa-solid fa-file-csv text-xs"></i> CSV
+                <i class="fa-solid fa-file-csv text-[11px]"></i> CSV
               </button>
               <button onclick="AEApp.exportResponsesPackJSON('${safeSurveyIdJs}')"
                 class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
-                <i class="fa-solid fa-file-code text-[#247B50] text-xs"></i> JSON
+                <i class="fa-solid fa-file-code text-[#247B50] text-[11px]"></i> JSON
               </button>
             </div>
           </div>
@@ -2507,15 +2507,14 @@ window.AEAnalytics = {
     if (f.seedVariety !== 'all') activeFilters.push({ key: 'seedVariety', label: `${catCfg?.label || 'Category'}: ${f.seedVariety}` });
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-3 space-y-3">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2 min-w-0">
-            <span class="w-2 h-2 rounded-full bg-[#247B50] shrink-0"></span>
-            <span class="text-xs font-semibold text-[#111613]">Multi-Dimensional Slicing Matrix</span>
-            <span class="text-[11px] text-[#525B56]">· Active Scope: <code class="text-[#247B50] font-semibold">Resp_${AEApp.escapeHtml(survey.id)}</code></span>
+            <span class="text-xs font-semibold text-[#111613]">Filter responses</span>
+            <span class="text-[11px] text-[#646E68]">&middot; <code class="text-[#247B50] font-medium">Resp_${AEApp.escapeHtml(survey.id)}</code></span>
           </div>
           <div class="text-xs text-[#525B56] tabular-nums">
-            Showing <strong>${filtered.length}</strong> of ${allResponses.length} records (${Math.round((filtered.length / Math.max(1, allResponses.length)) * 100)}%)
+            Showing <strong class="text-[#111613]">${filtered.length}</strong> of ${allResponses.length} (${Math.round((filtered.length / Math.max(1, allResponses.length)) * 100)}%)
           </div>
         </div>
 
@@ -2603,11 +2602,11 @@ window.AEAnalytics = {
         ${
           activeFilters.length > 0
             ? `<div class="pt-2 border-t border-[#EFEFEF] flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-[11px] font-semibold text-[#525B56] mr-1">Active Slices:</span>
+                <span class="text-[11px] font-medium text-[#646E68] mr-1">Active filters:</span>
                 ${activeFilters
                   .map(
                     (af) =>
-                      `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] font-medium border border-[#247B50]/30 text-xs">
+                      `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] font-medium border border-[#247B50]/25 text-xs">
                         <span>${AEApp.escapeHtml(af.label)}</span>
                         <button type="button" onclick="AEAnalytics.setFilter('${af.key}', 'all')" class="hover:text-[#C4242A] focus:outline-none" title="Remove filter">
                           <i class="fa-solid fa-xmark text-[10px]"></i>
@@ -2616,7 +2615,7 @@ window.AEAnalytics = {
                   )
                   .join('')}
                 <button type="button" onclick="AEAnalytics.resetFilters()" class="text-xs text-[#247B50] font-semibold hover:underline ml-2">
-                  Clear All Filters
+                  Clear filters
                 </button>
               </div>`
             : ''
@@ -2731,38 +2730,33 @@ window.AEAnalytics = {
       const term1 = AEApp.escapeHtml((textAnalysis.topTerms[1]?.term || 'issue').replace(/"/g, ''));
       insights.push({
         type: 'risk_alert',
-        title: 'Verbatim Intelligence: Feedback & Quality Alerts',
-        badge: `${textAnalysis.sentimentSummary.negative} Quality Alerts`,
+        title: 'Open-Ended Feedback Alerts',
+        badge: `${textAnalysis.sentimentSummary.negative} flagged`,
         badgeClass: 'bg-[#FFEDEA] text-[#831C1E]',
-        body: `Free-text and audio notes flagged potential friction or issues in <strong>${textAnalysis.sentimentSummary.negative} submissions</strong>. Most recurrent keyword tokens include <em>"${term0}"</em> and <em>"${term1}"</em>.`
+        body: `Written or audio responses noted friction in <strong>${textAnalysis.sentimentSummary.negative} submissions</strong>, most often mentioning <em>"${term0}"</em> and <em>"${term1}"</em>.`
       });
     }
 
     if (insights.length === 0) return '';
 
     return `
-      <div class="bg-[#F4FAF6] border border-[#247B50]/30 rounded-[8px] p-4 space-y-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#247B50] flex items-center justify-center">
-              <i class="fa-solid fa-sparkles text-[8px] text-white"></i>
-            </span>
-            <span class="text-xs font-bold text-[#04250E]">Automated Executive Insights &amp; Synthesis</span>
-          </div>
-          <span class="text-[11px] text-[#525B56]">Synthesized across active filtered sample</span>
+      <div class="bg-[#F8FBF9] border border-[#247B50]/20 rounded-[8px] p-5 space-y-3.5">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 class="font-display text-[15px] font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Key Findings</h2>
+          <span class="text-[11px] text-[#646E68]">Based on your current filter scope</span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
           ${insights
             .map(
               (item) => `
-                <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3 flex flex-col justify-between shadow-xs">
+                <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-4 flex flex-col justify-between">
                   <div>
-                    <div class="flex items-center justify-between gap-2 mb-1.5">
-                      <span class="text-xs font-semibold text-[#111613] truncate">${AEApp.escapeHtml(item.title)}</span>
-                      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-[3px] shrink-0 ${item.badgeClass}">${AEApp.escapeHtml(item.badge)}</span>
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                      <span class="text-xs font-semibold text-[#111613] leading-snug">${AEApp.escapeHtml(item.title)}</span>
+                      <span class="text-[10.5px] font-medium px-2 py-0.5 rounded-[4px] shrink-0 ${item.badgeClass}">${AEApp.escapeHtml(item.badge)}</span>
                     </div>
-                    <p class="text-xs text-[#525B56] leading-relaxed">${item.body}</p>
+                    <p class="text-xs text-[#525B56] leading-relaxed" style="text-wrap: pretty;">${item.body}</p>
                   </div>
                 </div>
               `
@@ -2839,74 +2833,74 @@ window.AEAnalytics = {
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
         <div class="grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[#EFEFEF]">
           <!-- Metric 1: Verified Interviews -->
-          <div class="p-4 bg-white">
+          <div class="p-5 bg-white">
             <div class="flex items-center justify-between text-xs text-[#525B56]">
-              <span>Sample Completion</span>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E]">
-                <i class="fa-solid fa-check mr-1 text-[9px]"></i>100% Verified
+              <span>Responses in scope</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium bg-[#DCFAE5] text-[#04250E]">
+                Verified
               </span>
             </div>
-            <div class="mt-2 flex items-baseline gap-2">
-              <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${filtered.length}">${filtered.length}</strong>
-              <span class="text-xs text-[#525B56] tabular-nums">/ ${allResponses.length} total</span>
+            <div class="mt-2.5 flex items-baseline gap-2">
+              <strong class="text-[28px] font-semibold text-[#111613] tabular-nums tracking-tight leading-none ae-kpi-counter" data-target="${filtered.length}">${filtered.length}</strong>
+              <span class="text-xs text-[#646E68] tabular-nums">of ${allResponses.length} total</span>
             </div>
-            <div class="w-full bg-[#EAECE9] h-1.5 rounded-full mt-2.5 overflow-hidden">
+            <div class="w-full bg-[#EAECE9] h-1.5 rounded-full mt-3 overflow-hidden">
               <div class="bg-[#247B50] h-full rounded-full transition-[width] duration-500" style="width: ${Math.min(100, Math.round((filtered.length / Math.max(1, allResponses.length)) * 100))}%;"></div>
             </div>
           </div>
 
           <!-- Metric 2: Sync Health -->
-          <div class="p-4 bg-white">
+          <div class="p-5 bg-white">
             <div class="flex items-center justify-between text-xs text-[#525B56]">
-              <span>Cloud Sync State</span>
-              <span class="text-[11px] font-semibold text-[#247B50] tabular-nums">${Math.round((syncedCount / Math.max(1, filtered.length)) * 100)}% synced</span>
+              <span>Cloud sync</span>
+              <span class="text-[11px] font-medium text-[#247B50] tabular-nums">${Math.round((syncedCount / Math.max(1, filtered.length)) * 100)}%</span>
             </div>
-            <div class="mt-2 flex items-baseline gap-2">
-              <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${syncedCount}">${syncedCount}</strong>
-              <span class="text-xs ${queuedCount > 0 ? 'text-[#92400E] font-medium' : 'text-[#525B56]'}">
-                ${queuedCount > 0 ? `(${queuedCount} queued)` : 'All synced'}
+            <div class="mt-2.5 flex items-baseline gap-2">
+              <strong class="text-[22px] font-semibold text-[#111613] tabular-nums tracking-tight leading-none ae-kpi-counter" data-target="${syncedCount}">${syncedCount}</strong>
+              <span class="text-xs ${queuedCount > 0 ? 'text-[#92400E] font-medium' : 'text-[#646E68]'}">
+                ${queuedCount > 0 ? `${queuedCount} queued offline` : 'All synced'}
               </span>
             </div>
-            <div class="text-[11px] text-[#646E68] mt-2 flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full ${queuedCount === 0 ? 'bg-[#247B50]' : 'bg-[#D97706]'}"></span>
-              <span>Google Sheets API v4</span>
+            <div class="text-[11px] text-[#646E68] mt-3 flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full ${queuedCount === 0 ? 'bg-[#247B50]' : 'bg-[#D97706]'}"></span>
+              <span>Google Sheets</span>
             </div>
           </div>
 
           <!-- Metric 3: Enumeration Velocity -->
-          <div class="p-4 bg-white">
-            <div class="flex items-center justify-between text-xs text-[#525B56]">
-              <span>Median Duration</span>
-              <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${paceBadgeClass}">
+          <div class="p-5 bg-white">
+            <div class="flex items-center justify-between gap-2 text-xs text-[#525B56]">
+              <span>Median duration</span>
+              <span class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium ${paceBadgeClass}">
                 ${paceBadgeText}
               </span>
             </div>
-            <div class="mt-2 flex items-baseline gap-2">
-              <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${medianDuration}" data-suffix="s">
+            <div class="mt-2.5 flex items-baseline gap-2">
+              <strong class="text-[22px] font-semibold text-[#111613] tabular-nums tracking-tight leading-none ae-kpi-counter" data-target="${medianDuration}" data-suffix="s">
                 ${Math.floor(medianDuration / 60)}m ${medianDuration % 60}s
               </strong>
-              <span class="text-xs text-[#525B56]">mean ${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s</span>
+              <span class="text-xs text-[#646E68] tabular-nums">avg ${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s</span>
             </div>
-            <div class="text-[11px] text-[#646E68] mt-2 flex items-center justify-between">
-              <span>Target: ~30s/q (${targetLabel})</span>
-              <span class="text-[10px] text-[#8C9590]">Min: 2.5s/q (${minSpeederSec}s)</span>
+            <div class="text-[11px] text-[#646E68] mt-3 flex items-center justify-between tabular-nums">
+              <span>Target ~30s/q (${targetLabel})</span>
+              <span class="text-[#8C9590]">Min ${minSpeederSec}s</span>
             </div>
           </div>
 
-          <!-- Metric 4: Yield / Continuous Output -->
-          <div class="p-4 bg-white">
-            <div class="flex items-center justify-between text-xs text-[#525B56]">
+          <!-- Metric 4: Primary Continuous Output -->
+          <div class="p-5 bg-white">
+            <div class="flex items-center justify-between gap-2 text-xs text-[#525B56]">
               <span class="truncate">${AEApp.escapeHtml(metric4Title)}</span>
-              <span class="text-[11px] font-semibold text-[#247B50] tabular-nums">${approvedCount} sign-offs</span>
+              <span class="text-[11px] font-medium text-[#247B50] tabular-nums shrink-0">${approvedCount} approved</span>
             </div>
-            <div class="mt-2 flex items-baseline gap-2">
-              <strong class="text-[26px] font-semibold text-[#111613] tabular-nums tracking-tight ae-kpi-counter" data-target="${metric4Value}">
+            <div class="mt-2.5 flex items-baseline gap-2">
+              <strong class="text-[22px] font-semibold text-[#111613] tabular-nums tracking-tight leading-none ae-kpi-counter" data-target="${metric4Value}">
                 ${metric4Value}
               </strong>
-              ${metric4Unit ? `<span class="text-xs text-[#525B56]">${AEApp.escapeHtml(metric4Unit)}</span>` : ''}
-              ${flaggedCount > 0 ? `<span class="ml-auto text-xs font-semibold px-2 py-0.5 rounded bg-[#FFEDEA] text-[#831C1E] border border-[#F5C2C0]">${flaggedCount} flagged</span>` : ''}
+              ${metric4Unit ? `<span class="text-xs text-[#646E68]">${AEApp.escapeHtml(metric4Unit)}</span>` : ''}
+              ${flaggedCount > 0 ? `<span class="ml-auto text-[11px] font-medium px-2 py-0.5 rounded-[4px] bg-[#FFEDEA] text-[#831C1E]">${flaggedCount} flagged</span>` : ''}
             </div>
-            <div class="text-[11px] text-[#646E68] mt-2">Quality assurance seal intact</div>
+            <div class="text-[11px] text-[#646E68] mt-3">Quality checks intact</div>
           </div>
         </div>
       </div>
@@ -2919,31 +2913,31 @@ window.AEAnalytics = {
   renderSubViewNavigation(filteredCount) {
     const tabGroups = [
       {
-        name: 'Records & Operations',
+        name: 'Overview',
         tabs: [
-          { id: 'summary', label: 'Summaries', icon: 'fa-chart-column' },
-          { id: 'individual', label: `Individual (${filteredCount})`, icon: 'fa-id-card' },
-          { id: 'gps', label: 'GPS Plots', icon: 'fa-location-dot' },
-          { id: 'text', label: 'Verbatims', icon: 'fa-quote-left' }
+          { id: 'summary', label: 'Summaries' },
+          { id: 'individual', label: `Responses (${filteredCount})` },
+          { id: 'gps', label: 'GPS Plots' },
+          { id: 'text', label: 'Open-Ended' }
         ]
       },
       {
-        name: 'Econometric & Trials',
+        name: 'Analysis',
         tabs: [
-          { id: 'insights', label: 'Key Drivers', icon: 'fa-wand-magic-sparkles' },
-          { id: 'regression', label: 'OLS Regression', icon: 'fa-chart-line' },
-          { id: 'impact', label: 'Causal Impact (DiD)', icon: 'fa-scale-balanced' },
-          { id: 'anova', label: 'ANOVA Trials', icon: 'fa-layer-group' },
-          { id: 'crosstab', label: 'Cross-Tabs (χ²)', icon: 'fa-table-cells-large' },
-          { id: 'correlations', label: 'Correlations & Matrix', icon: 'fa-arrows-split-up-and-left' }
+          { id: 'insights', label: 'Key Findings' },
+          { id: 'regression', label: 'Regression (OLS)' },
+          { id: 'impact', label: 'Causal Impact' },
+          { id: 'anova', label: 'Group Comparison' },
+          { id: 'crosstab', label: 'Cross-Tabs (χ²)' },
+          { id: 'correlations', label: 'Correlations' }
         ]
       },
       {
-        name: 'Forensics & QA',
+        name: 'Field Quality',
         tabs: [
-          { id: 'pacing', label: 'Pacing & Quotas', icon: 'fa-business-time' },
-          { id: 'forensics', label: 'QA Forensics', icon: 'fa-shield-halved' },
-          { id: 'spatial', label: 'Spatial Autocorrelation', icon: 'fa-earth-africa' }
+          { id: 'pacing', label: 'Pacing & Quotas' },
+          { id: 'forensics', label: 'Data Quality' },
+          { id: 'spatial', label: 'Spatial Clusters' }
         ]
       }
     ];
@@ -2959,29 +2953,22 @@ window.AEAnalytics = {
       .filter((group) => group.tabs.length > 0);
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-2 space-y-1.5">
-        <div class="flex items-center justify-between px-1">
-          <div class="flex items-center gap-2">
-            <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Analytical Views</span>
-            <span class="text-[11px] text-[#A0AAA3]">· ${isPublicReportMode ? 'Aggregated Live Perspectives (PII-Safe)' : '12 Multi-Dimensional Analytical Perspectives'}</span>
-          </div>
-        </div>
-        <div class="flex flex-wrap items-start gap-x-3 gap-y-2 pt-2 border-t border-[#F0F2F0]">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] px-4 py-3">
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-2.5">
           ${filteredTabGroups
             .map(
               (group, gIdx) => `
-                <div class="flex flex-wrap items-center gap-1 ${gIdx > 0 ? 'lg:border-l lg:border-[#E4E7E4] lg:pl-3' : ''}">
-                  <span class="text-[10px] font-bold text-[#88928B] uppercase tracking-wider mr-1 shrink-0">${group.name}:</span>
+                <div class="flex flex-wrap items-center gap-1.5 ${gIdx > 0 ? 'lg:border-l lg:border-[#EFEFEF] lg:pl-5' : ''}">
+                  <span class="text-[11px] font-medium text-[#646E68] mr-1 shrink-0">${group.name}</span>
                   ${group.tabs
                     .map(
                       (t) => `
                         <button type="button" onclick="AEApp.setAnalyticsTab('${t.id}')"
-                          class="h-7 px-2.5 rounded-[5px] text-xs font-medium inline-flex items-center gap-1.5 transition-colors ae-press shrink-0 ${
+                          class="h-7 px-3 rounded-[5px] text-xs font-medium inline-flex items-center transition-colors ae-press shrink-0 ${
                             this.activeTab === t.id
-                              ? 'bg-[#141A17] text-white font-semibold shadow-xs'
-                              : 'bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] hover:bg-[#EAECE9]'
+                              ? 'bg-[#141A17] text-white font-semibold'
+                              : 'bg-[#F8F9F8] text-[#525B56] hover:text-[#111613] hover:bg-[#EAECE9]'
                           }">
-                          <i class="fa-solid ${t.icon} text-[10px] ${this.activeTab === t.id ? 'text-[#3FC07A]' : 'text-[#646E68]'}"></i>
                           <span>${t.label}</span>
                         </button>
                       `
@@ -3037,48 +3024,47 @@ window.AEAnalytics = {
     const cleanDesc = q.description ? this.cleanQuestionTitle(q.description, {}, survey) : '';
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 sm:p-5 shadow-xs space-y-4 ${isSub ? 'ml-4 sm:ml-6 border-l-4 border-l-[#247B50]/40' : ''}">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-5 ${isSub ? 'ml-4 sm:ml-6 border-l-4 border-l-[#247B50]/35' : ''}">
         <!-- Card Header: Title, Metadata, Type Badge & Sub-Tab Switcher -->
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#EFEFEF]">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-[#EFEFEF]">
           <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="text-xs font-semibold text-[#247B50]">Question ${AEApp.escapeHtml(displayLabel)}</span>
-              ${isSub ? `<span class="px-1.5 py-0.5 rounded-[3px] bg-[#DCFAE5] text-[#04250E] text-[10px] font-semibold">Sub-question</span>` : ''}
-              <span class="text-[11px] text-[#525B56]">·</span>
-              <span class="px-2 py-0.5 rounded-[4px] bg-[#F4F6F4] text-[#525B56] text-[11px] font-medium border border-[#CFD5D0]">
-                ${this.formatQuestionTypeLabel(q.type)}
-              </span>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <span class="font-semibold text-[#247B50]">Question ${AEApp.escapeHtml(displayLabel)}</span>
+              ${isSub ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-[10.5px] font-medium">Sub-question</span>` : ''}
+              <span class="text-[#CFD5D0]">&middot;</span>
+              <span class="text-[11px] text-[#646E68]">${this.formatQuestionTypeLabel(q.type)}</span>
+              <span class="text-[#CFD5D0]">&middot;</span>
               <span class="text-[11px] text-[#525B56] tabular-nums">
-                · <strong>${answeredCount}</strong> answered (${answeredPct}%) · <strong>${skippedCount}</strong> skipped
+                <strong class="text-[#111613]">${answeredCount}</strong> answered (${answeredPct}%) &middot; ${skippedCount} skipped
               </span>
             </div>
-            <h3 class="text-base font-semibold text-[#111613] mt-1 ae-break-words">${AEApp.escapeHtml(cleanTitle)}</h3>
-            ${cleanDesc ? `<p class="text-xs text-[#525B56] mt-0.5 ae-break-words">${AEApp.escapeHtml(cleanDesc)}</p>` : ''}
+            <h3 class="text-[15px] font-semibold text-[#111613] mt-1.5 leading-snug ae-break-words" style="text-wrap: balance;">${AEApp.escapeHtml(cleanTitle)}</h3>
+            ${cleanDesc ? `<p class="text-xs text-[#525B56] mt-1 ae-break-words leading-relaxed">${AEApp.escapeHtml(cleanDesc)}</p>` : ''}
           </div>
 
           <!-- Card Header Actions & Sub-Tabs -->
           <div class="flex flex-wrap items-center gap-2 shrink-0">
             <!-- 4-Tab Switcher -->
-            <div class="inline-flex rounded-[6px] border border-[#CFD5D0] p-0.5 bg-[#F8F9F8] text-xs font-medium">
+            <div class="inline-flex rounded-[6px] border border-[#E4E7E4] p-0.5 bg-[#F8F9F8] text-xs font-medium">
               <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'chart')"
                 title="Visual Distribution Chart"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'chart' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
-                <i class="fa-solid fa-chart-column mr-1 text-[10px]"></i> Chart
+                Chart
               </button>
               <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'table')"
                 title="Frequency Tabulation Table"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'table' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
-                <i class="fa-solid fa-table mr-1 text-[10px]"></i> Tabulation
+                Table
               </button>
               <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'stats')"
                 title="Statistical Measures"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'stats' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
-                <i class="fa-solid fa-calculator mr-1 text-[10px]"></i> Stats
+                Stats
               </button>
               <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'verbatim')"
                 title="Open Text & Notes"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'verbatim' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
-                <i class="fa-solid fa-quote-left mr-1 text-[10px]"></i> Notes
+                Notes
               </button>
             </div>
 
@@ -3086,7 +3072,7 @@ window.AEAnalytics = {
             <button type="button" onclick="AEAnalytics.exportQuestionChartImage('${q.id}')"
               title="Download High-Res PNG Chart"
               aria-label="Download High-Res PNG Chart"
-              class="h-7 w-7 rounded-[4px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
+              class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
               <i class="fa-solid fa-camera text-[11px]"></i>
             </button>
 
@@ -3094,7 +3080,7 @@ window.AEAnalytics = {
             <button type="button" onclick="AEAnalytics.exportQuestionCsv('${q.id}')"
               title="Export Question Tabulation CSV"
               aria-label="Export Question Tabulation CSV"
-              class="h-7 w-7 rounded-[4px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
+              class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
               <i class="fa-solid fa-download text-[11px]"></i>
             </button>
           </div>
@@ -3870,37 +3856,37 @@ window.AEAnalytics = {
 
   renderQuestionVerbatimPanel(q, values) {
     if (values.length === 0) {
-      return '<div class="p-6 text-center text-xs text-[#646E68] bg-[#F8F9F8] rounded-[6px]">No responses recorded for this question yet.</div>';
+      return '<div class="p-8 text-center text-xs text-[#646E68] bg-[#F8F9F8] rounded-[6px]">No responses have been recorded for this question yet.</div>';
     }
 
     return `
-      <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
+      <div class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
         ${values
           .slice(0, 25)
           .map((item) => {
             const formatted = this.formatAnswerDisplay(item.val, q.type);
             const copyStr = typeof item.val === 'string' ? item.val : formatted;
             return `
-              <div class="p-2.5 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-start justify-between gap-3 text-xs">
+              <div class="p-3.5 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-start justify-between gap-3 text-xs">
                 <div class="min-w-0">
                   <div class="text-[#111613] font-medium ae-break-words leading-relaxed">
                     ${AEApp.escapeHtml(formatted)}
                   </div>
-                  <div class="text-[10px] text-[#646E68] mt-1.5 flex flex-wrap items-center gap-2">
-                    <span class="font-semibold text-[#525B56]">${AEApp.escapeHtml(item.enumerator || 'Enumerator')}</span>
-                    <span>·</span>
+                  <div class="text-[11px] text-[#646E68] mt-1.5 flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-[#525B56]">${AEApp.escapeHtml(item.enumerator || 'Enumerator')}</span>
+                    <span>&middot;</span>
                     <span class="tabular-nums">${new Date(item.submittedAt || Date.now()).toISOString().replace('T', ' ').slice(0, 16)}</span>
                     ${
                       item.syncStatus
-                        ? `<span>·</span><span class="text-[9px] uppercase px-1 py-0.2 rounded ${
+                        ? `<span>&middot;</span><span class="text-[10.5px] px-1.5 py-0.5 rounded-[4px] ${
                             item.syncStatus === 'synced' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'
-                          }">${item.syncStatus}</span>`
+                          }">${item.syncStatus === 'synced' ? 'Synced' : 'Queued'}</span>`
                         : ''
                     }
                   </div>
                 </div>
                 <button type="button" onclick="AEApp.copyText('${AEApp.escapeJs(copyStr)}', 'Response copied.')"
-                  title="Copy response" class="h-6 w-6 rounded border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center shrink-0 ae-press">
+                  title="Copy response" class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center shrink-0 ae-press">
                   <i class="fa-regular fa-copy text-[10px]"></i>
                 </button>
               </div>
@@ -3916,7 +3902,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderInsightsTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above to explore findings.</div>';
     }
 
     const numQs = this.getNumericQuestions(survey);
@@ -3927,11 +3913,11 @@ window.AEAnalytics = {
 
     // Card 1: Dynamic group ranking on primary numeric vs primary categorical
     let card1Title = primaryCat && primaryNum
-      ? `1. ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryCat, {}, survey).split(/[:\?(]/)[0].trim())} Performance`
-      : '1. Primary Cohort Comparison';
+      ? `${AEApp.escapeHtml(this.cleanQuestionTitle(primaryCat, {}, survey).split(/[:\?(]/)[0].trim())} Comparison`
+      : 'Cohort Comparison';
     let card1Desc = primaryCat && primaryNum
-      ? `Evaluating mean ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryNum, {}, survey).split(/[:\?(]/)[0].trim().toLowerCase())} (${AEApp.escapeHtml(unitLbl)}) across distinct ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryCat, {}, survey).split(/[:\?(]/)[0].trim().toLowerCase())} cohorts (n=${responses.length}).`
-      : 'Evaluating outcome disparities across distinct categorical cohorts once both categorical and numeric/rating responses are collected.';
+      ? `Comparing average ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryNum, {}, survey).split(/[:\?(]/)[0].trim().toLowerCase())} (${AEApp.escapeHtml(unitLbl)}) across ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryCat, {}, survey).split(/[:\?(]/)[0].trim().toLowerCase())} groups (n = ${responses.length}).`
+      : 'Group comparisons will appear once both categorical and numeric or rating responses are collected.';
     let card1RowsHtml = '';
 
     if (primaryCat && primaryNum) {
@@ -3955,8 +3941,8 @@ window.AEAnalytics = {
           const lift = baseline > 0 ? Math.round(((item.mean - baseline) / baseline) * 100) : 0;
           return `
             <div class="flex justify-between items-center ${isBase ? 'text-[#525B56]' : 'text-[#111613]'}">
-              <span>${AEApp.escapeHtml(String(item.label).substring(0, 38))} (n=${item.count})</span>
-              <strong class="font-mono ${isBase ? '' : 'text-[#247B50]'}">${Math.round(item.mean).toLocaleString()} ${AEApp.escapeHtml(unitLbl)} ${isBase ? '(Baseline)' : `(${lift >= 0 ? '+' : ''}${lift}%)`}</strong>
+              <span>${AEApp.escapeHtml(String(item.label).substring(0, 38))} <span class="text-[#646E68] tabular-nums">(n=${item.count})</span></span>
+              <strong class="tabular-nums font-semibold ${isBase ? '' : 'text-[#247B50]'}">${Math.round(item.mean).toLocaleString()} ${AEApp.escapeHtml(unitLbl)} ${isBase ? '(Baseline)' : `(${lift >= 0 ? '+' : ''}${lift}%)`}</strong>
             </div>
           `;
         }).join('');
@@ -3965,8 +3951,8 @@ window.AEAnalytics = {
 
     if (!card1RowsHtml) {
       card1RowsHtml = `
-        <div class="text-xs text-[#646E68] py-1">
-          Collect responses across at least 2 distinct categorical groups with a numeric or rating question to rank cohort performance automatically.
+        <div class="text-xs text-[#646E68] py-1 leading-relaxed">
+          Once responses span at least two groups alongside a numeric or rating question, we will rank group averages here automatically.
         </div>
       `;
     }
@@ -3979,66 +3965,66 @@ window.AEAnalytics = {
 
     return `
       <div class="space-y-6">
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
-          <div class="border-b border-[#EFEFEF] pb-3">
-            <h2 class="text-base font-semibold text-[#111613]">Automated Key Driver Discovery</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Machine-synthesized findings evaluating outcome disparities, factor differentials, and field telemetry across ${responses.length} active records.
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-5">
+          <div class="border-b border-[#EFEFEF] pb-4">
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Key Findings &amp; Drivers</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Summary of group differences, key factors, and response quality across ${responses.length} responses in scope.
             </p>
           </div>
 
           <!-- Deep-Dive Cards Grid -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
             <!-- Card 1: Primary Cohort Ranking -->
-            <div class="p-4 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-[#111613]">${card1Title}</span>
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#DCFAE5] text-[#04250E]">Key Driver</span>
+            <div class="p-5 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-3.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-[#111613]">${card1Title}</span>
+                <span class="px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium bg-[#DCFAE5] text-[#04250E]">Key driver</span>
               </div>
               <p class="text-xs text-[#525B56] leading-relaxed">
                 ${card1Desc}
               </p>
-              <div class="border-t border-[#EFEFEF] pt-2 space-y-1.5 text-xs">
+              <div class="border-t border-[#EFEFEF] pt-3 space-y-2 text-xs">
                 ${card1RowsHtml}
               </div>
             </div>
 
             <!-- Card 2: Factor Differential / Telemetry Synthesis -->
-            <div class="p-4 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-[#111613]">${isMaize ? '2. Fertilizer Input Co-Application Lift' : '2. Field Execution &amp; Data Integrity Synthesis'}</span>
-                <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#DCFAE5] text-[#04250E]">${isMaize ? "Cohen's d = 0.84" : `Health ${audit.healthScore}/100`}</span>
+            <div class="p-5 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-3.5">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-[#111613]">${isMaize ? 'Fertilizer Co-Application Lift' : 'Field Execution &amp; Data Quality'}</span>
+                <span class="px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium bg-[#DCFAE5] text-[#04250E] tabular-nums">${isMaize ? "Cohen's d = 0.84" : `Health ${audit.healthScore}/100`}</span>
               </div>
               <p class="text-xs text-[#525B56] leading-relaxed">
                 ${isMaize
                   ? 'Co-application of basal DAP with CAN top-dressing generated the highest standardized yield lift (+380 kg/acre average differential).'
-                  : `Automated telemetry check across ${responses.length} submissions: median duration ${Math.floor(audit.medianDur / 60)}m ${audit.medianDur % 60}s against ${Math.floor(audit.targetDurationSec / 60)}m target pace.`}
+                  : `Quality summary across ${responses.length} submissions: median duration ${Math.floor(audit.medianDur / 60)}m ${audit.medianDur % 60}s against a ${Math.floor(audit.targetDurationSec / 60)}m target pace.`}
               </p>
-              <div class="border-t border-[#EFEFEF] pt-2 space-y-1.5 text-xs">
+              <div class="border-t border-[#EFEFEF] pt-3 space-y-2 text-xs">
                 ${isMaize
                   ? `<div class="flex justify-between items-center text-[#111613]">
                       <span>Basal DAP + CAN Top-dressing</span>
-                      <strong class="font-mono text-[#247B50]">+28.5% yield lift</strong>
+                      <strong class="tabular-nums font-semibold text-[#247B50]">+28.5% yield lift</strong>
                     </div>
                     <div class="flex justify-between items-center text-[#111613]">
                       <span>Organic Manure Co-Application</span>
-                      <strong class="font-mono text-[#247B50]">+14.2% yield lift</strong>
+                      <strong class="tabular-nums font-semibold text-[#247B50]">+14.2% yield lift</strong>
                     </div>
                     <div class="flex justify-between items-center text-[#525B56]">
                       <span>Zero Fertilizer Control</span>
-                      <strong class="font-mono">Baseline</strong>
+                      <strong class="font-medium">Baseline</strong>
                     </div>`
                   : `<div class="flex justify-between items-center text-[#111613]">
-                      <span>Cloud Synced Records</span>
-                      <strong class="font-mono text-[#247B50]">${syncedCount} / ${responses.length} (${Math.round((syncedCount / Math.max(1, responses.length)) * 100)}%)</strong>
+                      <span>Synced to cloud</span>
+                      <strong class="tabular-nums font-semibold text-[#247B50]">${syncedCount} / ${responses.length} (${Math.round((syncedCount / Math.max(1, responses.length)) * 100)}%)</strong>
                     </div>
                     <div class="flex justify-between items-center text-[#111613]">
-                      <span>Supervisor Approved Sign-offs</span>
-                      <strong class="font-mono text-[#247B50]">${approvedCount} / ${responses.length}</strong>
+                      <span>Supervisor approved</span>
+                      <strong class="tabular-nums font-semibold text-[#247B50]">${approvedCount} / ${responses.length}</strong>
                     </div>
                     <div class="flex justify-between items-center text-[#525B56]">
-                      <span>Flagged Speeders / Anomalies</span>
-                      <strong class="font-mono">${audit.flaggedCount} records</strong>
+                      <span>Flagged for review</span>
+                      <strong class="tabular-nums font-medium">${audit.flaggedCount} records</strong>
                     </div>`}
               </div>
             </div>
@@ -4438,20 +4424,20 @@ window.AEAnalytics = {
     }
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
+        <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">Bivariate Correlations &amp; Factor Impact Matrix</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Evaluating linear correlations (Pearson r), treatment lifts, standardized effect sizes (Cohen's d), and Welch's t-test hypothesis significance.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Correlations &amp; Factor Impact</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Linear relationships (Pearson r), group lift, effect sizes (Cohen's d), and Welch's t-test significance.
             </p>
           </div>
           ${
             targetQ
               ? `
             <div class="flex items-center gap-1.5 self-start sm:self-auto text-xs">
-              <span class="font-semibold text-[#111613]">Benchmark Metric (Y):</span>
-              <span class="px-2 py-0.5 rounded-[4px] bg-[#FAFBF9] border border-[#CFD5D0] font-semibold text-[#247B50]">
+              <span class="font-medium text-[#646E68]">Outcome metric:</span>
+              <span class="px-2.5 py-0.5 rounded-[4px] bg-[#FAFBF9] border border-[#E4E7E4] font-semibold text-[#247B50]">
                 ${AEApp.escapeHtml(targetQ.title.substring(0, 32))} (${unitLabel})
               </span>
             </div>
@@ -4463,17 +4449,17 @@ window.AEAnalytics = {
         ${correlationMatrixHtml}
 
         <!-- Factor Lift Table -->
-        <div class="space-y-2">
+        <div class="space-y-2.5">
           <div class="flex items-center justify-between">
-            <h3 class="text-xs font-semibold text-[#111613]">Treatment Factor Lift vs. Control Benchmark</h3>
-            <span class="text-[11px] text-[#646E68]">Benchmarked against outcome: ${targetQ ? AEApp.escapeHtml(targetQ.title.substring(0, 40)) : 'Outcome'}</span>
+            <h3 class="text-xs font-semibold text-[#111613]">Group Lift vs. Baseline</h3>
+            <span class="text-[11px] text-[#646E68]">Compared against: ${targetQ ? AEApp.escapeHtml(targetQ.title.substring(0, 40)) : 'Outcome'}</span>
           </div>
 
           ${
             factorStats.length === 0
               ? `
-            <div class="p-6 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px]">
-              No categorical treatments detected with sufficient sample split to evaluate effect size.
+            <div class="p-8 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px]">
+              No categorical groups have enough responses yet to compare effect sizes.
             </div>
           `
               : `
@@ -4702,57 +4688,54 @@ window.AEAnalytics = {
     const maxAbsImpactDelta = Math.max(0.25, ...impactRows.map((r) => Math.abs(Number(r.delta || 0))));
 
     return `
-      <div class="space-y-5">
+      <div class="space-y-6">
         <!-- 1. TOP CONTROL STRIP -->
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3.5">
-          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-[#EFEFEF] pb-3.5">
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-3 border-b border-[#EFEFEF] pb-4">
             <div>
-              <div class="flex items-center gap-2 flex-wrap">
-                <h2 class="text-base font-semibold text-[#111613]">Qualitative &amp; Verbatim Intelligence</h2>
-                <span class="px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[10px] font-bold tabular-nums">
-                  ${records.length} Coded Verbatim${records.length === 1 ? '' : 's'}
-                </span>
-                <span class="px-2 py-0.5 rounded bg-[#F4F6F4] text-[#525B56] text-[10px] font-semibold tabular-nums">
-                  ${textQuestions.length} Open-Ended Q${textQuestions.length === 1 ? '' : 's'}
+              <div class="flex items-baseline gap-2.5 flex-wrap">
+                <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Open-Ended Responses</h2>
+                <span class="text-xs text-[#646E68] tabular-nums">
+                  ${records.length} response${records.length === 1 ? '' : 's'} &middot; ${textQuestions.length} question${textQuestions.length === 1 ? '' : 's'}
                 </span>
               </div>
-              <p class="text-xs text-[#525B56] mt-0.5">
-                Offline-first multilingual NLP with negation-aware sentiment, auto-thematic coding, segment cross-tabs, and executive synthesis.
+              <p class="text-xs text-[#525B56] mt-1 leading-relaxed" style="text-wrap: pretty;">
+                Browse written feedback, recurring themes, sentiment balance, and how topics relate to your scores.
               </p>
             </div>
 
             <!-- Action Buttons -->
             <div class="flex flex-wrap items-center gap-2">
               <button type="button" ${busyAttr} onclick="AEAnalytics.translateVerbatimsCloud('${safeSurveyIdJs}')"
-                class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press disabled:opacity-50">
+                class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press disabled:opacity-50">
                 <i class="fa-solid ${this.verbatimBusy ? 'fa-spinner fa-spin' : 'fa-language'} text-[#247B50]"></i>
-                <span>Translate Non-English</span>
+                <span>Translate</span>
               </button>
               <button type="button" ${busyAttr} onclick="AEAnalytics.runAiVerbatimBriefing('${safeSurveyIdJs}')"
-                class="h-8 px-2.5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press disabled:opacity-50">
+                class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press disabled:opacity-50">
                 <i class="fa-solid ${this.verbatimBusy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[#7CE5A5]"></i>
-                <span>AI Deep Summary</span>
+                <span>AI Summary</span>
               </button>
               <button type="button" onclick="AEAnalytics.exportVerbatimCsv('${safeSurveyIdJs}')"
-                class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
+                class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
                 <i class="fa-solid fa-file-csv text-[#247B50]"></i>
-                <span>Export Coded CSV</span>
+                <span>Export CSV</span>
               </button>
               <button type="button" onclick="AEAnalytics.copyVerbatimBriefing('${safeSurveyIdJs}')"
-                class="h-8 px-2.5 rounded-[6px] border border-[#247B50]/40 bg-[#F4FAF6] hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
+                class="h-8 px-3 rounded-[6px] border border-[#247B50]/35 bg-[#F8FBF9] hover:bg-[#DCFAE5]/60 text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
                 <i class="fa-regular fa-copy"></i>
-                <span>Copy Executive Briefing</span>
+                <span>Copy Briefing</span>
               </button>
             </div>
           </div>
 
           <!-- Selectors Row: Question Selector + Segment-By Selector -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div class="space-y-1">
-              <label class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Open-Ended Question Scope</label>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium text-[#525B56] block">Question scope</label>
               <select onchange="AEAnalytics.setVerbatimQuestion(this.value)"
                 class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
-                <option value="all" ${activeQId === 'all' ? 'selected' : ''}>All Open-Ended Questions (${textQuestions.length})</option>
+                <option value="all" ${activeQId === 'all' ? 'selected' : ''}>All open-ended questions (${textQuestions.length})</option>
                 ${textQuestions
                   .map((q) => {
                     const qNum = numMap[q.id]?.label || '';
@@ -4764,8 +4747,8 @@ window.AEAnalytics = {
               </select>
             </div>
 
-            <div class="space-y-1">
-              <label class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Segment Themes By</label>
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium text-[#525B56] block">Break down themes by</label>
               <select onchange="AEAnalytics.setVerbatimSegment(this.value)"
                 class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
                 ${segmentOptions
@@ -4782,15 +4765,15 @@ window.AEAnalytics = {
         ${
           activeQId === 'all' && byQuestion.length > 1
             ? `<!-- 1B. PER-QUESTION VERBATIM OVERVIEW STRIP -->
-              <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
-                <div class="flex items-center justify-between gap-2">
+              <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-3.5">
+                <div class="flex items-baseline justify-between gap-2">
                   <div>
-                    <h3 class="text-sm font-semibold text-[#111613]">Per-Question Verbatim Breakdown</h3>
-                    <p class="text-[11px] text-[#525B56]">Compare sentiment &amp; top discovered concepts across each open-ended question. Click any card to drill down.</p>
+                    <h3 class="text-sm font-semibold text-[#111613]">By Question</h3>
+                    <p class="text-xs text-[#646E68] mt-0.5">Select any question to filter themes and responses below.</p>
                   </div>
-                  <span class="px-2 py-0.5 rounded bg-[#F4F6F4] text-[#525B56] text-[10px] font-bold tabular-nums shrink-0">${byQuestion.length} Questions</span>
+                  <span class="text-xs text-[#646E68] tabular-nums shrink-0">${byQuestion.length} questions</span>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
                   ${byQuestion
                     .map((bq) => {
                       const qObj = qLookup[bq.qId];
@@ -4804,13 +4787,13 @@ window.AEAnalytics = {
                       const concepts = (bq.topTerms || []).slice(0, 3);
                       return `
                         <button type="button" onclick="AEAnalytics.setVerbatimQuestion('${AEApp.escapeJs(bq.qId)}')"
-                          class="text-left p-3 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] hover:border-[#247B50] hover:bg-[#F4FAF6] transition-colors space-y-2 ae-press">
+                          class="text-left p-4 rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] hover:border-[#247B50]/60 hover:bg-[#F8FBF9] transition-colors space-y-2.5 ae-press">
                           <div class="flex items-start justify-between gap-2">
                             <div class="flex items-center gap-1.5 min-w-0">
-                              <span class="px-1.5 py-0.5 rounded bg-[#141A17] text-white text-[10px] font-bold tabular-nums shrink-0">${AEApp.escapeHtml(qCode)}</span>
+                              <span class="px-1.5 py-0.5 rounded-[4px] bg-[#F4F6F4] border border-[#E4E7E4] text-[#247B50] text-[10.5px] font-semibold tabular-nums shrink-0">${AEApp.escapeHtml(qCode)}</span>
                               <span class="text-xs font-semibold text-[#111613] truncate" title="${AEApp.escapeAttr(cleanTitle)}">${AEApp.escapeHtml(cleanTitle)}</span>
                             </div>
-                            <span class="px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[10px] font-bold text-[#111613] tabular-nums shrink-0">${bq.count} resp</span>
+                            <span class="text-[11px] text-[#646E68] tabular-nums shrink-0">${bq.count}</span>
                           </div>
                           <div class="w-full h-1.5 rounded-full bg-[#EFEFEF] overflow-hidden flex" title="Positive: ${bq.positive || 0}, Neutral: ${bq.neutral || 0}, Negative: ${bq.negative || 0}">
                             ${posW > 0 ? `<div style="width: ${posW}%; background-color: #247B50;"></div>` : ''}
@@ -4825,14 +4808,14 @@ window.AEAnalytics = {
                                       .map((c) => {
                                         const termTxt = typeof c === 'string' ? c : (c.term || c.label || '');
                                         return termTxt
-                                          ? `<span class="px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[10px] font-medium text-[#525B56] truncate max-w-[110px]">${AEApp.escapeHtml(termTxt)}</span>`
+                                          ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-white border border-[#E4E7E4] text-[10.5px] text-[#525B56] truncate max-w-[110px]">${AEApp.escapeHtml(termTxt)}</span>`
                                           : '';
                                       })
                                       .join('')
-                                  : '<span class="text-[10px] text-[#646E68]">Click to inspect responses</span>'
+                                  : '<span class="text-[11px] text-[#646E68]">View responses</span>'
                               }
                             </div>
-                            <span class="text-[10px] font-semibold text-[#247B50] shrink-0">Drill down &rarr;</span>
+                            <span class="text-[11px] font-medium text-[#247B50] shrink-0">&rarr;</span>
                           </div>
                         </button>
                       `;
@@ -4844,52 +4827,44 @@ window.AEAnalytics = {
         }
 
         <!-- 2. EXECUTIVE BRIEFING CARD -->
-        <div class="bg-[#F4FAF6] border border-[#247B50]/30 rounded-[8px] p-5 space-y-4 print:bg-white print:border-[#CFD5D0]">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#247B50]/15 pb-3">
-            <div class="flex items-center gap-2">
-              <span class="w-6 h-6 rounded-[6px] bg-[#247B50] text-white flex items-center justify-center text-xs shrink-0">
-                <i class="fa-solid fa-clipboard-list"></i>
-              </span>
-              <div>
-                <h3 class="text-sm font-bold text-[#04250E]">Top Themes &amp; Actionable Recommendations</h3>
-                <p class="text-[11px] text-[#525B56]">Executive Qualitative Briefing · Ready for reports &amp; debriefs</p>
-              </div>
+        <div class="bg-[#F8FBF9] border border-[#247B50]/20 rounded-[8px] p-6 space-y-5 print:bg-white print:border-[#CFD5D0]">
+          <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 border-b border-[#247B50]/15 pb-3.5">
+            <div>
+              <h3 class="font-display text-base font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Summary &amp; Recommendations</h3>
+              <p class="text-xs text-[#646E68] mt-0.5">Key takeaways from open-ended feedback, ready to share.</p>
             </div>
-            <span class="px-2 py-0.5 rounded-[4px] text-[10px] font-bold self-start sm:self-center ${
+            <span class="px-2.5 py-0.5 rounded-[4px] text-[11px] font-medium self-start sm:self-center ${
               briefingProvider === 'gemini'
                 ? 'bg-[#141A17] text-[#7CE5A5]'
-                : 'bg-white text-[#247B50] border border-[#247B50]/30'
+                : 'bg-white text-[#247B50] border border-[#247B50]/25'
             }">
-              ${briefingProvider === 'gemini' ? 'Gemini AI Deep Summary' : 'Offline NLP Synthesis'}
+              ${briefingProvider === 'gemini' ? 'AI Summary' : 'Local Analysis'}
             </span>
           </div>
 
-          <div class="space-y-1.5">
-            <p class="text-sm font-semibold text-[#111613] leading-snug">${AEApp.escapeHtml(briefing.headline || 'No open-ended verbatims available in this slice.')}</p>
+          <div class="space-y-2">
+            <p class="text-sm font-semibold text-[#111613] leading-relaxed" style="text-wrap: pretty;">${AEApp.escapeHtml(briefing.headline || 'No open-ended responses in this filter scope yet.')}</p>
             ${
               briefingBullets.length > 0
-                ? `<ul class="list-disc pl-4 space-y-1 text-xs text-[#37413C]">
+                ? `<ul class="list-disc pl-4 space-y-1.5 text-xs text-[#37413C] leading-relaxed">
                     ${briefingBullets.slice(0, 4).map((b) => `<li>${AEApp.escapeHtml(typeof b === 'string' ? b : String(b))}</li>`).join('')}
                   </ul>`
                 : ''
             }
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <!-- Top Themes Summary -->
-            <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3.5 space-y-2">
-              <div class="text-[11px] font-bold text-[#111613] uppercase tracking-wider flex items-center gap-1.5">
-                <i class="fa-solid fa-layer-group text-[#247B50]"></i>
-                <span>Top Themes</span>
-              </div>
+            <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-4 space-y-2.5">
+              <div class="text-xs font-semibold text-[#111613]">Top themes</div>
               ${
                 briefingThemes.length > 0
-                  ? `<div class="space-y-1.5">
+                  ? `<div class="space-y-2">
                       ${briefingThemes
                         .slice(0, 5)
                         .map((t) => {
                           if (typeof t === 'string') {
-                            return `<div class="text-xs text-[#111613] flex items-start gap-1.5"><span class="text-[#247B50]">•</span><span>${AEApp.escapeHtml(t)}</span></div>`;
+                            return `<div class="text-xs text-[#111613] flex items-start gap-1.5"><span class="text-[#247B50]">&bull;</span><span>${AEApp.escapeHtml(t)}</span></div>`;
                           }
                           const tName = t.name || t.theme || t.label || 'Theme';
                           const pct = t.pct !== undefined ? `${t.pct}%` : '';
@@ -4899,90 +4874,79 @@ window.AEAnalytics = {
                             <div class="flex items-center justify-between gap-2 text-xs">
                               <span class="font-medium text-[#111613] truncate">${AEApp.escapeHtml(tName)}</span>
                               <div class="flex items-center gap-1.5 shrink-0">
-                                ${pct ? `<span class="text-[11px] font-semibold text-[#525B56] tabular-nums">${AEApp.escapeHtml(pct)}</span>` : ''}
-                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${valClass}">${net > 0 ? '+' : ''}${net}%</span>
+                                ${pct ? `<span class="text-[11px] text-[#646E68] tabular-nums">${AEApp.escapeHtml(pct)}</span>` : ''}
+                                <span class="px-1.5 py-0.5 rounded-[4px] text-[10.5px] font-medium tabular-nums ${valClass}">${net > 0 ? '+' : ''}${net}%</span>
                               </div>
                             </div>
                           `;
                         })
                         .join('')}
                     </div>`
-                  : '<p class="text-xs text-[#646E68]">No dominant themes detected yet.</p>'
+                  : '<p class="text-xs text-[#646E68] leading-relaxed">No recurring themes have emerged in this slice yet.</p>'
               }
             </div>
 
             <!-- Actionable Recommendations -->
-            <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3.5 space-y-2">
-              <div class="text-[11px] font-bold text-[#111613] uppercase tracking-wider flex items-center gap-1.5">
-                <i class="fa-solid fa-lightbulb text-[#D97706]"></i>
-                <span>Actionable Recommendations</span>
-              </div>
+            <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-4 space-y-2.5">
+              <div class="text-xs font-semibold text-[#111613]">Recommended actions</div>
               ${
                 briefingRecs.length > 0
-                  ? `<ul class="space-y-1.5 text-xs text-[#111613]">
+                  ? `<ul class="space-y-2 text-xs text-[#111613]">
                       ${briefingRecs
                         .slice(0, 5)
                         .map((item) => {
                           const txt = typeof item === 'string' ? item : (item.text || item.recommendation || item.quote || '');
-                          return `<li class="flex items-start gap-1.5 leading-snug"><span class="text-[#247B50] font-bold">→</span><span class="ae-break-words">${AEApp.escapeHtml(txt)}</span></li>`;
+                          return `<li class="flex items-start gap-2 leading-relaxed"><span class="text-[#247B50] font-semibold">&rarr;</span><span class="ae-break-words">${AEApp.escapeHtml(txt)}</span></li>`;
                         })
                         .join('')}
                     </ul>`
-                  : '<p class="text-xs text-[#646E68]">No explicit recommendations flagged in this slice.</p>'
+                  : '<p class="text-xs text-[#646E68] leading-relaxed">No specific action items were surfaced in these responses.</p>'
               }
             </div>
 
             <!-- Urgent Risk Alerts -->
-            <div class="bg-white border border-[#F5C2C0]/80 rounded-[6px] p-3.5 space-y-2">
-              <div class="text-[11px] font-bold text-[#831C1E] uppercase tracking-wider flex items-center gap-1.5">
-                <i class="fa-solid fa-triangle-exclamation text-[#C4242A]"></i>
-                <span>Urgent Risk Alerts</span>
-              </div>
+            <div class="bg-white border border-[#F5C2C0]/70 rounded-[6px] p-4 space-y-2.5">
+              <div class="text-xs font-semibold text-[#831C1E]">Items needing attention</div>
               ${
                 briefingRisks.length > 0
-                  ? `<ul class="space-y-1.5 text-xs text-[#831C1E]">
+                  ? `<ul class="space-y-2 text-xs text-[#831C1E]">
                       ${briefingRisks
                         .slice(0, 5)
                         .map((item) => {
                           const txt = typeof item === 'string' ? item : (item.text || item.alert || item.quote || '');
-                          return `<li class="flex items-start gap-1.5 leading-snug"><span class="text-[#C4242A] font-bold">!</span><span class="ae-break-words">${AEApp.escapeHtml(txt)}</span></li>`;
+                          return `<li class="flex items-start gap-2 leading-relaxed"><span class="text-[#C4242A] font-semibold">&bull;</span><span class="ae-break-words">${AEApp.escapeHtml(txt)}</span></li>`;
                         })
                         .join('')}
                     </ul>`
-                  : '<p class="text-xs text-[#525B56]">No high-urgency risk alerts detected in active slice.</p>'
+                  : '<p class="text-xs text-[#646E68] leading-relaxed">Nothing flagged for urgent follow-up in this slice.</p>'
               }
             </div>
           </div>
         </div>
 
-        <!-- 2B. THEME-TO-SCORE IMPACT DRIVERS ("Why Did Scores Drop or Rise?") -->
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#EFEFEF] pb-3">
-            <div class="flex items-start gap-2.5 min-w-0">
-              <span class="w-7 h-7 rounded-[6px] bg-[#141A17] text-[#7CE5A5] flex items-center justify-center text-xs shrink-0 mt-0.5">
-                <i class="fa-solid fa-arrows-left-right-to-line"></i>
-              </span>
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-sm font-bold text-[#111613]">Theme-to-Score Impact Drivers (&lsquo;Why Did Scores Drop or Rise?&rsquo;)</h3>
-                  ${
-                    themeImpact.hasMetric && themeImpact.overallMean !== null
-                      ? `<span class="px-2 py-0.5 rounded bg-[#F4F6F4] border border-[#E4E7E4] text-[10px] font-bold text-[#111613] tabular-nums">
-                          Baseline: ${themeImpact.overallMean} (${AEApp.escapeHtml(themeImpact.metricScale || 'score')}) &middot; n=${themeImpact.totalScored}
-                        </span>`
-                      : ''
-                  }
-                </div>
-                <p class="text-[11px] text-[#525B56] mt-0.5">
-                  Quantifies how mentioning each verbatim theme shifts the selected quantitative or ordinal score vs. respondents who did not mention it. Click any bar to filter verbatims.
-                </p>
+        <!-- 2B. THEME-TO-SCORE IMPACT DRIVERS ("What Drives Your Scores") -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-5">
+          <div class="flex flex-col md:flex-row md:items-end justify-between gap-3 border-b border-[#EFEFEF] pb-4">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-baseline gap-2.5">
+                <h3 class="font-display text-base font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">What Drives Your Scores</h3>
+                ${
+                  themeImpact.hasMetric && themeImpact.overallMean !== null
+                    ? `<span class="text-xs text-[#646E68] tabular-nums">
+                        Overall mean: <strong class="text-[#111613]">${themeImpact.overallMean}</strong> (${AEApp.escapeHtml(themeImpact.metricScale || 'score')}) &middot; n = ${themeImpact.totalScored}
+                      </span>`
+                    : ''
+                }
               </div>
+              <p class="text-xs text-[#525B56] mt-1 leading-relaxed" style="text-wrap: pretty;">
+                See how mentioning a theme shifts the average score compared to respondents who didn&rsquo;t. Click any row to read matching responses.
+              </p>
             </div>
 
             ${
               themeImpact.availableMetrics && themeImpact.availableMetrics.length > 0
                 ? `<div class="shrink-0 min-w-[220px] max-w-[320px]">
-                    <label class="text-[10px] font-bold text-[#525B56] uppercase tracking-wider block mb-1">Correlate Against Score</label>
+                    <label class="text-xs font-medium text-[#525B56] block mb-1">Compare against score</label>
                     <select onchange="AEAnalytics.setVerbatimImpactMetric(this.value)"
                       aria-label="Correlate verbatim themes against score metric"
                       class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
@@ -5000,61 +4964,61 @@ window.AEAnalytics = {
 
           ${
             themeImpact.hasMetric && impactRows.length > 0
-              ? `<div class="space-y-2">
+              ? `<div class="space-y-2.5">
                   ${impactRows
                     .map((row) => {
                       const isSelected = this.verbatimThemeFilter === row.themeId;
                       const isNeg = row.delta < 0;
                       const isPos = row.delta > 0;
                       const barPct = Math.min(100, Math.max(6, Math.round((Math.abs(row.delta) / maxAbsImpactDelta) * 100)));
-                      const deltaText = `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(2)} pts vs baseline`;
+                      const deltaText = `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(2)} pts`;
                       const deltaClass = isPos
                         ? 'bg-[#DCFAE5] text-[#04250E]'
                         : isNeg
                         ? 'bg-[#FFEDEA] text-[#831C1E]'
                         : 'bg-[#F4F6F4] text-[#525B56]';
                       const sigBadge = row.isSignificant
-                        ? `<span class="px-1.5 py-0.5 rounded bg-[#141A17] text-[#7CE5A5] text-[10px] font-bold tabular-nums" title="Statistically significant (Welch's t-test, p = ${row.pValue})">p=${row.pValue} ★</span>`
+                        ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#141A17] text-[#7CE5A5] text-[10.5px] font-medium tabular-nums" title="Statistically significant (Welch's t-test, p = ${row.pValue})">p=${row.pValue} *</span>`
                         : row.pValue !== null
-                        ? `<span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[#646E68] text-[10px] font-medium tabular-nums" title="Welch's t-test p-value">p=${row.pValue}</span>`
-                        : `<span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[#88928B] text-[10px] tabular-nums" title="Need at least 2 respondents with and without theme for Welch's t-test">n&lt;2</span>`;
+                        ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#F4F6F4] text-[#646E68] text-[10.5px] tabular-nums" title="Welch's t-test p-value">p=${row.pValue}</span>`
+                        : `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#F4F6F4] text-[#88928B] text-[10.5px] tabular-nums" title="Need at least 2 respondents with and without theme for Welch's t-test">n&lt;2</span>`;
 
                       return `
                         <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(row.themeId)}')"
-                          class="w-full text-left p-2.5 rounded-[6px] border transition-colors ae-press ${
+                          class="w-full text-left p-3.5 rounded-[8px] border transition-colors ae-press ${
                             isSelected
-                              ? 'border-[#247B50] bg-[#F4FAF6] ring-1 ring-[#247B50]'
+                              ? 'border-[#247B50] bg-[#F8FBF9] ring-1 ring-[#247B50]/60'
                               : 'border-[#EFEFEF] bg-[#FAFBF9] hover:border-[#CFD5D0] hover:bg-white'
                           }">
-                          <div class="grid grid-cols-1 lg:grid-cols-12 items-center gap-2">
+                          <div class="grid grid-cols-1 lg:grid-cols-12 items-center gap-3">
                             <div class="lg:col-span-4 flex items-center gap-2 min-w-0">
-                              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(row.color || '#247B50')}"></span>
+                              <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(row.color || '#247B50')}"></span>
                               <span class="text-xs font-semibold text-[#111613] truncate" title="${AEApp.escapeAttr(row.name)}">${AEApp.escapeHtml(row.name)}</span>
-                              <span class="text-[10px] text-[#646E68] tabular-nums shrink-0">(n=${row.nWith})</span>
+                              <span class="text-[11px] text-[#646E68] tabular-nums shrink-0">(n=${row.nWith})</span>
                             </div>
 
                             <!-- Diverging Horizontal Impact Bar (Negative Left / Positive Right) -->
                             <div class="lg:col-span-4 flex items-center gap-0">
-                              <div class="w-1/2 flex justify-end pr-1">
+                              <div class="w-1/2 flex justify-end pr-1.5">
                                 ${
                                   isNeg
-                                    ? `<div class="h-3 rounded-l-[3px] bg-[#C4242A]" style="width: ${barPct}%;" title="${AEApp.escapeAttr(deltaText)}"></div>`
-                                    : '<div class="h-3 w-full"></div>'
+                                    ? `<div class="h-2.5 rounded-l-full bg-[#C4242A]" style="width: ${barPct}%;" title="${AEApp.escapeAttr(deltaText)}"></div>`
+                                    : '<div class="h-2.5 w-full"></div>'
                                 }
                               </div>
-                              <div class="w-[2px] h-4 bg-[#9CA3AF] shrink-0"></div>
-                              <div class="w-1/2 flex justify-start pl-1">
+                              <div class="w-[1.5px] h-4 bg-[#CFD5D0] shrink-0"></div>
+                              <div class="w-1/2 flex justify-start pl-1.5">
                                 ${
                                   isPos
-                                    ? `<div class="h-3 rounded-r-[3px] bg-[#247B50]" style="width: ${barPct}%;" title="${AEApp.escapeAttr(deltaText)}"></div>`
-                                    : '<div class="h-3 w-full"></div>'
+                                    ? `<div class="h-2.5 rounded-r-full bg-[#247B50]" style="width: ${barPct}%;" title="${AEApp.escapeAttr(deltaText)}"></div>`
+                                    : '<div class="h-2.5 w-full"></div>'
                                 }
                               </div>
                             </div>
 
-                            <div class="lg:col-span-4 flex flex-wrap items-center justify-end gap-1.5 text-[11px]">
-                              <span class="px-2 py-0.5 rounded font-bold tabular-nums ${deltaClass}">${AEApp.escapeHtml(deltaText)}</span>
-                              <span class="text-[#525B56] tabular-nums text-[10px]">${row.meanWith} vs ${row.meanWithout}</span>
+                            <div class="lg:col-span-4 flex flex-wrap items-center justify-end gap-2 text-[11px]">
+                              <span class="px-2 py-0.5 rounded-[4px] font-semibold tabular-nums ${deltaClass}">${AEApp.escapeHtml(deltaText)}</span>
+                              <span class="text-[#646E68] tabular-nums">${row.meanWith} vs ${row.meanWithout}</span>
                               ${sigBadge}
                             </div>
                           </div>
@@ -5063,18 +5027,18 @@ window.AEAnalytics = {
                     })
                     .join('')}
                 </div>
-                <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-[10px] text-[#525B56]">
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-[#646E68]">
                   <div class="flex items-center gap-4">
-                    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2 rounded-xs bg-[#C4242A]"></span>Drag on Score (Negative Delta)</span>
-                    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2 rounded-xs bg-[#247B50]"></span>Lift on Score (Positive Delta)</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2 rounded-full bg-[#C4242A]"></span>Lower score</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2 rounded-full bg-[#247B50]"></span>Higher score</span>
                   </div>
-                  <span>Sorted by |Impact Delta| &middot; Welch&rsquo;s two-sample t-test (&alpha; = 0.05)</span>
+                  <span>Ordered by impact size &middot; Welch&rsquo;s t-test (&alpha; = 0.05)</span>
                 </div>`
-              : `<p class="text-xs text-[#646E68] py-3 text-center">
+              : `<p class="text-xs text-[#646E68] py-4 text-center leading-relaxed">
                   ${
                     themeImpact.hasMetric
-                      ? 'Collect scored responses with open-ended verbatims to quantify theme-to-score impact drivers.'
-                      : 'No quantitative, rating, NPS, or ordinal score question detected in this survey to correlate against verbatim themes.'
+                      ? 'Once you have both scored answers and written comments, we will show how each theme moves your score.'
+                      : 'Add a rating, NPS, or numeric question to see how open-ended themes relate to your scores.'
                   }
                 </p>`
           }
@@ -5083,35 +5047,35 @@ window.AEAnalytics = {
         <!-- 3. THEME DISTRIBUTION & SENTIMENT-BY-THEME MATRIX + THEME × SEGMENT TABLE -->
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
           <!-- Stacked Bar Matrix + Custom Survey Codebook Manager -->
-          <div class="xl:col-span-7 bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFEFEF] pb-2.5">
+          <div class="xl:col-span-7 bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFEFEF] pb-3">
               <div>
-                <h3 class="text-sm font-semibold text-[#111613]">Theme Distribution &amp; Sentiment Matrix</h3>
-                <p class="text-[11px] text-[#525B56]">Click any theme row to filter the coded verbatim stream below.</p>
+                <h3 class="text-sm font-semibold text-[#111613]">Themes &amp; Sentiment</h3>
+                <p class="text-xs text-[#646E68] mt-0.5">Select a theme to filter the responses below.</p>
               </div>
               <div class="flex items-center gap-1.5">
                 ${
                   this.verbatimThemeFilter !== 'all'
                     ? `<button type="button" onclick="AEAnalytics.setVerbatimTheme('all')"
-                        class="px-2 py-1 rounded text-[11px] font-semibold bg-[#F4F6F4] hover:bg-[#E4E7E4] text-[#111613]">
-                        Show All Themes
+                        class="px-2.5 py-1 rounded-[5px] text-xs font-medium bg-[#F4F6F4] hover:bg-[#E4E7E4] text-[#111613]">
+                        All themes
                       </button>`
                     : ''
                 }
                 <button type="button" onclick="AEAnalytics.toggleCustomThemeForm()"
-                  class="px-2.5 py-1 rounded-[5px] border border-[#247B50]/40 bg-[#F4FAF6] hover:bg-[#DCFAE5] text-[11px] font-semibold text-[#04250E] inline-flex items-center gap-1 ae-press">
+                  class="px-2.5 py-1 rounded-[5px] border border-[#247B50]/35 bg-[#F8FBF9] hover:bg-[#DCFAE5]/60 text-xs font-medium text-[#04250E] inline-flex items-center gap-1.5 ae-press">
                   <i class="fa-solid ${this.verbatimShowCustomThemeForm ? 'fa-xmark' : 'fa-plus'} text-[10px]"></i>
-                  <span>${this.verbatimShowCustomThemeForm ? 'Close' : '+ Add Custom Theme'}</span>
+                  <span>${this.verbatimShowCustomThemeForm ? 'Close' : 'Add theme'}</span>
                 </button>
               </div>
             </div>
 
             ${
               this.verbatimShowCustomThemeForm
-                ? `<div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-[#247B50]/30 space-y-2.5">
-                    <div class="text-[11px] font-bold text-[#04250E] uppercase tracking-wider">Custom Survey Codebook Rule</div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input type="text" id="ae_custom_theme_name" placeholder="Theme Name (e.g. Breakout Sessions)"
+                ? `<div class="p-4 rounded-[6px] bg-[#FAFBF9] border border-[#247B50]/25 space-y-3">
+                    <div class="text-xs font-semibold text-[#04250E]">Define a custom theme</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <input type="text" id="ae_custom_theme_name" placeholder="Theme name (e.g. Breakout Sessions)"
                         class="h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
                       <input type="text" id="ae_custom_theme_keywords" placeholder="Keywords, comma-separated (e.g. breakout, group, table)"
                         class="h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
@@ -5123,7 +5087,7 @@ window.AEAnalytics = {
                       </button>
                       <button type="button" onclick="AEAnalytics.saveCustomThemeFromForm('${safeSurveyIdJs}')"
                         class="h-7 px-3 rounded-[5px] bg-[#247B50] hover:bg-[#1D6340] text-white text-xs font-semibold ae-press">
-                        Save &amp; Re-Analyze
+                        Save &amp; Update
                       </button>
                     </div>
                   </div>`
@@ -5133,11 +5097,11 @@ window.AEAnalytics = {
             ${
               customThemes.length > 0
                 ? `<div class="flex flex-wrap items-center gap-1.5 pb-1">
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-[#525B56]">Custom Codebook:</span>
+                    <span class="text-xs text-[#646E68]">Custom themes:</span>
                     ${customThemes
                       .map(
                         (ct) => `
-                          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#F4FAF6] border border-[#247B50]/30 text-[#04250E]">
+                          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#F8FBF9] border border-[#247B50]/25 text-[#04250E]">
                             <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${AEApp.escapeAttr(ct.color || '#247B50')}"></span>
                             <span>${AEApp.escapeHtml(ct.name)}</span>
                             <button type="button" onclick="AEAnalytics.deleteCustomTheme('${safeSurveyIdJs}', '${AEApp.escapeJs(ct.id)}')"
@@ -5155,7 +5119,7 @@ window.AEAnalytics = {
 
             ${
               themes.length > 0
-                ? `<div class="space-y-2">
+                ? `<div class="space-y-2.5">
                     ${themes
                       .map((t) => {
                         const isSelected = this.verbatimThemeFilter === t.id;
@@ -5171,22 +5135,22 @@ window.AEAnalytics = {
                           ? 'bg-[#FFEDEA] text-[#831C1E]'
                           : 'bg-[#F4F6F4] text-[#525B56]';
                         return `
-                          <div class="w-full p-2.5 rounded-[6px] border transition-colors ${
+                          <div class="w-full p-3.5 rounded-[8px] border transition-colors ${
                             isSelected
-                              ? 'border-[#247B50] bg-[#F4FAF6] ring-1 ring-[#247B50]'
+                              ? 'border-[#247B50] bg-[#F8FBF9] ring-1 ring-[#247B50]/60'
                               : 'border-[#EFEFEF] bg-white hover:border-[#CFD5D0] hover:bg-[#FAFBF9]'
                           }">
-                            <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <div class="flex items-center justify-between gap-2 mb-2">
                               <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(t.id)}')"
                                 class="flex items-center gap-2 min-w-0 flex-1 text-left">
-                                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(t.color || '#247B50')}"></span>
+                                <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(t.color || '#247B50')}"></span>
                                 <span class="text-xs font-semibold text-[#111613] truncate">${AEApp.escapeHtml(t.name)}</span>
-                                ${isCustom ? '<span class="px-1.5 py-0.2 rounded bg-[#DCFAE5] text-[#04250E] text-[9px] font-bold uppercase shrink-0">Custom</span>' : ''}
+                                ${isCustom ? '<span class="px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-[10px] font-medium shrink-0">Custom</span>' : ''}
                               </button>
                               <div class="flex items-center gap-2 shrink-0 text-xs">
                                 <span class="font-semibold text-[#111613] tabular-nums">${t.count}</span>
                                 <span class="text-[#646E68] tabular-nums text-[11px]">(${t.pct}%)</span>
-                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${netBadge}">
+                                <span class="px-1.5 py-0.5 rounded-[4px] text-[10.5px] font-medium tabular-nums ${netBadge}">
                                   ${net > 0 ? '+' : ''}${net}%
                                 </span>
                                 ${
@@ -5210,21 +5174,21 @@ window.AEAnalytics = {
                       })
                       .join('')}
                   </div>
-                  <div class="flex items-center gap-4 pt-1 text-[10px] text-[#525B56]">
-                    <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#247B50]"></span>Positive</span>
-                    <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#9CA3AF]"></span>Neutral</span>
-                    <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#C4242A]"></span>Negative</span>
+                  <div class="flex items-center gap-4 pt-1 text-[11px] text-[#646E68]">
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#247B50]"></span>Positive</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#9CA3AF]"></span>Neutral</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#C4242A]"></span>Negative</span>
                   </div>`
-                : '<p class="text-xs text-[#646E68] py-4 text-center">No themes extracted for the current slice.</p>'
+                : '<p class="text-xs text-[#646E68] py-6 text-center">No recurring themes found for the current filter scope.</p>'
             }
           </div>
 
           <!-- Theme × Segment Breakdown Table -->
-          <div class="xl:col-span-5 bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
-            <div class="border-b border-[#EFEFEF] pb-2.5">
-              <h3 class="text-sm font-semibold text-[#111613]">Theme &times; Segment Breakdown</h3>
-              <p class="text-[11px] text-[#525B56]">
-                Cross-tabulated by <strong>${AEApp.escapeHtml(segTable.segmentLabel || 'Segment')}</strong>
+          <div class="xl:col-span-5 bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
+            <div class="border-b border-[#EFEFEF] pb-3">
+              <h3 class="text-sm font-semibold text-[#111613]">Themes by Segment</h3>
+              <p class="text-xs text-[#646E68] mt-0.5">
+                Grouped by <strong class="text-[#111613] font-medium">${AEApp.escapeHtml(segTable.segmentLabel || 'Segment')}</strong>
               </p>
             </div>
 
@@ -5234,11 +5198,11 @@ window.AEAnalytics = {
                     <table class="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr class="border-b border-[#E4E7E4] bg-[#FAFBF9]">
-                          <th class="py-2 px-2 font-semibold text-[#525B56]">Theme</th>
+                          <th class="py-2.5 px-2.5 font-semibold text-[#525B56]">Theme</th>
                           ${segTable.segments
-                            .map((seg) => `<th class="py-2 px-2 font-semibold text-[#525B56] text-right whitespace-nowrap">${AEApp.escapeHtml(seg)}</th>`)
+                            .map((seg) => `<th class="py-2.5 px-2.5 font-semibold text-[#525B56] text-right whitespace-nowrap">${AEApp.escapeHtml(seg)}</th>`)
                             .join('')}
-                          <th class="py-2 px-2 font-bold text-[#111613] text-right">Total</th>
+                          <th class="py-2.5 px-2.5 font-semibold text-[#111613] text-right">Total</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-[#EFEFEF]">
@@ -5248,18 +5212,18 @@ window.AEAnalytics = {
                             const rowMax = Math.max(1, ...segTable.segments.map((s) => Number(row.countsBySegment?.[s] || 0)));
                             return `
                               <tr class="hover:bg-[#FAFBF9]">
-                                <td class="py-2 px-2 font-medium text-[#111613] max-w-[160px] truncate" title="${AEApp.escapeAttr(themeObj.name || '')}">
+                                <td class="py-2.5 px-2.5 font-medium text-[#111613] max-w-[160px] truncate" title="${AEApp.escapeAttr(themeObj.name || '')}">
                                   ${AEApp.escapeHtml(themeObj.name || '')}
                                 </td>
                                 ${segTable.segments
                                   .map((seg) => {
                                     const cnt = Number(row.countsBySegment?.[seg] || 0);
-                                    const alpha = cnt > 0 ? Math.min(0.32, 0.06 + (cnt / rowMax) * 0.24) : 0;
+                                    const alpha = cnt > 0 ? Math.min(0.28, 0.06 + (cnt / rowMax) * 0.22) : 0;
                                     const bg = cnt > 0 ? `background-color: rgba(36, 123, 80, ${alpha.toFixed(2)});` : '';
-                                    return `<td class="py-2 px-2 text-right tabular-nums ${cnt > 0 ? 'font-semibold text-[#04250E]' : 'text-[#9CA3AF]'}" style="${bg}">${cnt}</td>`;
+                                    return `<td class="py-2.5 px-2.5 text-right tabular-nums ${cnt > 0 ? 'font-semibold text-[#04250E]' : 'text-[#9CA3AF]'}" style="${bg}">${cnt}</td>`;
                                   })
                                   .join('')}
-                                <td class="py-2 px-2 text-right font-bold tabular-nums text-[#111613]">${Number(row.total || 0)}</td>
+                                <td class="py-2.5 px-2.5 text-right font-semibold tabular-nums text-[#111613]">${Number(row.total || 0)}</td>
                               </tr>
                             `;
                           })
@@ -5267,31 +5231,31 @@ window.AEAnalytics = {
                       </tbody>
                     </table>
                   </div>`
-                : '<p class="text-xs text-[#646E68] py-4 text-center">Select a categorical question or collect more responses to view Theme &times; Segment breakdown.</p>'
+                : '<p class="text-xs text-[#646E68] py-6 text-center leading-relaxed">Choose a grouping question above or collect more responses to compare themes across segments.</p>'
             }
           </div>
         </div>
 
-        <!-- 4. TF-IDF KEYPHRASE CHIPS + FILTER PILLS + LIVE SEARCH + CODED VERBATIM CARDS -->
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
-          <!-- Clickable TF-IDF Keyphrase Chips -->
+        <!-- 4. FREQUENT PHRASES + FILTER PILLS + LIVE SEARCH + CODED VERBATIM CARDS -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-5">
+          <!-- Clickable Keyphrase Chips -->
           ${
             topTerms.length > 0
-              ? `<div class="p-3 bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px] space-y-2">
-                  <span class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Top TF-IDF Keyphrases &amp; Collocations:</span>
+              ? `<div class="p-4 bg-[#FAFBF9] border border-[#EFEFEF] rounded-[6px] space-y-2.5">
+                  <span class="text-xs font-medium text-[#525B56] block">Frequent phrases</span>
                   <div class="flex flex-wrap gap-1.5">
                     ${topTerms
                       .map((item) => {
                         const isMatch = query && item.term.toLowerCase() === query;
                         return `
                           <button type="button" onclick="AEAnalytics.setVerbatimSearch('${AEApp.escapeJs(isMatch ? '' : item.term)}')"
-                            class="px-2.5 py-1 rounded-[4px] border text-xs font-medium inline-flex items-center gap-1.5 ae-press ${
+                            class="px-2.5 py-1 rounded-[5px] border text-xs font-medium inline-flex items-center gap-1.5 ae-press ${
                               isMatch
                                 ? 'border-[#247B50] bg-[#DCFAE5] text-[#04250E]'
-                                : 'border-[#CFD5D0] bg-white hover:bg-[#DCFAE5] hover:text-[#04250E] text-[#111613]'
+                                : 'border-[#E4E7E4] bg-white hover:border-[#247B50]/50 hover:bg-[#F8FBF9] text-[#111613]'
                             }">
                             <span>${AEApp.escapeHtml(item.term)}</span>
-                            <span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[10px] text-[#525B56] font-mono tabular-nums">${item.count}</span>
+                            <span class="text-[11px] text-[#646E68] tabular-nums">${item.count}</span>
                           </button>
                         `;
                       })
@@ -5314,9 +5278,9 @@ window.AEAnalytics = {
                   const active = this.verbatimSentimentFilter === pill.id;
                   return `
                     <button type="button" onclick="AEAnalytics.setVerbatimSentiment('${pill.id}')"
-                      class="h-7 px-2.5 rounded-[5px] text-xs font-semibold border ae-press ${
+                      class="h-7 px-3 rounded-[5px] text-xs font-medium border ae-press tabular-nums ${
                         active
-                          ? 'bg-[#141A17] text-white border-[#141A17]'
+                          ? 'bg-[#141A17] text-white border-[#141A17] font-semibold'
                           : 'bg-white text-[#525B56] border-[#CFD5D0] hover:bg-[#F4F6F4] hover:text-[#111613]'
                       }">
                       ${pill.label}
@@ -5326,23 +5290,22 @@ window.AEAnalytics = {
                 .join('')}
 
               <button type="button" onclick="AEAnalytics.toggleVerbatimActionable()"
-                class="h-7 px-2.5 rounded-[5px] text-xs font-semibold border ae-press inline-flex items-center gap-1 ${
+                class="h-7 px-3 rounded-[5px] text-xs font-medium border ae-press inline-flex items-center gap-1.5 tabular-nums ${
                   this.verbatimActionableOnly
-                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706]'
+                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706] font-semibold'
                     : 'bg-white text-[#525B56] border-[#CFD5D0] hover:bg-[#F4F6F4]'
                 }">
-                <i class="fa-solid fa-lightbulb text-[10px]"></i>
-                <span>Actionable Only (${actionableCount})</span>
+                <span>Actionable (${actionableCount})</span>
               </button>
 
               <button type="button" onclick="AEAnalytics.toggleVerbatimPinnedOnly()"
-                class="h-7 px-2.5 rounded-[5px] text-xs font-semibold border ae-press inline-flex items-center gap-1 ${
+                class="h-7 px-3 rounded-[5px] text-xs font-medium border ae-press inline-flex items-center gap-1.5 tabular-nums ${
                   this.verbatimPinnedOnly
-                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706]'
+                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706] font-semibold'
                     : 'bg-white text-[#525B56] border-[#CFD5D0] hover:bg-[#F4F6F4]'
                 }">
                 <i class="fa-solid fa-star text-[10px]"></i>
-                <span>Pinned Only (${pinnedCount})</span>
+                <span>Pinned (${pinnedCount})</span>
               </button>
             </div>
 
@@ -5351,7 +5314,7 @@ window.AEAnalytics = {
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-[#646E68]"></i>
                 <input type="text" value="${AEApp.escapeAttr(this.verbatimSearchQuery)}"
                   oninput="AEAnalytics.setVerbatimSearch(this.value)"
-                  placeholder="Search verbatims, themes, segments…"
+                  placeholder="Search responses, themes, or segments…"
                   class="w-full h-8 pl-8 pr-3 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
               </div>
               ${
@@ -5366,11 +5329,11 @@ window.AEAnalytics = {
           </div>
 
           <!-- Coded Verbatim Cards Stream -->
-          <div class="space-y-3">
+          <div class="space-y-3.5">
             ${
               filteredRecords.length === 0
-                ? `<div class="p-8 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-dashed border-[#CFD5D0] rounded-[6px]">
-                    No coded verbatims match your active filters.
+                ? `<div class="p-10 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-dashed border-[#CFD5D0] rounded-[8px] leading-relaxed">
+                    No open-ended responses match your current filters. Try clearing a filter or broadening your search.
                   </div>`
                 : filteredRecords
                     .map((rec) => {
@@ -5386,6 +5349,8 @@ window.AEAnalytics = {
                       const showTranslation = !!(translated && translated.trim() && translated.trim().toLowerCase() !== String(rec.text || '').trim().toLowerCase());
                       const score = typeof rec.sentimentScore === 'number' ? rec.sentimentScore : 0;
                       const scoreStr = `${score > 0 ? '+' : ''}${score.toFixed(2)}`;
+                      const sentRaw = String(rec.sentiment || 'neutral');
+                      const sentLabel = sentRaw.charAt(0).toUpperCase() + sentRaw.slice(1);
                       const sentBadge = rec.sentiment === 'positive'
                         ? 'bg-[#DCFAE5] text-[#04250E]'
                         : rec.sentiment === 'negative'
@@ -5393,36 +5358,36 @@ window.AEAnalytics = {
                         : 'bg-[#F4F6F4] text-[#525B56]';
 
                       return `
-                        <div class="p-3.5 rounded-[6px] border ${isPinned ? 'border-[#D97706] bg-[#FFFDF7]' : 'border-[#E4E7E4] bg-white'} hover:border-[#CFD5D0] space-y-2.5">
+                        <div class="p-5 rounded-[8px] border ${isPinned ? 'border-[#D97706]/70 bg-[#FFFDF7]' : 'border-[#E4E7E4] bg-white'} hover:border-[#CFD5D0] transition-colors space-y-3">
                           <div class="flex flex-wrap items-start justify-between gap-2">
-                            <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                            <div class="flex flex-wrap items-center gap-2 min-w-0">
                               ${
                                 qNum
-                                  ? `<span class="px-1.5 py-0.5 rounded bg-[#141A17] text-white text-[10px] font-bold tabular-nums shrink-0">Q${AEApp.escapeHtml(qNum)}</span>`
+                                  ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#F4F6F4] border border-[#E4E7E4] text-[#247B50] text-[10.5px] font-semibold tabular-nums shrink-0">Q${AEApp.escapeHtml(qNum)}</span>`
                                   : ''
                               }
-                              <span class="text-xs font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(cleanQTitle)}</span>
+                              <span class="text-xs font-medium text-[#525B56] ae-break-words">${AEApp.escapeHtml(cleanQTitle)}</span>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-1.5 shrink-0">
-                              <span class="px-2 py-0.5 rounded text-[10px] font-bold tabular-nums ${sentBadge}">
-                                ${AEApp.escapeHtml(String(rec.sentiment || 'neutral').toUpperCase())} (${scoreStr})
+                              <span class="px-2 py-0.5 rounded-[4px] text-[11px] font-medium tabular-nums ${sentBadge}">
+                                ${AEApp.escapeHtml(sentLabel)} (${scoreStr})
                               </span>
                               ${
                                 rec.isActionable
-                                  ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/40">Actionable</span>'
+                                  ? '<span class="px-2 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#FFFBEB] text-[#92400E]">Actionable</span>'
                                   : ''
                               }
                               ${
                                 rec.urgency === 'high'
-                                  ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#C4242A] text-white">High Urgency</span>'
+                                  ? '<span class="px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-[#C4242A] text-white">Urgent</span>'
                                   : rec.urgency === 'medium'
-                                  ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FFEDEA] text-[#831C1E]">Alert</span>'
+                                  ? '<span class="px-2 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#FFEDEA] text-[#831C1E]">Alert</span>'
                                   : ''
                               }
                               <button type="button" onclick="AEAnalytics.togglePinVerbatim('${safeSurveyIdJs}', '${AEApp.escapeJs(recKey)}')"
                                 title="${isPinned ? 'Unpin quote' : 'Pin quote for executive report'}"
-                                class="h-6 px-2 rounded border text-[11px] inline-flex items-center gap-1 ae-press ${
+                                class="h-6 px-2.5 rounded-[5px] border text-[11px] inline-flex items-center gap-1 ae-press ${
                                   isPinned
                                     ? 'bg-[#FEF3C7] border-[#D97706] text-[#92400E] font-semibold'
                                     : 'bg-white border-[#CFD5D0] text-[#646E68] hover:text-[#111613]'
@@ -5433,18 +5398,18 @@ window.AEAnalytics = {
                             </div>
                           </div>
 
-                          <p class="text-xs text-[#111613] leading-relaxed ae-break-words">&ldquo;${AEApp.escapeHtml(rec.text)}&rdquo;</p>
+                          <p class="text-[13.5px] text-[#111613] leading-relaxed ae-break-words" style="text-wrap: pretty;">&ldquo;${AEApp.escapeHtml(rec.text)}&rdquo;</p>
 
                           ${
                             showTranslation
-                              ? `<div class="p-2.5 rounded-[5px] bg-[#F4FAF6] border border-[#247B50]/25 text-xs text-[#04250E] space-y-0.5">
-                                  <span class="text-[10px] font-bold uppercase tracking-wider text-[#247B50] block">English Translation</span>
+                              ? `<div class="p-3 rounded-[6px] bg-[#F8FBF9] border border-[#247B50]/20 text-xs text-[#04250E] space-y-1">
+                                  <span class="text-[11px] font-semibold text-[#247B50] block">English translation</span>
                                   <p class="leading-relaxed ae-break-words">${AEApp.escapeHtml(translated)}</p>
                                 </div>`
                               : ''
                           }
 
-                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#F4F6F4]">
+                          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#F4F6F4]">
                             <div class="flex flex-wrap items-center gap-1.5">
                               ${(rec.themes || [])
                                 .map((t) => {
@@ -5453,7 +5418,7 @@ window.AEAnalytics = {
                                   const tColor = typeof t === 'object' && t.color ? t.color : '#247B50';
                                   return `
                                     <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(tId)}')"
-                                      class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FAFBF9] border border-[#E4E7E4] hover:border-[#247B50] text-[#111613] inline-flex items-center gap-1">
+                                      class="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#FAFBF9] border border-[#E4E7E4] hover:border-[#247B50]/60 text-[#111613] inline-flex items-center gap-1.5">
                                       <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${AEApp.escapeAttr(tColor)}"></span>
                                       <span>${AEApp.escapeHtml(tName)}</span>
                                     </button>
@@ -5463,15 +5428,15 @@ window.AEAnalytics = {
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2 text-[11px] text-[#646E68]">
-                              ${rec.segment ? `<span class="font-medium text-[#111613]">${AEApp.escapeHtml(rec.segment)}</span><span>·</span>` : ''}
+                              ${rec.segment ? `<span class="font-medium text-[#111613]">${AEApp.escapeHtml(rec.segment)}</span><span>&middot;</span>` : ''}
                               ${(() => {
                                 const locText = String(rec.location || rec.county || '').trim();
                                 return locText && locText.toLowerCase() !== 'unspecified'
-                                  ? `<span>${AEApp.escapeHtml(locText)}</span><span>·</span>`
+                                  ? `<span>${AEApp.escapeHtml(locText)}</span><span>&middot;</span>`
                                   : '';
                               })()}
                               <span>${AEApp.escapeHtml(rec.enumerator || 'Respondent')}</span>
-                              <span>·</span>
+                              <span>&middot;</span>
                               <span class="tabular-nums">${AEApp.escapeHtml(this._formatVerbatimDate(rec.submittedAt))}</span>
                             </div>
                           </div>
@@ -5491,7 +5456,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderIndividualInspector(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     if (this.individualIndex >= responses.length) this.individualIndex = 0;
@@ -5644,11 +5609,11 @@ window.AEAnalytics = {
     const withGps = responses.filter((r) => r.gps && r.gps.lat !== undefined && r.gps.lng !== undefined);
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
-        <div class="border-b border-[#EFEFEF] pb-3 flex items-center justify-between">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
+        <div class="border-b border-[#EFEFEF] pb-4 flex items-center justify-between">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">GPS Plot Geolocation Log &amp; Coordinate Registry</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">Verified GNSS coordinates recorded by field enumerators on Android tablets.</p>
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">GPS Coordinates &amp; Field Map</h2>
+            <p class="text-xs text-[#525B56] mt-1">Geolocation points captured during field interviews.</p>
           </div>
           <span class="text-xs font-semibold text-[#247B50] tabular-nums">${withGps.length} plots with coordinates</span>
         </div>
@@ -5718,7 +5683,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderRegressionTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     const numQs = this.getNumericQuestions(survey);
@@ -5842,13 +5807,13 @@ window.AEAnalytics = {
     this._currentRegressionModel = { model, predictorDefs: activePredictors, baselineVal, targetQ };
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
         <!-- Header & Target Selector -->
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">Econometric OLS Regression &amp; Scenario Simulator</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Ordinary Least Squares multivariate model isolating marginal gains per predictor variable for <strong>${AEApp.escapeHtml(targetQ.title)}</strong>.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Regression &amp; Scenario Model</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Ordinary Least Squares model estimating each variable&rsquo;s effect on <strong>${AEApp.escapeHtml(targetQ.title)}</strong>.
             </p>
           </div>
           <div class="flex items-center gap-2 self-start sm:self-auto">
@@ -6015,7 +5980,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderCausalImpactTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     const numQs = this.getNumericQuestions(survey);
@@ -6090,16 +6055,13 @@ window.AEAnalytics = {
     const ciUpper = ate + 1.96 * se;
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
         <!-- Header & Target Selectors -->
         <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div class="flex items-center gap-2">
-              <h2 class="text-base font-semibold text-[#111613]">Quasi-Experimental Causal Impact &amp; Intervention Lift</h2>
-              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#DCFAE5] text-[#04250E] uppercase">RCT Standard</span>
-            </div>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Evaluates Average Treatment Effect (ATE), statistical counterfactual lift, Cohen's d effect size, and 95% Confidence Intervals.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Causal Impact &amp; Treatment Lift</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Estimates Average Treatment Effect (ATE), effect size (Cohen&rsquo;s d), and 95% confidence intervals.
             </p>
           </div>
 
@@ -6202,7 +6164,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderAnovaTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     const numQs = this.getNumericQuestions(survey);
@@ -6296,13 +6258,13 @@ window.AEAnalytics = {
     const unitLabel = outcomeQ.unit || 'units';
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
         <!-- Header -->
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">One-Way Factorial ANOVA &amp; Hypothesis Trials</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Evaluating variance of <strong>${AEApp.escapeHtml(outcomeQ.title)}</strong> grouped by <strong>${AEApp.escapeHtml(currentFactor.label)}</strong>.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Group Comparison (One-Way ANOVA)</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Comparing variance in <strong>${AEApp.escapeHtml(outcomeQ.title)}</strong> across <strong>${AEApp.escapeHtml(currentFactor.label)}</strong>.
             </p>
           </div>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${
@@ -6478,7 +6440,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   renderSpatialAutocorrelationTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     const numQs = this.getNumericQuestions(survey);
@@ -6551,13 +6513,13 @@ window.AEAnalytics = {
     const outlierCount = spatial.points.filter((p) => p.lisaCluster === 'High-Low' || p.lisaCluster === 'Low-High').length;
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
         <!-- Header -->
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">Spatial Autocorrelation (Global Moran's I &amp; Anselin LISA)</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Geostatistical analysis detecting regional clusters across surveyed spatial points.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Spatial Clusters (Moran&rsquo;s I &amp; LISA)</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Identifies geographic clusters and local outliers across surveyed coordinates.
             </p>
           </div>
           <div class="flex items-center gap-2 self-start sm:self-auto flex-wrap">
@@ -6761,7 +6723,7 @@ window.AEAnalytics = {
 
   renderPacingForecastTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     const targetQuota = Number(this.customQuota || survey?.targetQuota || 100);
@@ -6794,13 +6756,13 @@ window.AEAnalytics = {
       .sort((a, b) => b.count - a.count);
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
         <!-- Header with Interactive Pacing Targets -->
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div class="border-b border-[#EFEFEF] pb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">Field Enumeration Pacing &amp; Quota Completion Forecast</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Holt's linear exponential smoothing forecast projecting campaign completion dates against targeted quotas.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Pacing &amp; Quota Forecast</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Projects campaign completion dates against your response target using linear trend smoothing.
             </p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
@@ -7073,7 +7035,7 @@ window.AEAnalytics = {
 
   renderForensicsTab(survey, responses) {
     if (!responses || responses.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match active slices.</div>';
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses match your current filters. Try broadening a filter above.</div>';
     }
 
     const audit = this.auditDataQuality(responses, survey);
@@ -7106,13 +7068,13 @@ window.AEAnalytics = {
     const targetLabel = targetMin > 0 ? (targetSec > 0 ? `${targetMin}m ${targetSec}s` : `${targetMin}m`) : `${targetSec}s`;
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-6">
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
         <!-- Header -->
-        <div class="border-b border-[#EFEFEF] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-[#111613]">Data Quality, Speeder Detection &amp; Interview Integrity Forensics</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Automated fraud screening: dynamic duration velocity cutoff (&lt;2.5s/q = ${audit.speederThreshold}s for ${audit.totalQuestions} questions; target ~30s/q = ${targetLabel}), straight-lining variance analysis, and GPS collision audits.
+            <h2 class="font-display text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Data Quality &amp; Integrity Review</h2>
+            <p class="text-xs text-[#525B56] mt-1 leading-relaxed">
+              Checks for rushed interviews (&lt;2.5s/question = ${audit.speederThreshold}s for ${audit.totalQuestions} questions; target ~30s/q = ${targetLabel}), flat-line answers, and duplicate GPS coordinates.
             </p>
           </div>
           <span class="text-xs font-semibold px-2.5 py-1 rounded-[4px] ${

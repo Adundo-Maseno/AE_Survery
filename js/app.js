@@ -121,7 +121,7 @@ window.AEApp = {
     window.addEventListener('appinstalled', () => {
       this.deferredInstallPrompt = null;
       this.isAppInstalled = true;
-      this.showToast('Agri Experience Studio installed to your device.', 'success');
+      this.showToast('AE Survey installed.', 'success');
       const currentUser = this.getCurrentUser();
       if (currentUser) this.renderHeaderBar(currentUser);
     });
@@ -132,7 +132,7 @@ window.AEApp = {
 
     // Listen for browser online/offline transitions (db.js owns the online push trigger)
     window.addEventListener('online', () => {
-      this.showToast('Network connection restored. Syncing with Google Sheets…', 'success');
+      this.showToast('Back online. Syncing with Google Sheets…', 'success');
       if (
         window.aeStore &&
         typeof window.aeStore.triggerBackgroundSyncNow !== 'function' &&
@@ -146,7 +146,7 @@ window.AEApp = {
     });
 
     window.addEventListener('offline', () => {
-      this.showToast('Offline Mode active. All survey edits and field responses save locally to IndexedDB.', 'warning');
+      this.showToast('Offline mode. Changes are saved locally on this device.', 'warning');
       this.render();
     });
 
@@ -261,7 +261,7 @@ window.AEApp = {
     this.hasPendingCloudUpdates = false;
     this.pendingCloudUpdateSummary = '';
     this.render();
-    this.showToast('View refreshed with latest cloud updates.', 'success');
+    this.showToast('Updated with latest cloud data.', 'success');
   },
 
   handleGlobalKeydown(e) {
@@ -409,7 +409,7 @@ window.AEApp = {
 
   promptInstall() {
     if (this.isAppInstalled) {
-      this.showToast('Agri Experience Studio is running as an installed desktop app.', 'success');
+      this.showToast('AE Survey is already installed.', 'success');
       return;
     }
     if (this.deferredInstallPrompt) {
@@ -452,11 +452,11 @@ window.AEApp = {
       return;
     }
     if (user.role === 'supervisor' && stage === 'design') {
-      this.showToast('Survey Builder is restricted to HQ Administrators.', 'warning');
+      this.showToast('Only administrators can edit surveys.', 'warning');
       return;
     }
     if (user.role === 'enumerator' && stage !== 'collect') {
-      this.showToast('Access restricted to field data collection.', 'warning');
+      this.showToast('Your account is set up for field collection only.', 'warning');
       return;
     }
     if (window.AECollector && window.AECollector.kioskLocked && stage !== 'collect') {
@@ -527,9 +527,9 @@ window.AEApp = {
     const nextState = !window.aeStore.settings.simulateOffline;
     window.aeStore.updateSettings({ simulateOffline: nextState });
     if (nextState) {
-      this.showToast('Simulated Field Offline Mode active. Responses queue locally in IndexedDB.', 'warning');
+      this.showToast('Offline mode on. New responses will queue locally.', 'warning');
     } else {
-      this.showToast('Online connection restored. Ready to batch-sync queued items to Google Sheets.', 'success');
+      this.showToast('Back online. Queued items are ready to sync.', 'success');
     }
     this.render();
   },
@@ -602,7 +602,7 @@ window.AEApp = {
   clearSyncErrorAndUseSimulator() {
     window.aeStore.lastSyncError = null;
     window.aeStore.updateSettings({ gasWebAppUrl: '' });
-    this.showToast('Switched to Local Google Sheets Simulator. Click Sync Sheets to flush queue.', 'success');
+    this.showToast('Switched to local simulator. Click Sync to flush the queue.', 'success');
     this.render();
   },
 
@@ -622,12 +622,12 @@ window.AEApp = {
     const remember = rememberBox ? rememberBox.checked : true;
 
     if (!personId) {
-      this.loginError = 'Please select your staff identity.';
+      this.loginError = 'Select your account.';
       this.render();
       return;
     }
     if (!pin) {
-      this.loginError = 'Please enter your security PIN (4 to 8 digits).';
+      this.loginError = 'Enter your PIN (4–8 digits).';
       this.render();
       return;
     }
@@ -642,10 +642,10 @@ window.AEApp = {
           localStorage.setItem('ae_active_enumerator', window.AECollector.enumeratorName);
         }
       }
-      this.showToast(`Welcome, ${res.user.fullName} (${res.user.role.toUpperCase()})`, 'success');
+      this.showToast(`Signed in as ${res.user.fullName}.`, 'success');
       this.render();
     } else {
-      this.loginError = res.error || 'Authentication failed.';
+      this.loginError = res.error || 'Incorrect PIN. Try again.';
       this.render();
     }
   },
@@ -660,7 +660,7 @@ window.AEApp = {
         localStorage.removeItem('ae_active_enumerator');
       }
     }
-    this.showToast('Signed out of Agri Experience Operations.', 'success');
+    this.showToast('Signed out.', 'success');
     this.currentStage = 'dashboard';
     this.render();
   },
@@ -673,7 +673,7 @@ window.AEApp = {
 
     return `
       <div class="py-8 px-4 flex flex-col items-center justify-center min-h-[70vh]">
-        <div class="max-w-md w-full bg-white border border-[#E4E7E4] rounded-[16px] p-6 sm:p-8 space-y-6 ae-dialog-animate">
+        <div class="max-w-md w-full ae-card rounded-[16px] p-6 sm:p-8 space-y-6 ae-dialog-animate">
           <!-- Logo & Brand Header -->
           <div class="text-center space-y-3">
             <div class="flex items-center justify-center">
@@ -692,8 +692,8 @@ window.AEApp = {
               </div>
             </div>
             <div>
-              <h2 class="text-xl font-bold text-[#111613] tracking-tight">Operations Portal Login</h2>
-              <p class="text-xs text-[#525B56] mt-1">Sign in with your staff account and 4-digit security PIN</p>
+              <h2 class="text-xl font-bold text-[#111613] tracking-tight">Sign in to AE Survey</h2>
+              <p class="text-xs text-[#525B56] mt-1">Choose your account and enter your PIN.</p>
             </div>
           </div>
 
@@ -710,11 +710,11 @@ window.AEApp = {
           <form onsubmit="event.preventDefault(); AEApp.handleLoginSubmit();" class="space-y-4">
             <div>
               <label for="ae_login_person_select" class="block text-xs font-semibold text-[#111613] mb-1.5">
-                Staff Identity / Account
+                Account
               </label>
               <select id="ae_login_person_select"
                 class="w-full h-10 px-3 text-xs text-[#111613] bg-white rounded-[6px] border border-[#CFD5D0] focus:border-[#247B50] focus:outline-none font-medium">
-                <optgroup label="HQ Operations Administrators">
+                <optgroup label="Administrators">
                   ${admins
                     .map(
                       (p) =>
@@ -724,7 +724,7 @@ window.AEApp = {
                     )
                     .join('')}
                 </optgroup>
-                <optgroup label="Regional Supervisors">
+                <optgroup label="Supervisors">
                   ${supervisors
                     .map(
                       (p) =>
@@ -734,7 +734,7 @@ window.AEApp = {
                     )
                     .join('')}
                 </optgroup>
-                <optgroup label="Field Enumerators">
+                <optgroup label="Enumerators">
                   ${enumerators
                     .map(
                       (p) =>
@@ -750,9 +750,9 @@ window.AEApp = {
             <div>
               <div class="flex items-center justify-between mb-1.5">
                 <label for="ae_login_pin_input" class="text-xs font-semibold text-[#111613]">
-                  Security PIN
+                  PIN
                 </label>
-                <span class="text-[11px] text-[#525B56]">4 to 8 digits</span>
+                <span class="text-[11px] text-[#525B56]">4–8 digits</span>
               </div>
               <input id="ae_login_pin_input" type="password" maxlength="8" pattern="[0-9]*" inputmode="numeric"
                 placeholder="••••" autocomplete="current-password"
@@ -769,21 +769,21 @@ window.AEApp = {
 
             <button type="submit"
               class="w-full h-10 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
-              <i class="fa-solid fa-lock text-[11px]"></i>
-              <span>Access Operations Portal</span>
+              <span>Sign in</span>
+              <i class="fa-solid fa-arrow-right text-[11px]"></i>
             </button>
           </form>
 
           <!-- Direct Mobile Field Collector Link -->
-          <div class="p-3.5 rounded-[8px] bg-[#F4F6F4] border border-[#E4E7E4] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="p-3.5 rounded-[8px] bg-[#F8F9F8] border border-[#E4E7E4] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
-              <div class="text-xs font-semibold text-[#111613]">Conducting farm interviews?</div>
-              <p class="text-[11px] text-[#525B56] mt-0.5">Use the dedicated offline mobile field app</p>
+              <div class="text-xs font-semibold text-[#111613]">Collecting in the field?</div>
+              <p class="text-[11px] text-[#525B56] mt-0.5">Open the offline mobile app for interviews.</p>
             </div>
             <a href="./field.html"
               class="w-full sm:w-auto h-8 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 shrink-0 ae-press">
               <i class="fa-solid fa-mobile-screen-button text-[11px]"></i>
-              <span>Open Field App</span>
+              <span>Field App</span>
             </a>
           </div>
         </div>
@@ -797,29 +797,22 @@ window.AEApp = {
       : [];
 
     return `
-      <div class="py-12 px-4 flex flex-col items-center justify-center min-h-[60vh]">
-        <div class="max-w-lg w-full bg-white border border-[#E4E7E4] rounded-[16px] p-8 space-y-6 text-center ae-dialog-animate">
-          <div class="w-14 h-14 mx-auto rounded-full bg-[#DCFAE5] text-[#04250E] flex items-center justify-center text-2xl font-bold">
-            <i class="fa-solid fa-clipboard-user"></i>
-          </div>
-          <div>
-            <span class="px-2.5 py-0.5 rounded-[4px] text-xs font-semibold bg-[#DCFAE5] text-[#04250E]">
-              Authenticated Field Enumerator
-            </span>
-            <h2 class="text-xl font-bold text-[#111613] tracking-tight mt-2">${this.escapeHtml(user.fullName)}</h2>
-            <p class="text-xs text-[#525B56] mt-1">Staff ID: <code>${this.escapeHtml(user.id)}</code> · County: <strong>${this.escapeHtml(user.county)}</strong></p>
+      <div class="py-10 px-4 flex flex-col items-center justify-center min-h-[60vh]">
+        <div class="max-w-lg w-full ae-card rounded-[16px] p-6 sm:p-8 space-y-6 ae-dialog-animate">
+          <div class="text-center space-y-1.5">
+            <h2 class="text-xl font-bold text-[#111613] tracking-tight">${this.escapeHtml(user.fullName)}</h2>
+            <p class="text-xs text-[#525B56]">Field enumerator · <code>${this.escapeHtml(user.id)}</code> · ${this.escapeHtml(user.county)}</p>
           </div>
 
           <!-- Assigned Survey Instruments List -->
-          <div class="text-left space-y-2 pt-2 border-t border-[#EFEFEF]">
-            <div class="text-xs font-bold text-[#111613] uppercase tracking-wider">
-              Assigned Field Studies (${assignedSurveys.length})
+          <div class="text-left space-y-2.5 pt-4 border-t border-[#EFEFEF]">
+            <div class="text-xs font-semibold text-[#111613]">
+              Assigned surveys (${assignedSurveys.length})
             </div>
             ${
               assignedSurveys.length === 0
                 ? `<div class="p-4 rounded-[8px] bg-[#FFFBEB] border border-[#FDE68A] text-center text-xs text-[#92400E]">
-                    <i class="fa-solid fa-triangle-exclamation mb-1 text-sm block"></i>
-                    No field surveys are currently assigned to your account. Please contact your supervisor (${this.escapeHtml(user.supervisorId || 'Regional Lead')}) or HQ Admin to assign active surveys.
+                    No surveys assigned yet. Ask your supervisor (${this.escapeHtml(user.supervisorId || 'Regional Lead')}) or an administrator to assign one.
                   </div>`
                 : `<div class="space-y-2 max-h-64 overflow-y-auto">
                     ${assignedSurveys
@@ -829,18 +822,15 @@ window.AEApp = {
                           ? window.aeStore.getPersonnelTaskProgress(user.id, s.id)
                           : { completed: 0, target: quota.target || 10 };
                         return `
-                          <div class="p-3 rounded-[8px] border border-[#E4E7E4] bg-[#F8F9F8] flex items-center justify-between gap-3">
+                          <div class="p-3.5 rounded-[8px] border border-[#E4E7E4] bg-[#F8F9F8] flex items-center justify-between gap-3">
                             <div class="min-w-0">
                               <div class="text-xs font-semibold text-[#111613] truncate">${this.escapeHtml(s.title)}</div>
-                              <div class="text-[11px] text-[#525B56] mt-0.5 flex items-center gap-2">
-                                <span class="px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[10px] font-bold">
-                                  ${taskProgress.completed}/${taskProgress.target} Plots
-                                </span>
-                                <span class="truncate">· ${this.escapeHtml(s.category || 'Field Survey')}</span>
+                              <div class="text-[11px] text-[#525B56] mt-0.5 tabular-nums truncate">
+                                ${taskProgress.completed}/${taskProgress.target} plots · ${this.escapeHtml(s.category || 'Field Survey')}
                               </div>
                             </div>
                             <a href="./field.html?survey=${encodeURIComponent(s.id)}"
-                              class="shrink-0 h-8 px-3 rounded-[5px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                              class="shrink-0 h-8 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
                               <span>Collect</span>
                               <i class="fa-solid fa-arrow-right text-[10px]"></i>
                             </a>
@@ -852,16 +842,16 @@ window.AEApp = {
             }
           </div>
 
-          <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 border-t border-[#EFEFEF]">
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-3 border-t border-[#EFEFEF]">
             <a href="./field.html"
-              class="w-full sm:w-auto h-10 px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+              class="w-full sm:w-auto h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
               <i class="fa-solid fa-mobile-screen-button"></i>
-              <span>Launch Mobile Field App</span>
+              <span>Open Field App</span>
             </a>
             <button onclick="AEApp.handleLogout()"
-              class="w-full sm:w-auto h-10 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-xs font-medium text-[#111613] inline-flex items-center justify-center gap-2 ae-press">
+              class="w-full sm:w-auto h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-xs font-medium text-[#111613] inline-flex items-center justify-center gap-2 ae-press">
               <i class="fa-solid fa-arrow-right-from-bracket"></i>
-              <span>Sign Out</span>
+              <span>Sign out</span>
             </button>
           </div>
         </div>
@@ -921,7 +911,7 @@ window.AEApp = {
       if (currentUser.role === 'supervisor') {
         this.currentStage = 'dashboard';
         main.innerHTML = this.renderDashboard(currentUser);
-        this.showToast('Survey Builder is restricted to HQ Administrators.', 'warning');
+        this.showToast('Only administrators can edit surveys.', 'warning');
       } else {
         main.innerHTML = window.AEBuilder.renderBuilder(activeSurvey);
       }
@@ -982,7 +972,7 @@ window.AEApp = {
   copyLiveReportLink(surveyId) {
     if (!surveyId) return '';
     const url = this.getLiveReportUrl(surveyId);
-    this.copyText(url, 'Live Read-Only Stakeholder Report link copied to clipboard.');
+    this.copyText(url, 'Report link copied.');
     return url;
   },
 
@@ -1006,9 +996,9 @@ window.AEApp = {
           reason: 'public_report'
         });
       }
-      this.showToast('Live report refreshed with latest responses.', 'success');
+      this.showToast('Report refreshed.', 'success');
     } catch (err) {
-      this.showToast((err && err.message) || 'Could not reach cloud server; showing latest cached data.', 'warning');
+      this.showToast((err && err.message) || 'Could not reach server. Showing cached data.', 'warning');
     } finally {
       this.isSyncing = false;
       this.render();
@@ -1037,20 +1027,19 @@ window.AEApp = {
     if (!survey) {
       main.innerHTML = `
         <div class="py-12 px-4 flex flex-col items-center justify-center min-h-[60vh]">
-          <div class="max-w-md w-full bg-white border border-[#E4E7E4] rounded-[12px] p-6 text-center space-y-4">
-            <div class="w-12 h-12 rounded-full bg-[#F4F6F4] text-[#247B50] mx-auto flex items-center justify-center text-lg">
+          <div class="max-w-md w-full ae-card rounded-[12px] p-6 text-center space-y-4">
+            <div class="w-10 h-10 rounded-full bg-[#F4F6F4] text-[#247B50] mx-auto flex items-center justify-center text-base">
               <i class="fa-solid fa-chart-simple"></i>
             </div>
             <div>
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold">Live Read-Only Results</span>
-              <h2 class="text-base font-bold text-[#111613] mt-2">Report Not Found Locally</h2>
+              <h2 class="text-base font-semibold text-[#111613]">Report not cached yet</h2>
               <p class="text-xs text-[#525B56] mt-1">
-                We could not find survey <code>${this.escapeHtml(this.activeSurveyId || '')}</code> in local cache yet. Click Refresh Now to pull live results from the cloud backend.
+                Survey <code>${this.escapeHtml(this.activeSurveyId || '')}</code> isn't stored locally yet. Refresh to pull the latest results.
               </p>
             </div>
             <button type="button" onclick="AEApp.refreshPublicReport()"
               class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-arrows-rotate"></i> Refresh Now
+              <i class="fa-solid fa-arrows-rotate"></i> Refresh
             </button>
           </div>
         </div>
@@ -1090,11 +1079,11 @@ window.AEApp = {
           <div class="flex items-center gap-3 min-w-0">
             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] bg-[#DCFAE5] text-[#04250E] text-xs font-semibold shrink-0">
               <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
-              Live Read-Only Results
+              Read-only report
             </span>
             <div class="min-w-0">
               <div class="text-sm font-semibold text-[#111613] truncate">${this.escapeHtml(survey.title)}</div>
-              <div class="text-[11px] text-[#525B56]">Privacy-Safe Stakeholder View · Individual respondent records &amp; PII are hidden</div>
+              <div class="text-[11px] text-[#525B56]">Shared summary view · Individual responses and personal details are hidden.</div>
             </div>
           </div>
           <div class="flex items-center gap-2 shrink-0">
@@ -1102,7 +1091,7 @@ window.AEApp = {
               ${this.isSyncing ? 'disabled' : ''}
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-arrows-rotate text-[#247B50] ${this.isSyncing ? 'ae-syncing' : ''}"></i>
-              <span>Refresh Now</span>
+              <span>Refresh</span>
             </button>
           </div>
         </div>
@@ -1157,7 +1146,7 @@ window.AEApp = {
             <span class="font-semibold text-sm text-[#111613] tracking-tight shrink-0">AE Survey</span>
             <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold shrink-0">
               <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
-              Live Read-Only Results
+              Read-only report
             </span>
             ${
               reportSurvey
@@ -1170,7 +1159,7 @@ window.AEApp = {
               ${this.isSyncing ? 'disabled' : ''}
               class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-arrows-rotate text-[11px] ${this.isSyncing ? 'ae-syncing' : ''}"></i>
-              <span>Refresh Now</span>
+              <span>Refresh</span>
             </button>
             <button type="button" onclick="window.print()"
               class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
@@ -1200,17 +1189,12 @@ window.AEApp = {
               <i class="fa-solid fa-seedling"></i>
             </span>
             <span class="font-semibold text-sm text-[#111613] tracking-tight">AE Survey</span>
-            <span class="hidden sm:inline text-xs text-[#525B56]">· Operations Portal</span>
-          </div>
-
-          <div class="hidden md:flex items-center gap-2 text-xs text-[#525B56] font-medium">
-            <i class="fa-solid fa-shield-halved text-[#247B50]"></i>
-            <span>Role-Based Authentication · Secure Session</span>
+            <span class="hidden sm:inline text-xs text-[#525B56]">· Studio</span>
           </div>
 
           <div class="flex items-center gap-2 shrink-0">
             <button onclick="AEApp.toggleSimulatedOffline()"
-              title="Toggle Offline Mode"
+              title="Toggle offline mode"
               class="h-8 px-2.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 border ae-press ${
                 online
                   ? 'bg-white border-[#CFD5D0] text-[#111613]'
@@ -1222,7 +1206,7 @@ window.AEApp = {
             <a href="./field.html"
               class="h-8 px-3 rounded-[6px] text-xs font-medium bg-[#247B50] hover:bg-[#1F6A45] text-white inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-mobile-screen-button text-[11px]"></i>
-              <span>Mobile Field App</span>
+              <span>Field App</span>
             </a>
           </div>
         </div>
@@ -1283,7 +1267,7 @@ window.AEApp = {
                       : 'border-transparent text-[#525B56] hover:text-[#111613] font-medium'
                   }">
                   <i class="fa-solid fa-sliders text-[11px] ${this.currentStage === 'design' ? 'text-[#247B50]' : 'text-[#646E68]'}"></i>
-                  <span>Survey Builder</span>
+                  <span>Builder</span>
                 </button>`
               : ''
           }
@@ -1295,7 +1279,7 @@ window.AEApp = {
                 : 'border-transparent text-[#525B56] hover:text-[#111613] font-medium'
             }">
             <i class="fa-solid fa-clipboard-check text-[11px] ${this.currentStage === 'collect' ? 'text-[#247B50]' : 'text-[#646E68]'}"></i>
-            <span>Field Kiosk</span>
+            <span>Collect</span>
           </button>
 
           <button onclick="AEApp.switchStage('analyze')"
@@ -1305,7 +1289,7 @@ window.AEApp = {
                 : 'border-transparent text-[#525B56] hover:text-[#111613] font-medium'
             }">
             <i class="fa-solid fa-chart-column text-[11px] ${this.currentStage === 'analyze' ? 'text-[#247B50]' : 'text-[#646E68]'}"></i>
-            <span>Analyze Results</span>
+            <span>Analytics</span>
           </button>
 
           <button onclick="AEApp.switchStage('team')"
@@ -1315,7 +1299,7 @@ window.AEApp = {
                 : 'border-transparent text-[#525B56] hover:text-[#111613] font-medium'
             }">
             <i class="fa-solid fa-users-gear text-[11px] ${this.currentStage === 'team' ? 'text-[#247B50]' : 'text-[#646E68]'}"></i>
-            <span>Field Personnel</span>
+            <span>Team</span>
           </button>
         </nav>
 
@@ -1324,10 +1308,10 @@ window.AEApp = {
           ${
             this.hasPendingCloudUpdates
               ? `<button id="ae_cloud_refresh_pill" onclick="AEApp.refreshFromCloudBanner()"
-                  title="New updates arrived from Google Sheets. Click to refresh view without losing saved work."
+                  title="New updates arrived from Google Sheets. Click to refresh."
                   class="h-8 px-2.5 rounded-full text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-[#DCFAE5] hover:bg-[#BBF7D0] text-[#04250E] border border-[#247B50]/40 shrink-0 ae-press">
                   <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
-                  <span>New cloud updates · Refresh</span>
+                  <span>Updates · Refresh</span>
                 </button>`
               : ''
           }
@@ -1364,30 +1348,30 @@ window.AEApp = {
             ${
               !this.isAppInstalled
                 ? `<button onclick="AEApp.promptInstall()"
-                    title="Install Agri Experience Operations Studio as a native app"
+                    title="Install AE Survey as an app"
                     class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-white border border-[#CFD5D0] hover:bg-[#F4F6F4] text-[#111613] shrink-0 ae-press">
                     <i class="fa-solid fa-download text-[11px] text-[#247B50]"></i>
-                    <span class="hidden xl:inline">Install Studio</span>
+                    <span class="hidden xl:inline">Install</span>
                   </button>`
                 : ''
             }
 
             <a href="./field.html${activeSurvey ? '?survey=' + encodeURIComponent(activeSurvey.id) : ''}"
-              title="Launch Mobile Field App (PWA) for data collection and field audit"
+              title="Open Mobile Field App"
               class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap bg-[#247B50] hover:bg-[#1F6A45] text-white shrink-0 ae-press">
               <i class="fa-solid fa-mobile-screen-button text-[11px]"></i>
               <span class="hidden 2xl:inline">Field App</span>
             </a>
 
             <button onclick="AEApp.toggleSimulatedOffline()"
-              title="Toggle Offline Field Mode to test IndexedDB local queueing"
+              title="Toggle offline mode"
               class="h-8 px-2 lg:px-2.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 whitespace-nowrap border shrink-0 ae-press ${
                 online
                   ? 'bg-white border-[#CFD5D0] text-[#111613]'
                   : 'bg-[#FFFBEB] border-[#FDE68A] text-[#92400E] font-semibold'
               }">
               <span class="w-1.5 h-1.5 rounded-full ${online ? 'bg-[#247B50]' : 'bg-[#D97706]'}"></span>
-              <span class="hidden 2xl:inline">${online ? 'Online' : 'Offline queue'}</span>
+              <span class="hidden 2xl:inline">${online ? 'Online' : 'Offline'}</span>
             </button>
 
             <button onclick="AEApp.triggerGoogleSheetsSync()"
@@ -1396,7 +1380,7 @@ window.AEApp = {
                 isCurrentlySyncing ? 'opacity-80 cursor-wait' : ''
               }">
               <i class="fa-solid fa-arrows-rotate text-[11px] ${isCurrentlySyncing ? 'fa-spin' : ''}"></i>
-              <span class="hidden xl:inline">${isCurrentlySyncing ? 'Syncing…' : 'Sync Sheets'}</span>
+              <span class="hidden xl:inline">${isCurrentlySyncing ? 'Syncing…' : 'Sync'}</span>
               ${
                 totalPending > 0
                   ? `<span class="px-1.5 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-[11px] font-semibold tabular-nums">${totalPending}</span>`
@@ -1722,8 +1706,8 @@ window.AEApp = {
       .slice(0, 4);
 
     const lastSyncText = window.aeStore.settings.lastSyncedAt
-      ? `Last synced ${new Date(window.aeStore.settings.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-      : 'Local GAS simulator active · 5 synced, 2 in outbox';
+      ? `Synced ${new Date(window.aeStore.settings.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+      : 'Local simulator';
     const syncErr = window.aeStore.lastSyncError;
 
     return `
@@ -1732,7 +1716,7 @@ window.AEApp = {
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
           <div>
             <div class="flex flex-wrap items-center gap-2.5">
-              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Field Surveys &amp; Sheets Sync</h1>
+              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Surveys</h1>
               <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56]">
                 <span class="w-1.5 h-1.5 rounded-full ${queuedCount > 0 ? 'bg-[#D97706]' : 'bg-[#247B50]'}"></span>
                 <span>${this.escapeHtml(lastSyncText)}</span>
@@ -1742,11 +1726,11 @@ window.AEApp = {
               ${
                 this.overviewSurveyFilter !== 'all' && activeScopeSurvey
                   ? queuedCount > 0
-                    ? `${queuedCount} field ${queuedCount === 1 ? 'interview' : 'interviews'} for ${this.escapeHtml(activeScopeSurvey.title)} stored in IndexedDB awaiting Google Sheets synchronization.`
-                    : `All ${responses.length} field interviews for ${this.escapeHtml(activeScopeSurvey.title)} are synchronized with Google Sheets.`
+                    ? `${queuedCount} ${queuedCount === 1 ? 'response' : 'responses'} waiting to sync for ${this.escapeHtml(activeScopeSurvey.title)}.`
+                    : `All ${responses.length} responses synced for ${this.escapeHtml(activeScopeSurvey.title)}.`
                   : queuedCount > 0
-                  ? `${queuedCount} field interviews across Meru and Machakos are stored in IndexedDB awaiting Google Sheets synchronization.`
-                  : `All ${allResponses.length} field interviews across ${surveys.length} surveys are synchronized with Google Sheets.`
+                  ? `${queuedCount} ${queuedCount === 1 ? 'response' : 'responses'} stored locally and waiting to sync.`
+                  : `All ${allResponses.length} responses synced across ${surveys.length} surveys.`
               }
             </p>
           </div>
@@ -1755,7 +1739,7 @@ window.AEApp = {
             <button onclick="AEApp.openSyncSettingsModal()"
               class="h-8 px-3 rounded-[6px] bg-white hover:bg-[#F4F6F4] text-[#111613] font-medium text-xs inline-flex items-center gap-1.5 border border-[#CFD5D0] ae-press">
               <i class="fa-solid fa-link text-[11px] text-[#525B56]"></i>
-              <span>Sheets Endpoint</span>
+              <span>Sync settings</span>
             </button>
             ${
               isAdmin
@@ -1767,12 +1751,12 @@ window.AEApp = {
                   <button onclick="AEApp.openPasteOutlineModal()"
                     class="h-8 px-3 rounded-[6px] bg-white hover:bg-[#F4F6F4] text-[#111613] font-medium text-xs inline-flex items-center gap-1.5 border border-[#CFD5D0] ae-press">
                     <i class="fa-solid fa-wand-magic-sparkles text-[11px] text-[#247B50]"></i>
-                    <span>Paste Outline</span>
+                    <span>Paste outline</span>
                   </button>
                   <button onclick="AEApp.createBlankSurvey()"
                     class="h-8 px-3.5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white font-medium text-xs inline-flex items-center gap-1.5 ae-press">
                     <i class="fa-solid fa-plus text-[11px]"></i>
-                    <span>New Survey</span>
+                    <span>New survey</span>
                   </button>`
                 : ''
             }
@@ -1781,17 +1765,9 @@ window.AEApp = {
 
         ${
           !isAdmin && currentUser
-            ? `<div class="p-3 rounded-[8px] bg-[#EFF6FF] border border-[#BFDBFE] flex items-center justify-between gap-3 text-xs">
-                <div class="flex items-center gap-2">
-                  <i class="fa-solid fa-user-shield text-[#1E40AF] text-sm shrink-0"></i>
-                  <div>
-                    <span class="font-semibold text-[#1E40AF]">Supervisor Scope: Assigned to ${this.escapeHtml(currentUser.county || 'Regional')} Hub</span>
-                    <p class="text-[#1E40AF]/80 mt-0.5">Monitoring field enumeration quotas, outbox synchronization, and response verifications.</p>
-                  </div>
-                </div>
-                <span class="px-2 py-0.5 rounded bg-white text-[#1E40AF] text-[11px] font-semibold border border-[#BFDBFE] shrink-0">
-                  Supervisor Session
-                </span>
+            ? `<div class="px-3.5 py-2.5 rounded-[8px] bg-[#F8F9F8] border border-[#E4E7E4] flex items-center gap-2.5 text-xs text-[#525B56]">
+                <i class="fa-solid fa-user-shield text-[#247B50] text-xs shrink-0"></i>
+                <span><strong class="font-semibold text-[#111613]">${this.escapeHtml(currentUser.county || 'Regional')} Hub</strong> · Showing assigned surveys, sync status, and team progress.</span>
               </div>`
             : ''
         }
@@ -1802,7 +1778,7 @@ window.AEApp = {
                 <div class="flex items-start gap-3 min-w-0">
                   <i class="fa-solid fa-triangle-exclamation text-[#C4242A] mt-0.5"></i>
                   <div class="min-w-0">
-                    <div class="text-xs font-semibold text-[#831C1E]">Google Sheets synchronization failed</div>
+                    <div class="text-xs font-semibold text-[#831C1E]">Google Sheets sync failed</div>
                     <div class="text-xs text-[#831C1E]/90 mt-0.5 ae-break-words">${this.escapeHtml(syncErr.message)}</div>
                   </div>
                 </div>
@@ -1811,12 +1787,12 @@ window.AEApp = {
                     ${this.isSyncing ? 'disabled' : ''}
                     class="h-8 px-3 rounded-[6px] bg-[#141A17] text-white text-xs font-medium hover:bg-[#232C27] ae-press inline-flex items-center gap-1.5">
                     <i class="fa-solid fa-arrows-rotate text-[11px] ${this.isSyncing ? 'fa-spin' : ''}"></i>
-                    <span>${this.isSyncing ? 'Retrying Sync…' : 'Retry Sync'}</span>
+                    <span>${this.isSyncing ? 'Retrying…' : 'Retry sync'}</span>
                   </button>
                   <button onclick="AEApp.clearSyncErrorAndUseSimulator()"
                     ${this.isSyncing ? 'disabled' : ''}
                     class="h-8 px-3 rounded-[6px] bg-white border border-[#F5C2C0] text-[#831C1E] text-xs font-medium hover:bg-[#FFF8F6] ae-press">
-                    Use Local Simulator
+                    Use local simulator
                   </button>
                   <button onclick="AEApp.dismissSyncError()"
                     title="Dismiss notice"
@@ -1828,35 +1804,24 @@ window.AEApp = {
             : ''
         }
 
-        <!-- 2. Survey Scope Selector: Multi-Survey vs Focused Instrument Scope -->
-        <div class="bg-white p-3 rounded-[8px] border border-[#E4E7E4] flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="w-2 h-2 rounded-full bg-[#247B50] shrink-0"></span>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-semibold text-[#111613]">Overview Survey Scope</span>
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#F4F6F4] text-[#525B56] border border-[#E4E7E4]">
-                  ${this.overviewSurveyFilter === 'all' ? 'Multi-Survey Portfolio' : 'Single Instrument'}
-                </span>
-              </div>
-              <p class="text-[11px] text-[#525B56] truncate mt-0.5">
-                ${
-                  this.overviewSurveyFilter === 'all'
-                    ? `Aggregating field KPIs, outbox queue, and county coverage across all ${surveys.length} instruments.`
-                    : `Showing live field KPIs and regional ledger for ${this.escapeHtml(activeScopeSurvey?.title || 'Selected Survey')}.`
-                }
-              </p>
-            </div>
+        <!-- 2. Survey Scope Selector -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div class="text-xs font-medium text-[#525B56]">
+            ${
+              this.overviewSurveyFilter === 'all'
+                ? `Overview across all ${surveys.length} surveys`
+                : `Filtered to ${this.escapeHtml(activeScopeSurvey?.title || 'selected survey')}`
+            }
           </div>
 
           <div class="flex items-center gap-1.5 flex-wrap shrink-0">
             <button type="button" onclick="AEApp.setOverviewSurveyFilter('all')"
-              class="h-7 px-3 rounded-[5px] text-xs font-medium transition-colors ae-press ${
+              class="h-7 px-3 rounded-[5px] text-xs font-medium ae-press ${
                 this.overviewSurveyFilter === 'all'
                   ? 'bg-[#141A17] text-white font-semibold'
                   : 'bg-[#F8F9F8] text-[#525B56] hover:text-[#111613] hover:bg-[#EFEFEF] border border-[#E4E7E4]'
               }">
-              All Surveys (${allResponses.length})
+              All (${allResponses.length})
             </button>
             ${surveys
               .slice(0, 3)
@@ -1866,7 +1831,7 @@ window.AEApp = {
                 const shortName = s.title.replace(/2026/g, '').trim().split(' ').slice(0, 3).join(' ');
                 return `
                   <button type="button" onclick="AEApp.setOverviewSurveyFilter('${s.id}')"
-                    class="h-7 px-2.5 rounded-[5px] text-xs font-medium transition-colors ae-press ${
+                    class="h-7 px-2.5 rounded-[5px] text-xs font-medium ae-press ${
                       isSelected
                         ? 'bg-[#247B50] text-white font-semibold'
                         : 'bg-[#F8F9F8] text-[#525B56] hover:text-[#111613] hover:bg-[#EFEFEF] border border-[#E4E7E4]'
@@ -1880,9 +1845,9 @@ window.AEApp = {
               surveys.length > 3
                 ? `
                 <div class="relative inline-block">
-                  <select aria-label="Select additional survey instrument" onchange="AEApp.setOverviewSurveyFilter(this.value)"
+                  <select aria-label="Select additional survey" onchange="AEApp.setOverviewSurveyFilter(this.value)"
                     class="h-7 pl-2.5 pr-6 rounded-[5px] text-xs font-medium bg-[#F8F9F8] text-[#525B56] border border-[#E4E7E4] focus:outline-none focus:border-[#247B50] cursor-pointer">
-                    <option value="" disabled ${!surveys.slice(3).some((s) => s.id === this.overviewSurveyFilter) ? 'selected' : ''}>More surveys…</option>
+                    <option value="" disabled ${!surveys.slice(3).some((s) => s.id === this.overviewSurveyFilter) ? 'selected' : ''}>More…</option>
                     ${surveys.slice(3).map((s) => {
                       const sResps = allResponses.filter((r) => r.surveyId === s.id);
                       const isSelected = this.overviewSurveyFilter === s.id;
@@ -1897,39 +1862,39 @@ window.AEApp = {
 
         <!-- 3. Usage Tray: Hairline-Divided KPI Strip + Interactive Field Coverage Ledger (Framed-Sheet Overview Pattern) -->
         <section class="bg-[#F8F9F8] p-1.5 rounded-[10px] border border-[#E4E7E4] space-y-1.5">
-          <!-- Divided KPI Strip (One container split by 1px rules, no icons in circles, answer figure leads at 30px) -->
-          <div class="bg-white rounded-[8px] border border-[#E4E7E4] grid grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-[#EFEFEF]">
+          <!-- Divided KPI Strip (One container split by 1px rules, no icons in circles, answer figure leads at 28px) -->
+          <div class="ae-card rounded-[8px] grid grid-cols-2 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-[#EFEFEF]">
             <button type="button" onclick="AEApp.setOverviewMetric('responses')"
               aria-pressed="${this.selectedOverviewMetric === 'responses'}"
               class="p-4 text-left transition-colors ${this.selectedOverviewMetric === 'responses' ? 'bg-[#F8F9F8] border-b-2 border-b-[#247B50]' : 'hover:bg-[#F8F9F8]/60'}">
-              <div class="text-xs font-medium text-[#525B56]">Total field interviews</div>
+              <div class="text-xs font-medium text-[#525B56]">Responses</div>
               <div class="mt-1 flex items-baseline gap-2">
                 <span class="text-[28px] font-semibold text-[#111613] tabular-nums leading-none">${responses.length}</span>
                 <span class="text-xs text-[#247B50] font-medium tabular-nums">+2 today</span>
               </div>
-              <div class="text-xs text-[#646E68] mt-1">${activeScopeSurvey ? this.escapeHtml(activeScopeSurvey.title.split(' ')[0]) : 'Across 6 Kenyan counties'}</div>
+              <div class="text-xs text-[#646E68] mt-1">${activeScopeSurvey ? this.escapeHtml(activeScopeSurvey.title.split(' ')[0]) : 'Across 6 counties'}</div>
             </button>
 
             <button type="button" onclick="AEApp.setOverviewMetric('synced')"
               aria-pressed="${this.selectedOverviewMetric === 'synced'}"
               class="p-4 text-left transition-colors ${this.selectedOverviewMetric === 'synced' ? 'bg-[#F8F9F8] border-b-2 border-b-[#247B50]' : 'hover:bg-[#F8F9F8]/60'}">
-              <div class="text-xs font-medium text-[#525B56]">Synced to Google Sheets</div>
+              <div class="text-xs font-medium text-[#525B56]">Synced</div>
               <div class="mt-1 flex items-baseline gap-2">
                 <span class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none">${syncedCount}</span>
                 <span class="text-xs text-[#525B56] tabular-nums">of ${responses.length} rows</span>
               </div>
-              <div class="text-xs text-[#646E68] mt-1">Filter outbox to synced</div>
+              <div class="text-xs text-[#646E68] mt-1">View synced</div>
             </button>
 
             <button type="button" onclick="AEApp.setOverviewMetric('queued')"
               aria-pressed="${this.selectedOverviewMetric === 'queued'}"
               class="p-4 text-left transition-colors ${this.selectedOverviewMetric === 'queued' ? 'bg-[#F8F9F8] border-b-2 border-b-[#247B50]' : 'hover:bg-[#F8F9F8]/60'}">
-              <div class="text-xs font-medium text-[#525B56]">Offline outbox queue</div>
+              <div class="text-xs font-medium text-[#525B56]">Pending sync</div>
               <div class="mt-1 flex items-baseline gap-2">
                 <span class="text-[22px] font-semibold ${queuedCount > 0 ? 'text-[#92400E]' : 'text-[#111613]'} tabular-nums leading-none">${queuedCount}</span>
-                <span class="text-xs text-[#525B56]">pending push</span>
+                <span class="text-xs text-[#525B56]">queued</span>
               </div>
-              <div class="text-xs text-[#646E68] mt-1">Filter outbox to queued</div>
+              <div class="text-xs text-[#646E68] mt-1">View queued</div>
             </button>
 
             <button type="button" onclick="AEApp.setOverviewMetric('domain')"
@@ -1944,30 +1909,30 @@ window.AEApp = {
             </button>
 
             <div class="p-4 text-left col-span-2 lg:col-span-1">
-              <div class="text-xs font-medium text-[#525B56]">Median interview duration</div>
+              <div class="text-xs font-medium text-[#525B56]">Avg. duration</div>
               <div class="mt-1 flex items-baseline gap-1.5">
                 <span class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none">${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s</span>
-                <span class="text-xs text-[#525B56]">${activeScopeSurvey ? 'per audit' : 'per interview'}</span>
+                <span class="text-xs text-[#525B56]">per interview</span>
               </div>
-              <div class="text-xs text-[#646E68] mt-1">${this.overviewSurveyFilter === 'all' ? `${surveys.length} active instruments` : `${responses.length} recorded interviews`}</div>
+              <div class="text-xs text-[#646E68] mt-1">${this.overviewSurveyFilter === 'all' ? `${surveys.length} surveys` : `${responses.length} responses`}</div>
             </div>
           </div>
 
           <!-- Signature Product Block: County Field Enumeration & Google Sheets Sync Ledger -->
-          <div class="bg-white rounded-[8px] border border-[#E4E7E4] p-5">
+          <div class="ae-card rounded-[8px] p-5">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <!-- Left 7 Columns: County Field Progress Bar List (1 hue #247B50 + neutral track) -->
               <div class="lg:col-span-7 space-y-3 min-w-0">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 class="text-base font-semibold text-[#111613]">
-                      ${isDomainView ? this.escapeHtml(activeMetric.comparisonHeader) : 'County Field Enumeration &amp; Sheets Sync Status'}
+                      ${isDomainView ? this.escapeHtml(activeMetric.comparisonHeader) : 'County progress'}
                     </h2>
                     <p class="text-xs text-[#525B56]">
                       ${
                         isDomainView
                           ? this.escapeHtml(activeMetric.comparisonSubtitle)
-                          : 'Completed plot interviews vs. regional quota, broken down by Google Sheets sync state'
+                          : 'Completed interviews against regional targets.'
                       }
                     </p>
                   </div>
@@ -1975,8 +1940,8 @@ window.AEApp = {
                     ${
                       isDomainView
                         ? `<button type="button" onclick="AEApp.setOverviewMetric('responses')" class="text-xs font-medium text-[#247B50] hover:underline">Show sync coverage</button>`
-                        : `<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-xs bg-[#247B50]"></span>Synced to Sheets</span>
-                           <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-xs bg-[#D97706]"></span>Queued on tablet</span>`
+                        : `<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-xs bg-[#247B50]"></span>Synced</span>
+                           <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-xs bg-[#D97706]"></span>Queued</span>`
                     }
                   </div>
                 </div>
@@ -2028,23 +1993,23 @@ window.AEApp = {
               <div class="lg:col-span-5 lg:border-l lg:border-[#EFEFEF] lg:pl-6 space-y-3 min-w-0">
                 <div class="flex items-center justify-between gap-2">
                   <div class="min-w-0">
-                    <h3 class="text-base font-semibold text-[#111613]">Google Sheets Outbox Queue</h3>
+                    <h3 class="text-base font-semibold text-[#111613]">Recent activity</h3>
                     <p class="text-xs text-[#525B56]">
                       ${
                         this.selectedOverviewMetric === 'synced'
-                          ? 'Showing synchronized Google Sheets records'
+                          ? 'Synced records'
                           : this.selectedOverviewMetric === 'queued'
-                          ? 'Showing offline records pending Google Sheets push'
+                          ? 'Waiting to sync'
                           : activeScopeSurvey
-                          ? `Recent records for ${this.escapeHtml(activeScopeSurvey.title.split(' ')[0])}`
-                          : 'Recent records across all active instruments'
+                          ? `Latest for ${this.escapeHtml(activeScopeSurvey.title.split(' ')[0])}`
+                          : 'Latest submissions across all surveys'
                       }
                     </p>
                   </div>
                   <button onclick="AEApp.triggerGoogleSheetsSync()"
                     ${this.isSyncing ? 'disabled' : ''}
                     class="h-7 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] tabular-nums shrink-0 ae-press">
-                    Flush Queue (${queuedCount})
+                    Sync (${queuedCount})
                   </button>
                 </div>
 
@@ -2052,7 +2017,7 @@ window.AEApp = {
                   ${
                     outboxList.length === 0
                       ? `<div class="p-4 text-center text-xs text-[#525B56]">
-                          No records in this scope.
+                          No records in this view.
                           <button type="button" onclick="AEApp.setOverviewMetric('responses')" class="text-[#247B50] font-medium hover:underline ml-1">Show all</button>
                         </div>`
                       : outboxList
@@ -2067,21 +2032,16 @@ window.AEApp = {
                             return `
                               <div class="px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
                                 <div class="min-w-0">
-                                  <div class="flex items-center gap-1.5">
-                                    <span class="font-medium text-[#111613] truncate">${this.escapeHtml(r.gps?.label || r.id)}</span>
-                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#F4F6F4] text-[#247B50] border border-[#CFD5D0] shrink-0">
-                                      ${this.escapeHtml(surveyBadge)}
-                                    </span>
-                                  </div>
-                                  <div class="text-[#646E68] truncate">${this.escapeHtml(r.enumerator)} · ${this.escapeHtml(r.answers?.q_seed_variety || r.answers?.qd_shop_type || r.answers?.qe_session || 'Interview record')}</div>
+                                  <div class="font-medium text-[#111613] truncate">${this.escapeHtml(r.gps?.label || r.id)}</div>
+                                  <div class="text-[#646E68] truncate mt-0.5">${this.escapeHtml(r.enumerator)} · ${this.escapeHtml(surveyBadge)}</div>
                                 </div>
-                                <div class="flex items-center gap-2 shrink-0">
+                                <div class="shrink-0">
                                   <span class="px-2 py-0.5 rounded-[4px] text-[11px] font-medium whitespace-nowrap ${
                                     isQueued
                                       ? 'bg-[#FFFBEB] text-[#92400E]'
                                       : 'bg-[#DCFAE5] text-[#04250E]'
                                   }">
-                                    ${isQueued ? 'Queued offline' : 'Synced'}
+                                    ${isQueued ? 'Queued' : 'Synced'}
                                   </span>
                                 </div>
                               </div>
@@ -2099,8 +2059,8 @@ window.AEApp = {
         <section class="space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-baseline gap-2.5">
-              <h2 class="text-[18px] font-medium text-[#111613]">Survey Instruments</h2>
-              <span class="text-xs text-[#646E68] tabular-nums">${filteredSurveys.length} of ${surveys.length} shown</span>
+              <h2 class="text-[18px] font-medium text-[#111613]">All surveys</h2>
+              <span class="text-xs text-[#646E68] tabular-nums">${filteredSurveys.length} of ${surveys.length}</span>
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
@@ -2112,7 +2072,7 @@ window.AEApp = {
                   aria-label="Filter surveys by title or category"
                   value="${this.escapeAttr(this.searchQuery)}"
                   oninput="AEApp.setDashboardSearch(this.value)"
-                  placeholder="Filter by title or category…"
+                  placeholder="Search surveys…"
                   class="pl-8 pr-3 h-8 w-56 rounded-[6px] bg-white border border-[#CFD5D0] text-xs text-[#111613] placeholder-[#646E68] focus:outline-none focus:border-[#247B50]" />
               </div>
 
@@ -2137,19 +2097,19 @@ window.AEApp = {
 
           ${
             filteredSurveys.length === 0
-              ? `<div class="bg-white border border-dashed border-[#CFD5D0] rounded-[8px] p-8 text-center space-y-2">
-                  <div class="text-sm font-semibold text-[#111613]">No survey instruments match your filter</div>
-                  <p class="text-xs text-[#525B56]">Clear the search query or status filter to view all field surveys.</p>
+              ? `<div class="ae-card border-dashed rounded-[8px] p-8 text-center space-y-2">
+                  <div class="text-sm font-semibold text-[#111613]">No matching surveys</div>
+                  <p class="text-xs text-[#525B56]">Try clearing your search or status filter.</p>
                   <div class="pt-1">
                     <button onclick="AEApp.resetDashboardFilters()"
                       class="h-8 px-3.5 rounded-[6px] bg-[#141A17] text-white text-xs font-medium ae-press">
-                      Reset Filters
+                      Reset filters
                     </button>
                   </div>
                 </div>`
               : `
-          <!-- Responsive Mobile 2-Line List (< 640px) per app-screens.md §12 -->
-          <div class="sm:hidden bg-white border border-[#E4E7E4] rounded-[8px] divide-y divide-[#EFEFEF]">
+          <!-- Responsive Mobile Card List (< 640px) -->
+          <div class="sm:hidden space-y-2.5">
             ${filteredSurveys
               .map((s) => {
                 const qCount = window.aeStore.getQuestionsForSurvey(s).length;
@@ -2161,48 +2121,71 @@ window.AEApp = {
                   (p) => Array.isArray(p.assignedSurveys) && p.assignedSurveys.includes(s.id)
                 ).length;
                 return `
-                  <div class="p-3.5 space-y-2 min-w-0 ${isArchived ? 'opacity-85 bg-[#FAFBF9]' : ''}">
-                    <div class="flex items-start justify-between gap-2 min-w-0">
+                  <div class="ae-card rounded-[10px] p-4 space-y-3 min-w-0 ${isArchived ? 'opacity-80 bg-[#FAFBF9]' : ''}">
+                    <div class="flex items-start justify-between gap-3 min-w-0">
                       <button onclick="${isAdmin ? `AEApp.switchStage('design', '${s.id}')` : `AEApp.switchStage('collect', '${s.id}')`}" class="text-left font-semibold text-sm text-[#111613] leading-snug min-w-0 ae-break-words">
                         ${this.escapeHtml(s.title)}
                       </button>
-                      <span class="shrink-0 px-2 py-0.5 rounded-[4px] text-xs font-medium ${
+                      <span class="shrink-0 px-2 py-0.5 rounded-[4px] text-[11px] font-medium ${
                         s.status === 'Active'
                           ? 'bg-[#DCFAE5] text-[#04250E]'
                           : s.status === 'Draft'
                           ? 'bg-[#FFFBEB] text-[#92400E]'
                           : s.status === 'Archived'
-                          ? 'bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0]'
+                          ? 'bg-[#F4F6F4] text-[#646E68]'
                           : 'bg-[#EAECE9] text-[#525B56]'
                       }">
-                        ${isArchived ? '<i class="fa-solid fa-box-archive mr-1 text-[10px]"></i>' : ''}${this.escapeHtml(s.status)}
+                        ${this.escapeHtml(s.status)}
                       </span>
                     </div>
-                    <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#525B56] tabular-nums">
-                      <span>${this.escapeHtml(s.category || 'General')} · ${qCount} questions · ${synced} synced${unsynced > 0 ? ` · ${unsynced} queued` : ''}</span>
-                      <div class="flex items-center gap-1.5 flex-wrap">
-                        <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}')" class="h-7 px-2 rounded-[5px] border ${this.overviewSurveyFilter === s.id ? 'bg-[#247B50] text-white border-[#247B50]' : 'border-[#CFD5D0] bg-white text-[#525B56]'} text-xs font-medium">${this.overviewSurveyFilter === s.id ? 'Active' : 'Overview'}</button>
-                        ${isAdmin ? `<button onclick="AEApp.switchStage('design', '${s.id}')" class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#111613]">Build</button>` : ''}
-                        ${
-                          isAdmin
-                            ? `<button onclick="AEApp.openAssignTeamModal('${s.id}')" title="Assign Field Team" class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#111613] inline-flex items-center gap-1">
-                                <i class="fa-solid fa-users text-[#247B50]"></i> ${assignedPersonnelCount}
-                              </button>`
-                            : ''
-                        }
+                    <div class="text-xs text-[#525B56] tabular-nums">
+                      ${this.escapeHtml(s.category || 'General')} · ${qCount} questions · ${sResponses.length} responses${unsynced > 0 ? ` · <span class="text-[#92400E] font-medium">${unsynced} queued</span>` : ''}
+                    </div>
+                    <div class="pt-2.5 border-t border-[#EFEFEF] flex items-center justify-between gap-2">
+                      <button onclick="AEApp.switchStage('analyze', '${s.id}')" class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold tabular-nums ae-press">
+                        Analyze (${sResponses.length})
+                      </button>
+                      <div class="flex items-center gap-1.5">
+                        ${isAdmin ? `<button onclick="AEApp.switchStage('design', '${s.id}')" class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">Build</button>` : ''}
                         ${
                           isArchived
-                            ? `<span class="h-7 px-2.5 rounded-[5px] bg-[#F4F6F4] text-[#88928B] text-xs font-medium inline-flex items-center">Locked</span>`
-                            : `<button onclick="AEApp.switchStage('collect', '${s.id}')" class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#247B50]">Collect</button>`
+                            ? `<span class="h-8 px-2.5 rounded-[6px] bg-[#F4F6F4] text-[#88928B] text-xs font-medium inline-flex items-center">Locked</span>`
+                            : `<button onclick="AEApp.switchStage('collect', '${s.id}')" class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#247B50] ae-press">Collect</button>`
                         }
-                        <button onclick="AEApp.switchStage('analyze', '${s.id}')" class="h-7 px-2.5 rounded-[5px] bg-[#141A17] text-white text-xs font-medium">Analyze (${sResponses.length})</button>
-                        ${
-                          isAdmin
-                            ? isArchived
-                              ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}')" title="Restore Survey" class="h-7 px-2 rounded-[5px] border border-[#247B50] bg-white text-[#247B50] text-xs font-semibold">Restore</button>`
-                              : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}')" title="Archive Survey" class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white text-[#525B56] text-xs"><i class="fa-solid fa-box-archive"></i></button>`
-                            : ''
-                        }
+                        <details class="relative inline-block text-left">
+                          <summary class="list-none w-8 h-8 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] inline-flex items-center justify-center text-xs cursor-pointer ae-press" title="More actions">
+                            <i class="fa-solid fa-ellipsis-vertical"></i>
+                          </summary>
+                          <div class="absolute right-0 z-30 mt-1 w-44 rounded-[8px] bg-white border border-[#E4E7E4] shadow-md py-1 text-xs text-[#111613]">
+                            <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}'); this.closest('details').removeAttribute('open');"
+                              class="w-full text-left px-3 py-2 hover:bg-[#F8F9F8] flex items-center gap-2">
+                              <i class="fa-solid fa-crosshairs text-[#247B50] w-3.5"></i>
+                              <span>${this.overviewSurveyFilter === s.id ? 'Clear filter' : 'Filter overview'}</span>
+                            </button>
+                            ${
+                              isAdmin
+                                ? `<button onclick="AEApp.openAssignTeamModal('${s.id}'); this.closest('details').removeAttribute('open');"
+                                    class="w-full text-left px-3 py-2 hover:bg-[#F8F9F8] flex items-center gap-2">
+                                    <i class="fa-solid fa-users text-[#525B56] w-3.5"></i>
+                                    <span>Assign team (${assignedPersonnelCount})</span>
+                                  </button>
+                                  ${
+                                    isArchived
+                                      ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
+                                          class="w-full text-left px-3 py-2 hover:bg-[#DCFAE5] text-[#247B50] flex items-center gap-2">
+                                          <i class="fa-solid fa-rotate-left w-3.5"></i>
+                                          <span>Restore</span>
+                                        </button>`
+                                      : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
+                                          class="w-full text-left px-3 py-2 hover:bg-[#FFFBEB] text-[#92400E] flex items-center gap-2">
+                                          <i class="fa-solid fa-box-archive w-3.5"></i>
+                                          <span>Archive</span>
+                                        </button>`
+                                  }`
+                                : ''
+                            }
+                          </div>
+                        </details>
                       </div>
                     </div>
                   </div>
@@ -2211,15 +2194,15 @@ window.AEApp = {
               .join('')}
           </div>
 
-          <div class="hidden sm:block bg-white border border-[#E4E7E4] rounded-[8px] overflow-x-auto">
+          <div class="hidden sm:block ae-card rounded-[8px] overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="border-b border-[#E4E7E4] h-10 text-xs font-normal text-[#525B56]">
-                  <th class="py-2 pl-4 pr-3 font-normal">Survey instrument</th>
+                  <th class="py-2 pl-4 pr-3 font-normal">Survey</th>
                   <th class="py-2 px-3 font-normal">Status</th>
                   <th class="py-2 px-3 font-normal text-right">Questions</th>
-                  <th class="py-2 px-3 font-normal text-right">Synced rows</th>
-                  <th class="py-2 px-3 font-normal text-right">Offline queue</th>
+                  <th class="py-2 px-3 font-normal text-right">Responses</th>
+                  <th class="py-2 px-3 font-normal text-right">Pending</th>
                   <th class="py-2 px-3 font-normal text-right">Updated</th>
                   <th class="py-2 pl-3 pr-4 font-normal text-right">Actions</th>
                 </tr>
@@ -2233,31 +2216,26 @@ window.AEApp = {
         </section>
 
         <!-- 4. Getting-Started / Verified Survey Templates Strip (Admin Only) -->
-        ${isAdmin ? `<section class="space-y-2.5">
-          <div class="flex items-baseline justify-between gap-2">
-            <div>
-              <h2 class="text-[18px] font-medium text-[#111613]">Initialize from a Universal Template</h2>
-              <p class="text-xs text-[#525B56]">Production-ready multi-page survey instruments across Public Health, Enterprise HR, Humanitarian Aid, Customer Experience, and Field Agriculture</p>
-            </div>
+        ${isAdmin ? `<section class="space-y-3 pt-2">
+          <div>
+            <h2 class="text-[18px] font-medium text-[#111613]">Start from a template</h2>
+            <p class="text-xs text-[#525B56] mt-0.5">Ready-to-use survey templates you can customize.</p>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
             ${window.SURVEY_TEMPLATES.map(
               (tpl) => `
-              <div class="p-4 bg-white border border-[#E4E7E4] rounded-[8px] flex flex-col justify-between gap-3 ae-card-hover">
+              <div class="p-4 sm:p-5 ae-card rounded-[10px] flex flex-col justify-between gap-4 ae-card-hover">
                 <div class="space-y-1.5">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-[11px] font-semibold text-[#247B50]">${this.escapeHtml(tpl.category)}</span>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-[#F8F9F8] border border-[#E4E7E4] text-[#525B56]">${this.escapeHtml(tpl.badge)}</span>
-                  </div>
+                  <span class="text-[11px] font-medium text-[#247B50]">${this.escapeHtml(tpl.category)}</span>
                   <h3 class="text-sm font-semibold text-[#111613] leading-snug">${this.escapeHtml(tpl.name)}</h3>
-                  <p class="text-xs text-[#525B56] line-clamp-3 leading-relaxed">${this.escapeHtml(tpl.description)}</p>
+                  <p class="text-xs text-[#525B56] ae-line-clamp-2 leading-relaxed">${this.escapeHtml(tpl.description)}</p>
                 </div>
-                <div class="pt-2 flex items-center justify-between border-t border-[#EFEFEF]">
-                  <span class="text-[11px] text-[#646E68] inline-flex items-center gap-1"><i class="fa-solid fa-cloud-arrow-up text-[10px] text-[#247B50]"></i> Offline Ready</span>
+                <div class="pt-3 flex items-center justify-between border-t border-[#EFEFEF]">
+                  <span class="text-[11px] text-[#646E68]">${this.escapeHtml(tpl.badge)}</span>
                   <button onclick="AEApp.createFromTemplate('${tpl.id}')"
                     class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#141A17] hover:text-white hover:border-[#141A17] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-                    <span>Use Template</span>
+                    <span>Use template</span>
                     <i class="fa-solid fa-arrow-right text-[9px]"></i>
                   </button>
                 </div>
@@ -2357,41 +2335,41 @@ window.AEApp = {
                     const publicUrl = `${window.location.origin}${basePath}field.html?survey=${encodeURIComponent(s.id)}&mode=respondent`;
                     return `
                       <details class="relative inline-block text-left">
-                        <summary class="list-none w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs cursor-pointer ae-press" title="More Instrument Actions">
+                        <summary class="list-none w-7 h-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] inline-flex items-center justify-center text-xs cursor-pointer ae-press" title="More actions">
                           <i class="fa-solid fa-ellipsis-vertical"></i>
                         </summary>
-                        <div class="absolute right-0 z-30 mt-1 w-52 rounded-[6px] bg-white border border-[#E4E7E4] shadow-md py-1 text-xs text-[#111613]">
-                          <button onclick="AEApp.copyText('${this.escapeJs(publicUrl)}', 'Self-Administered Respondent Link copied to clipboard.'); this.closest('details').removeAttribute('open');"
+                        <div class="absolute right-0 z-30 mt-1 w-52 rounded-[8px] bg-white border border-[#E4E7E4] shadow-md py-1 text-xs text-[#111613]">
+                          <button onclick="AEApp.copyText('${this.escapeJs(publicUrl)}', 'Respondent link copied.'); this.closest('details').removeAttribute('open');"
                             class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2 font-medium text-[#247B50]">
                             <i class="fa-solid fa-earth-africa text-[#247B50] w-4"></i>
-                            <span>Copy Respondent Link</span>
+                            <span>Copy respondent link</span>
                           </button>
                           <button onclick="AEApp.setOverviewSurveyFilter('${this.overviewSurveyFilter === s.id ? 'all' : s.id}'); this.closest('details').removeAttribute('open');"
                             class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
                             <i class="fa-solid fa-crosshairs text-[#247B50] w-4"></i>
-                            <span>${this.overviewSurveyFilter === s.id ? 'Reset Scope' : 'Active Scope'}</span>
+                            <span>${this.overviewSurveyFilter === s.id ? 'Clear overview filter' : 'Filter overview'}</span>
                           </button>
                           <button onclick="AEApp.openAssignTeamModal('${s.id}'); this.closest('details').removeAttribute('open');"
                             class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
                             <i class="fa-solid fa-users text-[#525B56] w-4"></i>
-                            <span>Assign Team (${assignedCount})</span>
+                            <span>Assign team (${assignedCount})</span>
                           </button>
                           <button onclick="AEApp.duplicateSurvey('${s.id}'); this.closest('details').removeAttribute('open');"
                             class="w-full text-left px-3 py-1.5 hover:bg-[#FAFBF9] flex items-center gap-2">
                             <i class="fa-regular fa-copy text-[#525B56] w-4"></i>
-                            <span>Duplicate Instrument</span>
+                            <span>Duplicate</span>
                           </button>
                           ${
                             s.status === 'Archived'
                               ? `<button onclick="AEApp.restoreSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
                                   class="w-full text-left px-3 py-1.5 hover:bg-[#DCFAE5] text-[#247B50] flex items-center gap-2">
                                   <i class="fa-solid fa-rotate-left w-4"></i>
-                                  <span>Restore Instrument</span>
+                                  <span>Restore</span>
                                 </button>`
                               : `<button onclick="AEApp.archiveSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
                                   class="w-full text-left px-3 py-1.5 hover:bg-[#FFFBEB] text-[#92400E] flex items-center gap-2">
                                   <i class="fa-solid fa-box-archive w-4"></i>
-                                  <span>Archive (Lock Field)</span>
+                                  <span>Archive</span>
                                 </button>`
                           }
                           ${
@@ -2400,7 +2378,7 @@ window.AEApp = {
                                  <button onclick="AEApp.deleteSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
                                    class="w-full text-left px-3 py-1.5 hover:bg-[#FFEDEA] text-[#C4242A] flex items-center gap-2">
                                    <i class="fa-regular fa-trash-can w-4"></i>
-                                   <span>Delete Instrument</span>
+                                   <span>Delete</span>
                                  </button>`
                               : ''
                           }
@@ -2740,14 +2718,9 @@ window.AEApp = {
         <!-- 1. Header Bar -->
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
           <div>
-            <div class="flex items-center gap-2.5">
-              <h1 class="text-[22px] font-semibold text-[#111613] tracking-tight">Personnel &amp; Task Allocation Studio</h1>
-              <span class="px-2 py-0.5 rounded-[4px] text-xs font-medium bg-[#DCFAE5] text-[#04250E] tabular-nums">
-                ${activeStaff.length} active staff · ${taskAllocations.length} allocated tasks
-              </span>
-            </div>
-            <p class="text-xs text-[#525B56] mt-1">
-              Hierarchical task assignments, regional target quotas, and supervisor oversight across Kenyan agricultural clusters.
+            <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight">Field team</h1>
+            <p class="text-xs text-[#525B56] mt-1 tabular-nums">
+              ${activeStaff.length} active staff · ${taskAllocations.length} assigned tasks
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -2755,19 +2728,19 @@ window.AEApp = {
               canAssign
                 ? `<button onclick="AEApp.openAssignTaskModal()"
                     class="h-8 px-3.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
-                    <i class="fa-solid fa-list-check text-xs"></i> Assign Tasks
+                    <i class="fa-solid fa-list-check text-xs"></i> Assign task
                   </button>`
                 : ''
             }
             <button onclick="AEApp.openSyncSettingsModal()"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-cloud-arrow-up text-[#247B50] text-xs"></i> Sync Sheets Roster
+              <i class="fa-solid fa-cloud-arrow-up text-[#247B50] text-xs"></i> Sync roster
             </button>
             ${
               isAdmin
                 ? `<button onclick="AEApp.openAddPersonnelModal()"
                     class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-                    <i class="fa-solid fa-user-plus text-xs text-[#247B50]"></i> Add Staff
+                    <i class="fa-solid fa-user-plus text-xs text-[#247B50]"></i> Add staff
                   </button>`
                 : ''
             }
@@ -2784,8 +2757,8 @@ window.AEApp = {
                   : 'border-transparent text-[#525B56] hover:text-[#111613]'
               }">
               <i class="fa-solid fa-table-list text-xs"></i>
-              <span>Task &amp; Quota Allocation Matrix</span>
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+              <span>Task assignments</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums ${
                 this.teamActiveSubTab === 'tasks' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#EFEFEF] text-[#525B56]'
               }">${taskAllocations.length}</span>
             </button>
@@ -2797,8 +2770,8 @@ window.AEApp = {
                   : 'border-transparent text-[#525B56] hover:text-[#111613]'
               }">
               <i class="fa-solid fa-users text-xs"></i>
-              <span>Staff Directory &amp; Credentials</span>
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+              <span>Staff directory</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums ${
                 this.teamActiveSubTab === 'roster' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#EFEFEF] text-[#525B56]'
               }">${activeStaff.length}</span>
             </button>
@@ -2809,68 +2782,68 @@ window.AEApp = {
         ${
           this.teamActiveSubTab === 'tasks'
             ? `
-            <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
+            <div class="ae-card rounded-[8px] overflow-hidden">
               <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF]">
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Assigned Field Tasks</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Assigned tasks</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[24px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${taskAllocations.length}">${taskAllocations.length}</strong>
-                    <span class="text-xs text-[#247B50] font-medium">active survey tasks</span>
+                    <span class="text-xs text-[#247B50] font-medium">active</span>
                   </div>
                 </div>
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Aggregate Quota Target</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Target plots</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${totalTargetPlots}">${totalTargetPlots}</strong>
-                    <span class="text-xs text-[#525B56]">plots assigned</span>
+                    <span class="text-xs text-[#525B56]">assigned</span>
                   </div>
                 </div>
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Completed Field Interviews</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Completed</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${totalCompletedPlots}">${totalCompletedPlots}</strong>
-                    <span class="text-xs text-[#247B50] font-medium">${overallTaskPct}% overall pacing</span>
+                    <span class="text-xs text-[#247B50] font-medium">${overallTaskPct}% of target</span>
                   </div>
                 </div>
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Deployed Personnel</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Assigned staff</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${uniqueAssignedStaff}">${uniqueAssignedStaff}</strong>
-                    <span class="text-xs text-[#525B56]">staff with tasks</span>
+                    <span class="text-xs text-[#525B56]">members</span>
                   </div>
                 </div>
               </div>
             </div>
             `
             : `
-            <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
+            <div class="ae-card rounded-[8px] overflow-hidden">
               <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF]">
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Field Enumerators</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Enumerators</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[24px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${enumerators.length}">${enumerators.length}</strong>
-                    <span class="text-xs text-[#247B50] font-medium">${enumerators.filter((e) => e.active !== false).length} active in field</span>
+                    <span class="text-xs text-[#247B50] font-medium">${enumerators.filter((e) => e.active !== false).length} active</span>
                   </div>
                 </div>
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Regional Supervisors</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Supervisors</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${supervisors.length}">${supervisors.length}</strong>
-                    <span class="text-xs text-[#525B56]">Cluster oversight</span>
+                    <span class="text-xs text-[#525B56]">regional</span>
                   </div>
                 </div>
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">HQ Operations Admins</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Administrators</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${admins.length}">${admins.length}</strong>
-                    <span class="text-xs text-[#525B56]">Full studio access</span>
+                    <span class="text-xs text-[#525B56]">full access</span>
                   </div>
                 </div>
                 <div class="p-4 ae-personnel-kpi">
-                  <span class="text-xs font-medium text-[#525B56] block">Total Interviews Recorded</span>
+                  <span class="text-xs font-medium text-[#525B56] block">Total interviews</span>
                   <div class="mt-1 flex items-baseline gap-2">
                     <strong class="text-[22px] font-semibold text-[#111613] tabular-nums leading-none ae-kpi-counter" data-target="${responses.length}">${responses.length}</strong>
-                    <span class="text-xs text-[#247B50] font-medium">all staff</span>
+                    <span class="text-xs text-[#247B56] font-medium">all staff</span>
                   </div>
                 </div>
               </div>
@@ -3289,13 +3262,13 @@ window.AEApp = {
               <div>
                 <h3 class="text-base font-semibold text-[#111613] flex items-center gap-2">
                   <i class="fa-solid fa-layer-group text-[#247B50]"></i>
-                  <span>Survey Template Library</span>
+                  <span>Survey templates</span>
                 </h3>
                 <p class="text-xs text-[#525B56] mt-0.5">
-                  Domain-agnostic blueprints with pre-wired 2a/2b conditional visibility and dynamic variable piping.
+                  Start from a ready-made questionnaire with built-in follow-up logic.
                 </p>
               </div>
-              <button type="button" onclick="AEApp.closeTemplateLibraryModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center shrink-0">
+              <button type="button" onclick="AEApp.closeTemplateLibraryModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center shrink-0 ae-press">
                 <i class="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
@@ -3305,7 +3278,7 @@ window.AEApp = {
                 .map(
                   (cat) => `
                     <button type="button" onclick="AEApp.setTemplateCategoryFilter('${this.escapeJs(cat)}')"
-                      class="h-7 px-2.5 rounded-[5px] text-xs font-medium transition-colors ae-press ${
+                      class="h-7 px-2.5 rounded-[5px] text-xs font-medium ae-press ${
                         activeCat === cat
                           ? 'bg-[#141A17] text-white font-semibold'
                           : 'bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] border border-[#E4E7E4]'
@@ -3317,7 +3290,7 @@ window.AEApp = {
                 .join('')}
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-[60vh] overflow-y-auto pr-1">
               ${filtered
                 .map((tpl) => {
                   const qCount = (tpl.pages || []).reduce((acc, p) => acc + (p.questions ? p.questions.length : 0), 0);
@@ -3326,26 +3299,22 @@ window.AEApp = {
                     0
                   );
                   return `
-                    <div class="bg-white border border-[#E4E7E4] hover:border-[#247B50] rounded-[8px] p-4 flex flex-col justify-between gap-3 transition-colors">
+                    <div class="ae-card ae-card-hover rounded-[10px] p-4 sm:p-5 flex flex-col justify-between gap-4">
                       <div class="space-y-1.5">
                         <div class="flex items-center justify-between gap-2">
-                          <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded bg-[#F4F6F4] text-[#247B50]">
-                            <i class="fa-solid ${this.escapeAttr(tpl.icon || 'fa-clipboard-list')}"></i>
-                            ${this.escapeHtml(tpl.category)}
-                          </span>
-                          <span class="text-[11px] text-[#646E68] tabular-nums">${qCount} Qs · ~${tpl.estimatedMins || 4} min</span>
+                          <span class="text-[11px] font-medium text-[#247B50]">${this.escapeHtml(tpl.category)}</span>
+                          <span class="text-[11px] text-[#646E68] tabular-nums">${qCount} questions · ~${tpl.estimatedMins || 4} min</span>
                         </div>
                         <h4 class="text-sm font-semibold text-[#111613]">${this.escapeHtml(tpl.name)}</h4>
                         <p class="text-xs text-[#525B56] leading-relaxed">${this.escapeHtml(tpl.description)}</p>
                       </div>
-                      <div class="flex items-center justify-between pt-2 border-t border-[#EFEFEF]">
-                        <span class="text-[11px] text-[#525B56] inline-flex items-center gap-1">
-                          <i class="fa-solid fa-eye text-[#247B50] text-[10px]"></i>
+                      <div class="flex items-center justify-between pt-3 border-t border-[#EFEFEF]">
+                        <span class="text-[11px] text-[#646E68] tabular-nums">
                           ${condCount} conditional follow-up${condCount === 1 ? '' : 's'}
                         </span>
                         <button type="button" onclick="AEApp.createSurveyFromTemplate('${this.escapeJs(tpl.id)}')"
-                          class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
-                          <span>Use Template</span>
+                          class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                          <span>Use template</span>
                           <i class="fa-solid fa-arrow-right text-[10px]"></i>
                         </button>
                       </div>
@@ -3371,20 +3340,20 @@ window.AEApp = {
               <div>
                 <h3 class="text-base font-semibold text-[#111613] flex items-center gap-2">
                   <i class="fa-solid fa-wand-magic-sparkles text-[#247B50]"></i>
-                  <span>Paste Outline to Survey Generator</span>
+                  <span>Paste an outline</span>
                 </h3>
                 <p class="text-xs text-[#525B56] mt-0.5">
-                  Paste any numbered question list. Inline options like <code>(Excellent, Good, Poor)</code> and sub-questions like <code>1b.</code> auto-wire into conditional follow-ups.
+                  Paste a numbered list of questions. Inline choices like <code>(Yes, No)</code> and sub-questions like <code>1b.</code> are parsed automatically.
                 </p>
               </div>
-              <button type="button" onclick="AEApp.closePasteOutlineModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center shrink-0">
+              <button type="button" onclick="AEApp.closePasteOutlineModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center shrink-0 ae-press">
                 <i class="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
 
             <form onsubmit="AEApp.createSurveyFromOutline(event)" class="space-y-3.5 text-xs">
               <div>
-                <label for="ae_paste_outline_title" class="block font-semibold text-[#111613] mb-1">Survey Title *</label>
+                <label for="ae_paste_outline_title" class="block font-semibold text-[#111613] mb-1">Survey title *</label>
                 <input id="ae_paste_outline_title" name="ae_paste_outline_title" type="text" required maxlength="160"
                   value="${this.escapeAttr(this.pasteOutlineTitle || '')}"
                   placeholder="e.g. Q2 Strategy Workshop Feedback"
@@ -3393,17 +3362,17 @@ window.AEApp = {
 
               <div>
                 <div class="flex items-center justify-between mb-1">
-                  <label for="ae_paste_outline_text" class="font-semibold text-[#111613]">Question Outline *</label>
+                  <label for="ae_paste_outline_text" class="font-semibold text-[#111613]">Questions *</label>
                   <button type="button" onclick="document.getElementById('ae_paste_outline_text').value = ${this.escapeAttr(JSON.stringify(sampleOutline))};"
                     class="text-[11px] text-[#247B50] hover:underline font-medium">
-                    Insert Example
+                    Insert example
                   </button>
                 </div>
                 <textarea id="ae_paste_outline_text" name="ae_paste_outline_text" rows="9" required
                   placeholder="${this.escapeAttr(sampleOutline)}"
                   class="w-full rounded-[6px] border border-[#CFD5D0] p-3 text-xs font-mono text-[#111613] bg-white focus:border-[#247B50] focus:outline-none leading-relaxed">${this.escapeHtml(this.pasteOutlineText || '')}</textarea>
                 <p class="text-[11px] text-[#646E68] mt-1">
-                  Tips: Use <code>## Section Name</code> for page breaks, <code>(Opt A, Opt B, Opt C)</code> for choices, <code>1b.</code> for conditional follow-ups, and <code>(0-10)</code> for NPS.
+                  Use <code>## Section</code> for pages, <code>(Opt A, Opt B)</code> for choices, <code>1b.</code> for follow-ups, and <code>(0-10)</code> for NPS.
                 </p>
               </div>
 
@@ -3411,9 +3380,9 @@ window.AEApp = {
                 <button type="button" onclick="AEApp.closePasteOutlineModal()" class="h-8 px-3 rounded-[5px] text-xs font-medium text-[#525B56] hover:text-[#111613]">
                   Cancel
                 </button>
-                <button type="submit" class="h-8 px-4 rounded-[5px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
-                  <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
-                  <span>Generate &amp; Open Builder</span>
+                <button type="submit" class="h-8 px-4 rounded-[5px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                  <span>Create survey</span>
+                  <i class="fa-solid fa-arrow-right text-[10px]"></i>
                 </button>
               </div>
             </form>
@@ -3442,12 +3411,12 @@ window.AEApp = {
           <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-lg w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
             <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3">
               <div>
-                <h3 class="text-base font-semibold text-[#111613]">Assign Field Team</h3>
+                <h3 class="text-base font-semibold text-[#111613]">Assign team</h3>
                 <p class="text-xs text-[#525B56] mt-0.5 ae-break-words">
-                  Select which supervisors and enumerators have access to <strong>"${this.escapeHtml(survey.title)}"</strong>
+                  Choose who can access <strong>"${this.escapeHtml(survey.title)}"</strong>.
                 </p>
               </div>
-              <button onclick="AEApp.closeAssignTeamModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
+              <button onclick="AEApp.closeAssignTeamModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center ae-press">
                 <i class="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
@@ -3456,10 +3425,10 @@ window.AEApp = {
               <!-- Field Supervisors Section -->
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold text-[#111613] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                    <i class="fa-solid fa-user-tie text-[#141A17]"></i> Regional Supervisors (${supervisors.length})
+                  <span class="font-semibold text-[#111613] text-xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-user-tie text-[#141A17]"></i> Supervisors (${supervisors.length})
                   </span>
-                  <span class="text-[10px] text-[#525B56]">Review &amp; sign-off authority</span>
+                  <span class="text-[11px] text-[#525B56]">Can review responses</span>
                 </div>
                 <div class="border border-[#CFD5D0] rounded-[6px] max-h-36 overflow-y-auto p-2 bg-[#FAFBF9] space-y-1.5 divide-y divide-[#EFEFEF]">
                   ${
@@ -3487,13 +3456,13 @@ window.AEApp = {
               <!-- Field Enumerators Section -->
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold text-[#111613] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                    <i class="fa-solid fa-users text-[#247B50]"></i> Field Enumerators (${enumerators.length})
+                  <span class="font-semibold text-[#111613] text-xs flex items-center gap-1.5">
+                    <i class="fa-solid fa-users text-[#247B50]"></i> Enumerators (${enumerators.length})
                   </span>
                   <div class="flex items-center gap-2">
-                    <button type="button" onclick="AEApp.toggleAllEnumTeam(true)" class="text-[10px] text-[#247B50] hover:underline font-medium">Select All</button>
+                    <button type="button" onclick="AEApp.toggleAllEnumTeam(true)" class="text-[11px] text-[#247B50] hover:underline font-medium">Select all</button>
                     <span class="text-[#CFD5D0]">·</span>
-                    <button type="button" onclick="AEApp.toggleAllEnumTeam(false)" class="text-[10px] text-[#525B56] hover:underline font-medium">Clear</button>
+                    <button type="button" onclick="AEApp.toggleAllEnumTeam(false)" class="text-[11px] text-[#525B56] hover:underline font-medium">Clear</button>
                   </div>
                 </div>
                 <div id="ae_enum_team_container" class="border border-[#CFD5D0] rounded-[6px] max-h-48 overflow-y-auto p-2 bg-[#FAFBF9] space-y-1.5 divide-y divide-[#EFEFEF]">
@@ -3554,10 +3523,10 @@ window.AEApp = {
           <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-md w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
             <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3">
               <div>
-                <h3 class="text-base font-semibold text-[#111613]">${isEdit ? 'Edit Staff Member' : 'Add New Field Personnel'}</h3>
-                <p class="text-xs text-[#525B56] mt-0.5">Role assignment and regional cluster for Kenya agricultural field operations</p>
+                <h3 class="text-base font-semibold text-[#111613]">${isEdit ? 'Edit staff member' : 'Add staff member'}</h3>
+                <p class="text-xs text-[#525B56] mt-0.5">Set role, region, and survey access.</p>
               </div>
-              <button onclick="AEApp.closePersonnelModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center">
+              <button onclick="AEApp.closePersonnelModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center ae-press">
                 <i class="fa-solid fa-xmark text-xs"></i>
               </button>
             </div>
@@ -3692,8 +3661,8 @@ window.AEApp = {
           <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-lg w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
             <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3">
               <div>
-                <h3 class="text-base font-semibold text-[#111613]">Allocate Field Survey Task &amp; Quota</h3>
-                <p class="text-xs text-[#525B56] mt-0.5">Assign target interviews, reporting supervisor, and deadlines to field personnel.</p>
+                <h3 class="text-base font-semibold text-[#111613]">Assign survey task</h3>
+                <p class="text-xs text-[#525B56] mt-0.5">Set a target quota, supervisor, and optional deadline.</p>
               </div>
               <button onclick="AEApp.closePersonnelModals()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] hover:bg-[#EAEAEA] flex items-center justify-center ae-press">
                 <i class="fa-solid fa-xmark text-xs"></i>
@@ -3812,8 +3781,8 @@ window.AEApp = {
                   <i class="fa-solid fa-seedling"></i>
                 </div>
                 <div>
-                  <h3 class="text-sm font-semibold text-[#111613]">Operations Studio Menu</h3>
-                  <p class="text-[11px] text-[#525B56]">Agri Experience HQ Controls</p>
+                  <h3 class="text-sm font-semibold text-[#111613]">Studio menu</h3>
+                  <p class="text-[11px] text-[#525B56]">AE Survey</p>
                 </div>
               </div>
               <button onclick="AEApp.toggleStudioMobileMenu()" aria-label="Close"
@@ -3825,7 +3794,7 @@ window.AEApp = {
             <!-- Staff Identity Card -->
             <div class="p-3.5 rounded-[8px] bg-[#F8F9F8] border border-[#E4E7E4] flex items-center justify-between gap-3">
               <div class="min-w-0">
-                <div class="text-[11px] text-[#525B56]">Signed in as:</div>
+                <div class="text-[11px] text-[#525B56]">Signed in as</div>
                 <div class="text-xs font-bold text-[#111613] truncate">${this.escapeHtml(currentUser ? currentUser.fullName : 'Guest')}</div>
                 <div class="text-[11px] text-[#525B56]">${currentUser ? currentUser.id : ''} · ${this.escapeHtml((currentUser && currentUser.county) || 'HQ')}</div>
               </div>
@@ -3842,7 +3811,7 @@ window.AEApp = {
                       class="w-full h-11 px-4 rounded-[8px] border border-[#247B50] bg-white hover:bg-[#F4F6F4] text-[#247B50] text-xs font-semibold inline-flex items-center justify-between ae-press">
                       <span class="inline-flex items-center gap-2">
                         <i class="fa-solid fa-download text-sm"></i>
-                        <span>Install Operations Studio (PWA)</span>
+                        <span>Install app</span>
                       </span>
                       <i class="fa-solid fa-chevron-right text-xs"></i>
                     </button>`
@@ -3850,10 +3819,10 @@ window.AEApp = {
               }
 
               <a href="./field.html${activeSurvey ? '?survey=' + encodeURIComponent(activeSurvey.id) : ''}"
-                class="w-full h-11 px-4 rounded-[8px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-between ae-press shadow-xs">
+                class="w-full h-11 px-4 rounded-[8px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-between ae-press">
                 <span class="inline-flex items-center gap-2">
                   <i class="fa-solid fa-mobile-screen-button"></i>
-                  <span>Open Mobile Field App (PWA)</span>
+                  <span>Open Field App</span>
                 </span>
                 <i class="fa-solid fa-arrow-right text-xs"></i>
               </a>
@@ -3862,7 +3831,7 @@ window.AEApp = {
                 class="w-full h-10 px-4 rounded-[8px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center justify-between ae-press">
                 <span class="inline-flex items-center gap-2">
                   <span class="w-2 h-2 rounded-full ${online ? 'bg-[#247B50]' : 'bg-[#D97706]'}"></span>
-                  <span>${online ? 'Switch to Offline Mode' : 'Switch to Online Mode'}</span>
+                  <span>${online ? 'Switch to offline mode' : 'Switch to online mode'}</span>
                 </span>
                 <span class="text-[11px] font-semibold ${online ? 'text-[#247B50]' : 'text-[#D97706]'}">${online ? 'Online' : 'Offline'}</span>
               </button>
@@ -3871,7 +3840,7 @@ window.AEApp = {
                 class="w-full h-10 px-4 rounded-[8px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center justify-between ae-press">
                 <span class="inline-flex items-center gap-2">
                   <i class="fa-solid fa-table text-[#525B56]"></i>
-                  <span>Google Sheets &amp; GAS Backend</span>
+                  <span>Sheets sync settings</span>
                 </span>
                 <i class="fa-solid fa-gear text-xs text-[#525B56]"></i>
               </button>
@@ -3879,7 +3848,7 @@ window.AEApp = {
               <button onclick="AEApp.handleLogout()"
                 class="w-full h-10 px-4 rounded-[8px] border border-[#F5C2C0] bg-[#FFEDEA] hover:bg-[#FDE2DC] text-xs font-semibold text-[#831C1E] inline-flex items-center justify-center gap-2 ae-press">
                 <i class="fa-solid fa-arrow-right-from-bracket"></i>
-                <span>Sign Out of Operations Studio</span>
+                <span>Sign out</span>
               </button>
             </div>
           </div>
@@ -3944,22 +3913,22 @@ window.AEApp = {
           class="ae-glass-modal rounded-[12px] max-w-2xl w-full p-6 space-y-5 my-8 ae-dialog-animate">
           <div class="flex items-start justify-between gap-4 pb-3 border-b border-[#EFEFEF]">
             <div>
-              <h3 id="ae_sync_modal_title" class="text-lg font-semibold text-[#111613]">Google Sheets Database &amp; GAS Endpoint</h3>
-              <p class="text-xs text-[#525B56] mt-0.5">Bidirectional offline synchronization powered by <code>Code.gs</code></p>
+              <h3 id="ae_sync_modal_title" class="text-lg font-semibold text-[#111613]">Google Sheets sync</h3>
+              <p class="text-xs text-[#525B56] mt-0.5">Two-way sync via Google Apps Script (<code>Code.gs</code>).</p>
             </div>
             <button onclick="AEApp.closeSyncSettingsModal()"
               aria-label="Close modal"
               title="Close (Escape)"
-              class="w-8 h-8 rounded-[6px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center">
+              class="w-8 h-8 rounded-[6px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center ae-press">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
 
           ${
             !isAdmin
-              ? `<div class="p-3 rounded-[6px] bg-[#EFF6FF] border border-[#BFDBFE] text-[#1E40AF] text-xs font-medium flex items-center gap-2">
-                  <i class="fa-solid fa-lock text-xs shrink-0"></i>
-                  <span>Read-Only View: As a Regional Supervisor, synchronization endpoints and secret keys are managed by HQ Administrators.</span>
+              ? `<div class="p-3 rounded-[6px] bg-[#F8F9F8] border border-[#E4E7E4] text-[#525B56] text-xs font-medium flex items-center gap-2">
+                  <i class="fa-solid fa-lock text-xs shrink-0 text-[#646E68]"></i>
+                  <span>Only administrators can edit sync endpoints and API tokens.</span>
                 </div>`
               : ''
           }
@@ -3967,24 +3936,24 @@ window.AEApp = {
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <label for="ae_gas_url_input" class="block text-sm font-medium text-[#111613]">
-                Deployed Google Apps Script Web App URL
+                Apps Script Web App URL
               </label>
-              ${isAdmin ? `<button type="button" onclick="document.getElementById('ae_gas_url_input').value='https://script.google.com/macros/s/AKfycbzzBECJ5o02M2yaaJGrL41bTL1bgU2dltcQ8GicgR3x15jkocvYzNocWNk7_k75DNoV7Q/exec'; document.getElementById('ae_sync_token_input').value='6B3D46E11CAD5800CA490A356DEC10D6';" class="text-xs text-[#247B50] font-semibold hover:underline">Use Production Default</button>` : ''}
+              ${isAdmin ? `<button type="button" onclick="document.getElementById('ae_gas_url_input').value='https://script.google.com/macros/s/AKfycbzzBECJ5o02M2yaaJGrL41bTL1bgU2dltcQ8GicgR3x15jkocvYzNocWNk7_k75DNoV7Q/exec'; document.getElementById('ae_sync_token_input').value='6B3D46E11CAD5800CA490A356DEC10D6';" class="text-xs text-[#247B50] font-semibold hover:underline">Use default</button>` : ''}
             </div>
             <input type="url"
               id="ae_gas_url_input"
               ${!isAdmin ? 'disabled' : ''}
               value="${this.escapeAttr(settings.gasWebAppUrl || '')}"
-              placeholder="https://script.google.com/macros/s/AKfycb.../exec (Leave blank for local simulator)"
+              placeholder="https://script.google.com/macros/s/AKfycb.../exec (leave blank for local simulator)"
               class="w-full h-10 text-xs bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 text-[#111613] placeholder-[#646E68] focus:border-[#247B50] focus:outline-none ${!isAdmin ? 'opacity-70 bg-[#F8F9F8] cursor-not-allowed' : ''}" />
             <p class="text-xs text-[#525B56] leading-relaxed">
-              Sends <code>Content-Type: text/plain;charset=utf-8</code> payloads for zero-preflight CORS compatibility with Google Apps Script and deduplicates rows via <code>clientResponseId</code>.
+              Sends <code>text/plain</code> payloads for CORS compatibility and deduplicates rows by <code>clientResponseId</code>.
             </p>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label for="ae_device_id_input" class="block text-sm font-medium text-[#111613] mb-1.5">Field Tablet Identifier</label>
+              <label for="ae_device_id_input" class="block text-sm font-medium text-[#111613] mb-1.5">Device ID</label>
               <input type="text" id="ae_device_id_input"
                 maxlength="40"
                 ${!isAdmin ? 'disabled' : ''}
@@ -3992,7 +3961,7 @@ window.AEApp = {
                 class="w-full h-10 text-xs bg-white border border-[#CFD5D0] rounded-[8px] px-3 text-[#111613] ${!isAdmin ? 'opacity-70 bg-[#F8F9F8] cursor-not-allowed' : ''}" />
             </div>
             <div>
-              <label for="ae_enum_input" class="block text-sm font-medium text-[#111613] mb-1.5">Default Enumerator Name</label>
+              <label for="ae_enum_input" class="block text-sm font-medium text-[#111613] mb-1.5">Default enumerator</label>
               <input type="text" id="ae_enum_input"
                 maxlength="80"
                 ${!isAdmin ? 'disabled' : ''}
@@ -4003,16 +3972,16 @@ window.AEApp = {
 
           <div class="space-y-1.5">
             <label for="ae_sync_token_input" class="block text-sm font-medium text-[#111613]">
-              Optional Cloud Sync API Token (<code class="text-xs">AE_SYNC_TOKEN</code>)
+              Sync API token (<code class="text-xs">AE_SYNC_TOKEN</code>)
             </label>
             <input type="password"
               id="ae_sync_token_input"
               ${!isAdmin ? 'disabled' : ''}
               value="${this.escapeAttr(settings.syncToken || '')}"
-              placeholder="Leave blank if AE_SYNC_TOKEN is not configured in Google Apps Script"
+              placeholder="Optional · leave blank if not set in Apps Script"
               class="w-full h-10 text-xs bg-white border border-[#CFD5D0] rounded-[8px] px-3.5 text-[#111613] placeholder-[#646E68] focus:border-[#247B50] focus:outline-none ${!isAdmin ? 'opacity-70 bg-[#F8F9F8] cursor-not-allowed' : ''}" />
             <p class="text-xs text-[#525B56]">
-              Matches the <code>AE_SYNC_TOKEN</code> property in Google Apps Script Project Settings for authenticated sync.
+              Matches the <code>AE_SYNC_TOKEN</code> script property for authenticated sync.
             </p>
           </div>
 
@@ -4020,8 +3989,8 @@ window.AEApp = {
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-3.5 space-y-2">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <span class="text-xs font-semibold text-[#111613] block">Continuous Background Auto-Sync</span>
-                <span class="text-xs text-[#525B56]">Silently streams completed responses &amp; roster changes to Google Sheets every 25s without manual sync button clicks.</span>
+                <span class="text-xs font-semibold text-[#111613] block">Background auto-sync</span>
+                <span class="text-xs text-[#525B56]">Automatically syncs new responses and roster updates every 25 seconds.</span>
               </div>
               <label class="relative inline-flex items-center cursor-pointer shrink-0">
                 <input type="checkbox" id="ae_bg_sync_toggle" ${settings.backgroundSyncEnabled !== false ? 'checked' : ''} ${!isAdmin ? 'disabled' : ''} class="sr-only peer">
@@ -4033,8 +4002,8 @@ window.AEApp = {
           <!-- Provisioned Google Sheets Tabs Preview -->
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-3.5 space-y-2">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-[#111613]">Auto-Provisioned Google Sheets Tabs</span>
-              <span class="text-xs text-[#247B50] font-medium">Zero-setup via <code>ensureWorkbookSheets()</code></span>
+              <span class="text-xs font-semibold text-[#111613]">Workbook tabs</span>
+              <span class="text-xs text-[#525B56]">Created by <code>ensureWorkbookSheets()</code></span>
             </div>
             <div class="flex flex-wrap gap-1.5">
               <code class="px-2 py-0.5 rounded bg-white border border-[#E4E7E4] text-xs text-[#111613]">Surveys</code>
@@ -4047,14 +4016,14 @@ window.AEApp = {
 
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 space-y-2">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold text-[#111613] tabular-nums">Outbox Sync Queue (${queue.length} pending items)</span>
+              <span class="text-xs font-semibold text-[#111613] tabular-nums">Sync queue (${queue.length} pending)</span>
               <span class="text-xs text-[#525B56] tabular-nums">
-                Last synced: ${settings.lastSyncedAt ? new Date(settings.lastSyncedAt).toLocaleTimeString() : 'Local simulator ready'}
+                Last synced: ${settings.lastSyncedAt ? new Date(settings.lastSyncedAt).toLocaleTimeString() : 'Not synced yet'}
               </span>
             </div>
             ${
               queue.length === 0
-                ? `<div class="text-xs text-[#247B50] font-medium"><i class="fa-solid fa-check mr-1.5"></i>All local surveys and responses are synchronized with Google Sheets.</div>`
+                ? `<div class="text-xs text-[#247B50] font-medium"><i class="fa-solid fa-check mr-1.5"></i>All surveys and responses are up to date.</div>`
                 : `<ul class="space-y-1 max-h-28 overflow-y-auto text-xs text-[#525B56] tabular-nums">
                     ${queue.map((item) => `<li>· [${this.escapeHtml(item.action)}] ${this.escapeHtml(item.title)} ${item.attempts > 0 ? `(Attempts: ${item.attempts})` : ''}</li>`).join('')}
                   </ul>`
@@ -4063,7 +4032,7 @@ window.AEApp = {
 
           <!-- Recent Sync Log -->
           <div class="space-y-1.5">
-            <span class="text-xs font-semibold text-[#111613]">Recent Sync Log</span>
+            <span class="text-xs font-semibold text-[#111613]">Recent syncs</span>
             <div class="space-y-1 max-h-28 overflow-y-auto">
               ${logs
                 .slice(0, 5)
@@ -4085,17 +4054,17 @@ window.AEApp = {
                 isAdmin
                   ? `<button onclick="AEApp.saveSyncSettingsFromModal()"
                       class="h-8 px-3.5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium ae-press">
-                      Save Settings
+                      Save settings
                     </button>
                     <button onclick="AEApp.saveSyncSettingsFromModal(); AEApp.triggerGoogleSheetsSync(true);"
                       class="h-8 px-3.5 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-medium inline-flex items-center gap-1.5 ae-press">
-                      <i class="fa-solid fa-cloud-arrow-up"></i> Push All to Google Sheets
+                      <i class="fa-solid fa-cloud-arrow-up"></i> Push all
                     </button>`
                   : ''
               }
               <button onclick="AEApp.triggerPullFromSheets();"
                 class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] ae-press">
-                <i class="fa-solid fa-cloud-arrow-down text-[#247B50] mr-1"></i> Pull from Sheets
+                <i class="fa-solid fa-cloud-arrow-down text-[#247B50] mr-1"></i> Pull latest
               </button>
             </div>
             <button onclick="AEApp.closeSyncSettingsModal()"

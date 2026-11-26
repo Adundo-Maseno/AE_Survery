@@ -294,14 +294,14 @@
         : (analysis.records || []).filter((rec) => rec && (rec.isPinned || pinnedKeySet.has(String(rec.key || ''))));
 
       // KPI 3: Primary Score / Rating Metric
-      let kpi3Label = 'Questions Analyzed';
+      let kpi3Label = 'Questions analyzed';
       let kpi3Value = String(questions.length);
       let kpi3Sub = `${completionRatePct}% avg completion`;
       if (themeImpact.hasMetric && themeImpact.overallMean !== null) {
-        kpi3Label = themeImpact.metricTitle || themeImpact.metricLabel || 'Primary Score';
+        kpi3Label = themeImpact.metricTitle || themeImpact.metricLabel || 'Primary score';
         if (kpi3Label.length > 34) kpi3Label = kpi3Label.slice(0, 31) + '...';
         kpi3Value = String(themeImpact.overallMean);
-        kpi3Sub = `Scale: ${themeImpact.metricScale || 'numeric'} (n=${themeImpact.totalScored})`;
+        kpi3Sub = `Scale: ${themeImpact.metricScale || 'numeric'} (n = ${themeImpact.totalScored})`;
       }
 
       // KPI 4: Verbatim Sentiment Index
@@ -309,10 +309,10 @@
       const ss = analysis.sentimentSummary || { positive: 0, neutral: 0, negative: 0 };
       const posPct = totalVerbatims > 0 ? Math.round((ss.positive / totalVerbatims) * 100) : 0;
       const negPct = totalVerbatims > 0 ? Math.round((ss.negative / totalVerbatims) * 100) : 0;
-      const kpi4Label = totalVerbatims > 0 ? 'Verbatim Sentiment' : 'Avg Completion';
-      const kpi4Value = totalVerbatims > 0 ? `${posPct}% Pos` : `${completionRatePct}%`;
+      const kpi4Label = totalVerbatims > 0 ? 'Response sentiment' : 'Avg completion';
+      const kpi4Value = totalVerbatims > 0 ? `${posPct}% positive` : `${completionRatePct}%`;
       const kpi4Sub = totalVerbatims > 0
-        ? `${totalVerbatims} coded · ${negPct}% negative`
+        ? `${totalVerbatims} responses · ${negPct}% negative`
         : `${answeredCells} answered items`;
 
       // Question Breakdowns HTML
@@ -326,67 +326,67 @@
         if (bd.kind === 'numeric') {
           const unitSuffix = bd.unit ? ` ${_esc(bd.unit)}` : '';
           bodyHtml = `
-            <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:12px; margin-top:6px;">
-              <tr style="background-color:#F4F6F4; color:#525B56; font-weight:bold;">
-                <td style="border:1px solid #E4E7E4; text-align:center;">Mean</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">Median</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">Min</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">Max</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">Std Dev</td>
+            <table cellpadding="8" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;">
+              <tr style="background-color:#F8F9F8; color:#525B56; font-weight:600;">
+                <td style="border-top:1px solid #E4E7E4; border-bottom:1px solid #CFD5D0; text-align:center;">Mean</td>
+                <td style="border-top:1px solid #E4E7E4; border-bottom:1px solid #CFD5D0; text-align:center;">Median</td>
+                <td style="border-top:1px solid #E4E7E4; border-bottom:1px solid #CFD5D0; text-align:center;">Min</td>
+                <td style="border-top:1px solid #E4E7E4; border-bottom:1px solid #CFD5D0; text-align:center;">Max</td>
+                <td style="border-top:1px solid #E4E7E4; border-bottom:1px solid #CFD5D0; text-align:center;">Std Dev</td>
               </tr>
-              <tr style="color:#111613; font-weight:bold;">
-                <td style="border:1px solid #E4E7E4; text-align:center;">${_esc(bd.mean)}${unitSuffix}</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">${_esc(bd.median)}${unitSuffix}</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">${_esc(bd.min)}${unitSuffix}</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">${_esc(bd.max)}${unitSuffix}</td>
-                <td style="border:1px solid #E4E7E4; text-align:center;">${_esc(bd.stdDev)}</td>
+              <tr style="color:#111613; font-weight:600;">
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.mean)}${unitSuffix}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.median)}${unitSuffix}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.min)}${unitSuffix}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.max)}${unitSuffix}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.stdDev)}</td>
               </tr>
             </table>
           `;
         } else if (bd.kind === 'text') {
           bodyHtml = bd.sampleQuotes.length > 0
-            ? `<div style="margin-top:6px; font-size:11.5px; color:#37413C;">
-                <div style="font-weight:bold; color:#525B56; margin-bottom:4px;">Representative Verbatims (${bd.answered} total):</div>
-                ${bd.sampleQuotes.map((qt) => `<div style="padding:5px 8px; margin-bottom:4px; background-color:#FAFBF9; border-left:3px solid #247B50; font-style:italic;">&ldquo;${_esc(qt.length > 220 ? qt.slice(0, 217) + '...' : qt)}&rdquo;</div>`).join('')}
+            ? `<div style="margin-top:10px; font-size:12px; color:#2C3530;">
+                <div style="font-size:11px; font-weight:600; color:#525B56; margin-bottom:6px;">Selected responses (${bd.answered} recorded)</div>
+                ${bd.sampleQuotes.map((qt) => `<div style="padding:7px 12px; margin-bottom:6px; background-color:#FAFBF9; border-left:2px solid #247B50; font-style:italic; line-height:1.5;">&ldquo;${_esc(qt.length > 220 ? qt.slice(0, 217) + '...' : qt)}&rdquo;</div>`).join('')}
               </div>`
-            : `<p style="font-size:11.5px; color:#646E68; margin:6px 0 0 0;">No open-ended responses recorded for this question.</p>`;
+            : `<p style="font-size:12px; color:#646E68; margin:8px 0 0 0;">No written responses were recorded for this question.</p>`;
         } else {
           const extraStats = bd.npsScore !== null
-            ? `<span style="font-size:11px; font-weight:bold; color:#04250E; background-color:#DCFAE5; padding:2px 6px; border-radius:3px;">NPS: ${bd.npsScore >= 0 ? '+' : ''}${bd.npsScore}</span>`
-            : (bd.mean !== null ? `<span style="font-size:11px; font-weight:bold; color:#04250E; background-color:#DCFAE5; padding:2px 6px; border-radius:3px;">Mean: ${bd.mean}</span>` : '');
+            ? `<span style="font-size:11px; font-weight:600; color:#04250E; background-color:#DCFAE5; padding:2px 8px; border-radius:3px;">NPS: ${bd.npsScore >= 0 ? '+' : ''}${bd.npsScore}</span>`
+            : (bd.mean !== null ? `<span style="font-size:11px; font-weight:600; color:#04250E; background-color:#DCFAE5; padding:2px 8px; border-radius:3px;">Mean: ${bd.mean}</span>` : '');
 
           bodyHtml = bd.rows.length > 0
             ? `
-              ${extraStats ? `<div style="margin:4px 0 6px 0;">${extraStats}</div>` : ''}
-              <table cellpadding="5" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:4px;">
-                <tr style="background-color:#F4F6F4; color:#525B56; font-weight:bold;">
-                  <td style="border-bottom:1px solid #CFD5D0; width:40%;">Response Option</td>
+              ${extraStats ? `<div style="margin:6px 0 8px 0;">${extraStats}</div>` : ''}
+              <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px;">
+                <tr style="background-color:#F8F9F8; color:#525B56; font-weight:600;">
+                  <td style="border-bottom:1px solid #CFD5D0; width:40%;">Response option</td>
                   <td style="border-bottom:1px solid #CFD5D0; width:36%;">Distribution</td>
                   <td style="border-bottom:1px solid #CFD5D0; width:12%; text-align:right;">Count</td>
                   <td style="border-bottom:1px solid #CFD5D0; width:12%; text-align:right;">Share</td>
                 </tr>
                 ${bd.rows.map((row) => `
                   <tr>
-                    <td style="border-bottom:1px solid #EFEFEF; color:#111613; font-weight:600;">${_esc(row.label)}</td>
+                    <td style="border-bottom:1px solid #EFEFEF; color:#111613; font-weight:500;">${_esc(row.label)}</td>
                     <td style="border-bottom:1px solid #EFEFEF; vertical-align:middle;">${_renderBarCell(row.pct, '#247B50')}</td>
-                    <td style="border-bottom:1px solid #EFEFEF; text-align:right; color:#111613;">${row.count}</td>
-                    <td style="border-bottom:1px solid #EFEFEF; text-align:right; font-weight:bold; color:#04250E;">${row.pct}%</td>
+                    <td style="border-bottom:1px solid #EFEFEF; text-align:right; color:#525B56;">${row.count}</td>
+                    <td style="border-bottom:1px solid #EFEFEF; text-align:right; font-weight:600; color:#111613;">${row.pct}%</td>
                   </tr>
                 `).join('')}
               </table>
             `
-            : `<p style="font-size:11.5px; color:#646E68; margin:6px 0 0 0;">No responses recorded for this question.</p>`;
+            : `<p style="font-size:12px; color:#646E68; margin:8px 0 0 0;">No responses were recorded for this question.</p>`;
         }
 
         return `
-          <div style="border:1px solid #E4E7E4; border-radius:6px; padding:12px 14px; margin-bottom:12px; page-break-inside:avoid; background-color:#FFFFFF;">
+          <div style="border:1px solid #E4E7E4; border-radius:6px; padding:14px 16px; margin-bottom:14px; page-break-inside:avoid; background-color:#FFFFFF;">
             <table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-collapse:collapse;">
               <tr>
-                <td style="font-size:13px; font-weight:bold; color:#111613;">
-                  <span style="display:inline-block; background-color:#141A17; color:#FFFFFF; font-size:10px; padding:2px 6px; border-radius:3px; margin-right:6px;">${_esc(qCode)}</span>
+                <td style="font-size:13px; font-weight:600; color:#111613; line-height:1.4;">
+                  <span style="display:inline-block; background-color:#F4F6F4; color:#247B50; border:1px solid #E4E7E4; font-size:10.5px; font-weight:600; padding:1px 6px; border-radius:3px; margin-right:6px;">${_esc(qCode)}</span>
                   ${_esc(cleanTitle)}
                 </td>
-                <td style="text-align:right; font-size:11px; color:#525B56; white-space:nowrap;">
+                <td style="text-align:right; font-size:11px; color:#646E68; white-space:nowrap; padding-left:12px;">
                   n = ${bd.answered} (${respPct}%)
                 </td>
               </tr>
@@ -404,14 +404,14 @@
 
       const themesTableHtml = themes.length > 0
         ? `
-          <h3 style="font-size:13px; font-weight:bold; color:#111613; margin:14px 0 6px 0;">Top Discovered &amp; Custom Themes</h3>
-          <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px; border:1px solid #E4E7E4;">
-            <tr style="background-color:#F4F6F4; color:#525B56; font-weight:bold;">
+          <h3 style="font-family:Georgia, 'Times New Roman', serif; font-size:14px; font-weight:600; color:#111613; margin:18px 0 8px 0;">Recurring Themes</h3>
+          <table cellpadding="7" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px; border:1px solid #E4E7E4;">
+            <tr style="background-color:#F8F9F8; color:#525B56; font-weight:600;">
               <td style="border-bottom:1px solid #CFD5D0;">Theme</td>
               <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Mentions</td>
               <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Share</td>
-              <td style="border-bottom:1px solid #CFD5D0; text-align:center;">+ / ~ / -</td>
-              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Net Valence</td>
+              <td style="border-bottom:1px solid #CFD5D0; text-align:center;">+ / ~ / &minus;</td>
+              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Net sentiment</td>
             </tr>
             ${themes.slice(0, 8).map((t) => {
               const net = Number(t.netSentiment ?? 0);
@@ -421,13 +421,13 @@
                 <tr>
                   <td style="border-bottom:1px solid #EFEFEF; font-weight:600; color:#111613;">
                     ${_esc(t.name)}
-                    ${t.isCustom ? ' <span style="font-size:9.5px; background-color:#DCFAE5; color:#04250E; padding:1px 4px; border-radius:2px;">CUSTOM</span>' : ''}
+                    ${t.isCustom ? ' <span style="font-size:9.5px; background-color:#DCFAE5; color:#04250E; padding:1px 5px; border-radius:2px; font-weight:600;">Custom</span>' : ''}
                   </td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right;">${t.count}</td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right;">${t.pct}%</td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:center; color:#525B56;">+${t.positive || 0} / ~${t.neutral || 0} / -${t.negative || 0}</td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right;">
-                    <span style="background-color:${netBg}; color:${netColor}; font-weight:bold; padding:2px 6px; border-radius:3px;">${net > 0 ? '+' : ''}${net}%</span>
+                    <span style="background-color:${netBg}; color:${netColor}; font-weight:600; padding:2px 6px; border-radius:3px;">${net > 0 ? '+' : ''}${net}%</span>
                   </td>
                 </tr>
               `;
@@ -438,16 +438,16 @@
 
       const impactTableHtml = themeImpact.hasMetric && impactRows.length > 0
         ? `
-          <h3 style="font-size:13px; font-weight:bold; color:#111613; margin:16px 0 4px 0;">Theme-to-Score Impact Analysis</h3>
-          <p style="font-size:11px; color:#525B56; margin:0 0 6px 0;">
-            Correlating verbatim themes against <strong>${_esc(themeImpact.metricLabel)}</strong> (Overall Baseline: <strong>${_esc(themeImpact.overallMean)}</strong>, Scale: ${_esc(themeImpact.metricScale)}, n = ${themeImpact.totalScored}).
+          <h3 style="font-family:Georgia, 'Times New Roman', serif; font-size:14px; font-weight:600; color:#111613; margin:20px 0 5px 0;">What Drives Your Scores</h3>
+          <p style="font-size:11.5px; color:#525B56; margin:0 0 8px 0; line-height:1.5;">
+            How mentioning each theme relates to <strong>${_esc(themeImpact.metricLabel)}</strong> (overall mean: <strong>${_esc(themeImpact.overallMean)}</strong>, scale: ${_esc(themeImpact.metricScale)}, n = ${themeImpact.totalScored}).
           </p>
-          <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px; border:1px solid #E4E7E4;">
-            <tr style="background-color:#F4F6F4; color:#525B56; font-weight:bold;">
+          <table cellpadding="7" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px; border:1px solid #E4E7E4;">
+            <tr style="background-color:#F8F9F8; color:#525B56; font-weight:600;">
               <td style="border-bottom:1px solid #CFD5D0;">Theme</td>
-              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">With Theme</td>
-              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Without Theme</td>
-              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Score Delta</td>
+              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">With theme</td>
+              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Without theme</td>
+              <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Score difference</td>
               <td style="border-bottom:1px solid #CFD5D0; text-align:center;">Sample (n)</td>
               <td style="border-bottom:1px solid #CFD5D0; text-align:right;">Welch p-value</td>
             </tr>
@@ -465,7 +465,7 @@
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right;">${row.meanWith}</td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right; color:#525B56;">${row.meanWithout}</td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right;">
-                    <span style="background-color:${dBg}; color:${dColor}; font-weight:bold; padding:2px 6px; border-radius:3px;">${row.delta > 0 ? '+' : ''}${row.delta} pts</span>
+                    <span style="background-color:${dBg}; color:${dColor}; font-weight:600; padding:2px 6px; border-radius:3px;">${row.delta > 0 ? '+' : ''}${row.delta} pts</span>
                   </td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:center; color:#525B56;">${row.nWith} vs ${row.nWithout}</td>
                   <td style="border-bottom:1px solid #EFEFEF; text-align:right;">${pLabel}</td>
@@ -478,17 +478,17 @@
 
       const recsHtml = topRecs.length > 0
         ? `
-          <h3 style="font-size:13px; font-weight:bold; color:#111613; margin:16px 0 6px 0;">Top Actionable Recommendations</h3>
-          <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:11.5px;">
+          <h3 style="font-family:Georgia, 'Times New Roman', serif; font-size:14px; font-weight:600; color:#111613; margin:20px 0 8px 0;">Recommended Actions</h3>
+          <table cellpadding="7" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:12px;">
             ${topRecs.slice(0, 5).map((rec, i) => {
               const txt = typeof rec === 'string' ? rec : (rec.translatedText || rec.text || '');
               const meta = typeof rec === 'object' && rec ? [rec.questionCode, rec.segment].filter(Boolean).join(' · ') : '';
               return `
                 <tr>
-                  <td style="width:24px; vertical-align:top; font-weight:bold; color:#247B50;">${i + 1}.</td>
-                  <td style="border-bottom:1px solid #EFEFEF; color:#111613;">
+                  <td style="width:24px; vertical-align:top; font-weight:600; color:#247B50;">${i + 1}.</td>
+                  <td style="border-bottom:1px solid #EFEFEF; color:#111613; line-height:1.5;">
                     ${_esc(txt)}
-                    ${meta ? `<div style="font-size:10px; color:#646E68; margin-top:2px;">${_esc(meta)}</div>` : ''}
+                    ${meta ? `<div style="font-size:10.5px; color:#646E68; margin-top:3px;">${_esc(meta)}</div>` : ''}
                   </td>
                 </tr>
               `;
@@ -499,12 +499,12 @@
 
       const alertsHtml = urgentAlerts.length > 0
         ? `
-          <h3 style="font-size:13px; font-weight:bold; color:#831C1E; margin:16px 0 6px 0;">Urgent Risk Alerts</h3>
-          <div style="background-color:#FFEDEA; border:1px solid #F5C2C0; border-radius:6px; padding:10px 12px;">
+          <h3 style="font-family:Georgia, 'Times New Roman', serif; font-size:14px; font-weight:600; color:#831C1E; margin:20px 0 8px 0;">Items Needing Attention</h3>
+          <div style="background-color:#FFF7F6; border:1px solid #F5C2C0; border-left:3px solid #C4242A; border-radius:4px; padding:12px 14px;">
             ${urgentAlerts.slice(0, 5).map((al) => {
               const txt = typeof al === 'string' ? al : (al.translatedText || al.text || '');
               const qCode = typeof al === 'object' && al && al.questionCode ? `[${al.questionCode}] ` : '';
-              return `<div style="font-size:11.5px; color:#831C1E; margin-bottom:5px;"><strong>!</strong> ${_esc(qCode)}${_esc(txt)}</div>`;
+              return `<div style="font-size:11.5px; color:#831C1E; margin-bottom:6px; line-height:1.45;">&bull; ${_esc(qCode)}${_esc(txt)}</div>`;
             }).join('')}
           </div>
         `
@@ -512,18 +512,18 @@
 
       const pinnedQuotesHtml = pinnedRecords.length > 0
         ? `
-          <h3 style="font-size:13px; font-weight:bold; color:#111613; margin:16px 0 6px 0;">Pinned Executive Quotes</h3>
+          <h3 style="font-family:Georgia, 'Times New Roman', serif; font-size:14px; font-weight:600; color:#111613; margin:20px 0 8px 0;">Selected Respondent Quotes</h3>
           ${pinnedRecords.slice(0, 10).map((pq) => {
             const txt = typeof pq === 'string' ? pq : (pq.translatedText || pq.text || '');
             const qCode = typeof pq === 'object' && pq && pq.questionCode ? pq.questionCode : 'Quote';
             const sentiment = typeof pq === 'object' && pq && pq.sentiment ? pq.sentiment : 'neutral';
             const seg = typeof pq === 'object' && pq && pq.segment ? pq.segment : '';
-            const borderCol = sentiment === 'positive' ? '#247B50' : (sentiment === 'negative' ? '#C4242A' : '#6B7280');
+            const borderCol = sentiment === 'positive' ? '#247B50' : (sentiment === 'negative' ? '#C4242A' : '#9CA3AF');
             return `
-              <div style="padding:8px 12px; margin-bottom:8px; background-color:#FAFBF9; border-left:4px solid ${borderCol}; border-top:1px solid #E4E7E4; border-right:1px solid #E4E7E4; border-bottom:1px solid #E4E7E4; page-break-inside:avoid;">
-                <div style="font-size:12px; color:#111613; font-style:italic;">&ldquo;${_esc(txt)}&rdquo;</div>
-                <div style="font-size:10px; color:#525B56; margin-top:4px;">
-                  <strong>${_esc(qCode)}</strong>${seg ? ` · ${_esc(seg)}` : ''} · Sentiment: ${_esc(sentiment)}
+              <div style="padding:10px 14px; margin-bottom:10px; background-color:#FAFBF9; border-left:3px solid ${borderCol}; border-top:1px solid #EFEFEF; border-right:1px solid #EFEFEF; border-bottom:1px solid #EFEFEF; page-break-inside:avoid;">
+                <div style="font-size:12px; color:#111613; font-style:italic; line-height:1.55;">&ldquo;${_esc(txt)}&rdquo;</div>
+                <div style="font-size:10.5px; color:#646E68; margin-top:5px;">
+                  <strong style="color:#111613;">${_esc(qCode)}</strong>${seg ? ` &middot; ${_esc(seg)}` : ''} &middot; ${_esc(sentiment.charAt(0).toUpperCase() + sentiment.slice(1))}
                 </div>
               </div>
             `;
@@ -540,18 +540,20 @@
 ${htmlTag}
 <head>
   <meta charset="UTF-8" />
-  <title>Executive Briefing — ${_esc(safeSurvey.title || 'AE Survey')}</title>
+  <title>Research Briefing — ${_esc(safeSurvey.title || 'AE Survey')}</title>
   <style>
-    @page { size: A4 portrait; margin: 16mm 14mm; }
+    @page { size: A4 portrait; margin: 20mm 18mm; }
     body {
-      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', Arial, Helvetica, sans-serif;
       color: #111613;
       background-color: #FFFFFF;
       margin: 0;
-      padding: 20px;
-      line-height: 1.45;
+      padding: 28px 24px;
+      line-height: 1.55;
+      font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
     }
-    .report-container { max-width: 820px; margin: 0 auto; }
+    .report-container { max-width: 780px; margin: 0 auto; }
     h1, h2, h3 { margin: 0; }
     table { border-collapse: collapse; }
     @media print {
@@ -562,79 +564,79 @@ ${htmlTag}
 </head>
 <body>
   <div class="report-container">
-    <!-- 1. BRANDED EXECUTIVE HEADER -->
-    <table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-bottom:3px solid #247B50; padding-bottom:12px; margin-bottom:16px;">
+    <!-- 1. EDITORIAL RESEARCH MASTHEAD -->
+    <table cellpadding="0" cellspacing="0" border="0" style="width:100%; border-top:3px solid #141A17; border-bottom:1px solid #CFD5D0; padding:16px 0 14px 0; margin-bottom:22px;">
       <tr>
-        <td style="vertical-align:top;">
-          <div style="font-size:11px; font-weight:bold; letter-spacing:1px; text-transform:uppercase; color:#247B50;">
-            Agri Experience Limited &middot; Executive Briefing
+        <td style="vertical-align:top; padding-right:18px;">
+          <div style="font-size:11px; font-weight:600; color:#247B50; margin-bottom:6px;">
+            Agri Experience Limited &middot; Research Briefing
           </div>
-          <h1 style="font-size:22px; font-weight:bold; color:#111613; margin-top:4px;">
+          <h1 style="font-family:Georgia, 'Times New Roman', serif; font-size:25px; font-weight:600; color:#111613; line-height:1.25;">
             ${_esc(safeSurvey.title || 'Survey Results Report')}
           </h1>
-          ${safeSurvey.description ? `<p style="font-size:12px; color:#525B56; margin:4px 0 0 0;">${_esc(safeSurvey.description)}</p>` : ''}
+          ${safeSurvey.description ? `<p style="font-size:12.5px; color:#525B56; margin:6px 0 0 0; line-height:1.5;">${_esc(safeSurvey.description)}</p>` : ''}
         </td>
-        <td style="vertical-align:top; text-align:right; font-size:11px; color:#525B56; white-space:nowrap;">
-          <div><strong>Generated:</strong> ${_esc(generatedDate)}</div>
-          <div><strong>Sample Size:</strong> n = ${totalN}</div>
-          <div><strong>Sync Status:</strong> ${syncedCount} synced / ${offlineCount} local (${syncPct}%)</div>
-          <div><strong>Completion:</strong> ${completionRatePct}%</div>
+        <td style="vertical-align:top; text-align:right; font-size:11px; color:#525B56; white-space:nowrap; line-height:1.65;">
+          <div><strong style="color:#111613;">Prepared:</strong> ${_esc(generatedDate)}</div>
+          <div><strong style="color:#111613;">Sample:</strong> n = ${totalN}</div>
+          <div><strong style="color:#111613;">Sync:</strong> ${syncedCount} synced &middot; ${offlineCount} local (${syncPct}%)</div>
+          <div><strong style="color:#111613;">Completion:</strong> ${completionRatePct}%</div>
         </td>
       </tr>
     </table>
 
     ${merkleHash ? `
-      <div style="background-color:#F4FAF6; border:1px solid #247B50; border-radius:4px; padding:7px 10px; margin-bottom:16px; font-size:10.5px; color:#04250E;">
-        <strong>Cryptographic Merkle Integrity Seal (RFC 6962):</strong>
+      <div style="background-color:#F8F9F8; border:1px solid #E4E7E4; border-left:3px solid #247B50; border-radius:4px; padding:8px 12px; margin-bottom:20px; font-size:10.5px; color:#37413C;">
+        <strong style="color:#04250E;">Merkle Integrity Seal (RFC 6962):</strong>
         <code style="font-family:Consolas, monospace; font-size:10.5px; word-break:break-all;">${_esc(merkleHash)}</code>
       </div>
     ` : ''}
 
-    <!-- 2. EXECUTIVE KPI SUMMARY GRID -->
-    <table cellpadding="10" cellspacing="0" border="0" style="width:100%; margin-bottom:20px; border-collapse:separate; border-spacing:8px 0;">
+    <!-- 2. DIVIDED EXECUTIVE KPI STRIP -->
+    <table cellpadding="12" cellspacing="0" border="0" style="width:100%; margin-bottom:26px; border-collapse:collapse; border:1px solid #E4E7E4; background-color:#FFFFFF;">
       <tr>
-        <td style="width:25%; background-color:#FAFBF9; border:1px solid #E4E7E4; border-top:3px solid #141A17; vertical-align:top;">
-          <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#525B56;">Sample Size</div>
-          <div style="font-size:20px; font-weight:bold; color:#111613; margin-top:4px;">${totalN}</div>
-          <div style="font-size:10.5px; color:#646E68; margin-top:2px;">Total valid responses</div>
+        <td style="width:25%; border-right:1px solid #EFEFEF; vertical-align:top;">
+          <div style="font-size:11px; font-weight:600; color:#525B56;">Sample size</div>
+          <div style="font-size:22px; font-weight:600; color:#111613; margin-top:4px;">${totalN}</div>
+          <div style="font-size:10.5px; color:#646E68; margin-top:2px;">Valid responses</div>
         </td>
-        <td style="width:25%; background-color:#FAFBF9; border:1px solid #E4E7E4; border-top:3px solid #247B50; vertical-align:top;">
-          <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#525B56;">Sync &amp; Coverage</div>
-          <div style="font-size:20px; font-weight:bold; color:#04250E; margin-top:4px;">${syncPct}%</div>
+        <td style="width:25%; border-right:1px solid #EFEFEF; vertical-align:top;">
+          <div style="font-size:11px; font-weight:600; color:#525B56;">Sync coverage</div>
+          <div style="font-size:22px; font-weight:600; color:#247B50; margin-top:4px;">${syncPct}%</div>
           <div style="font-size:10.5px; color:#646E68; margin-top:2px;">${syncedCount} of ${totalN} synced</div>
         </td>
-        <td style="width:25%; background-color:#FAFBF9; border:1px solid #E4E7E4; border-top:3px solid #2563EB; vertical-align:top;">
-          <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#525B56;">${_esc(kpi3Label)}</div>
-          <div style="font-size:20px; font-weight:bold; color:#111613; margin-top:4px;">${_esc(kpi3Value)}</div>
+        <td style="width:25%; border-right:1px solid #EFEFEF; vertical-align:top;">
+          <div style="font-size:11px; font-weight:600; color:#525B56;">${_esc(kpi3Label)}</div>
+          <div style="font-size:22px; font-weight:600; color:#111613; margin-top:4px;">${_esc(kpi3Value)}</div>
           <div style="font-size:10.5px; color:#646E68; margin-top:2px;">${_esc(kpi3Sub)}</div>
         </td>
-        <td style="width:25%; background-color:#FAFBF9; border:1px solid #E4E7E4; border-top:3px solid #D97706; vertical-align:top;">
-          <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#525B56;">${_esc(kpi4Label)}</div>
-          <div style="font-size:20px; font-weight:bold; color:#111613; margin-top:4px;">${_esc(kpi4Value)}</div>
+        <td style="width:25%; vertical-align:top;">
+          <div style="font-size:11px; font-weight:600; color:#525B56;">${_esc(kpi4Label)}</div>
+          <div style="font-size:22px; font-weight:600; color:#111613; margin-top:4px;">${_esc(kpi4Value)}</div>
           <div style="font-size:10.5px; color:#646E68; margin-top:2px;">${_esc(kpi4Sub)}</div>
         </td>
       </tr>
     </table>
 
-    <!-- 3. KEY QUESTION BREAKDOWNS -->
-    <div style="margin-bottom:22px;">
-      <h2 style="font-size:15px; font-weight:bold; color:#111613; border-bottom:1px solid #CFD5D0; padding-bottom:5px; margin-bottom:12px;">
-        Key Question Breakdowns
+    <!-- 3. QUESTION-BY-QUESTION FINDINGS -->
+    <div style="margin-bottom:28px;">
+      <h2 style="font-family:Georgia, 'Times New Roman', serif; font-size:17px; font-weight:600; color:#111613; border-bottom:1px solid #CFD5D0; padding-bottom:6px; margin-bottom:14px;">
+        Question-by-Question Findings
       </h2>
-      ${questionBlocksHtml || '<p style="font-size:12px; color:#646E68;">No questions defined in this survey.</p>'}
+      ${questionBlocksHtml || '<p style="font-size:12px; color:#646E68;">This survey does not contain any questions yet.</p>'}
     </div>
 
-    <!-- 4. VERBATIM INTELLIGENCE EXECUTIVE BRIEFING -->
-    <div style="margin-bottom:22px; page-break-before:auto;">
-      <h2 style="font-size:15px; font-weight:bold; color:#111613; border-bottom:1px solid #CFD5D0; padding-bottom:5px; margin-bottom:12px;">
-        Verbatim Intelligence Executive Briefing
+    <!-- 4. OPEN-ENDED FINDINGS & SYNTHESIS -->
+    <div style="margin-bottom:26px; page-break-before:auto;">
+      <h2 style="font-family:Georgia, 'Times New Roman', serif; font-size:17px; font-weight:600; color:#111613; border-bottom:1px solid #CFD5D0; padding-bottom:6px; margin-bottom:14px;">
+        Open-Ended Findings &amp; Synthesis
       </h2>
       ${totalVerbatims > 0 ? `
-        <div style="background-color:#F4FAF6; border:1px solid #247B50; border-radius:6px; padding:12px 14px; margin-bottom:12px;">
-          <div style="font-size:13px; font-weight:bold; color:#04250E;">${_esc(briefing.headline)}</div>
+        <div style="background-color:#F8FBF9; border:1px solid #D7E6DD; border-left:3px solid #247B50; border-radius:4px; padding:14px 16px; margin-bottom:16px;">
+          <div style="font-size:13.5px; font-weight:600; color:#111613; line-height:1.45;">${_esc(briefing.headline)}</div>
           ${Array.isArray(briefing.summaryBullets) && briefing.summaryBullets.length > 0 ? `
-            <ul style="margin:6px 0 0 18px; padding:0; font-size:11.5px; color:#37413C;">
-              ${briefing.summaryBullets.map((b) => `<li style="margin-bottom:3px;">${_esc(b)}</li>`).join('')}
+            <ul style="margin:8px 0 0 18px; padding:0; font-size:12px; color:#37413C; line-height:1.55;">
+              ${briefing.summaryBullets.map((b) => `<li style="margin-bottom:4px;">${_esc(b)}</li>`).join('')}
             </ul>
           ` : ''}
         </div>
@@ -643,12 +645,12 @@ ${htmlTag}
         ${recsHtml}
         ${alertsHtml}
         ${pinnedQuotesHtml}
-      ` : '<p style="font-size:12px; color:#646E68;">No open-ended verbatim responses available in the current scope.</p>'}
+      ` : '<p style="font-size:12px; color:#646E68;">No open-ended responses were recorded in the current filter scope.</p>'}
     </div>
 
     <!-- FOOTER -->
-    <div style="border-top:1px solid #E4E7E4; padding-top:8px; margin-top:24px; font-size:10px; color:#646E68; text-align:center;">
-      Agri Experience Limited &middot; AE Survey Intelligence Suite &middot; Generated ${_esc(generatedDate)} &middot; Survey ID: ${_esc(safeSurvey.id || '')}
+    <div style="border-top:1px solid #E4E7E4; padding-top:10px; margin-top:28px; font-size:10px; color:#646E68; text-align:center;">
+      Agri Experience Limited &middot; Research Briefing &middot; Prepared ${_esc(generatedDate)} &middot; Survey ID: ${_esc(safeSurvey.id || '')}
     </div>
   </div>
 </body>

@@ -1,7 +1,7 @@
 # Graph Report - AE_Survery  (2026-11-26)
 
 ## Corpus Check
-- 25 files · ~159,458 words
+- 25 files · ~158,940 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 2, .css 2, .gs 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cc82571c`
+- Built from commit: `666c3c9e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -327,13 +327,13 @@ Nodes (5): chiSquarePValue(), chiSquareTest(), gammaLowerSeries(), gammaUpperCon
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `zs` connect `zs` to `chart.umd.min.js`, `ja`, `en`, `._computeLabelItems`, `.getContext`, `.getPixelForDecimal`, `.getLabels`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
 - **What connects `RFC-6962`, `manifest.json (Admin PWA)`, `manifest-collector.json (Field PWA)` to the rest of the system?**
   _6 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `AESurveyStore` be split into smaller, more focused modules?**
   _Cohesion score 0.07079414838035528 - nodes in this community are weakly interconnected._
 - **Why does `i` connect `i` to `chart.umd.min.js`, `Fa`, `draw`, `ae`, `cs`, `Ks`, `P`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
 - **Should `zs` be split into smaller, more focused modules?**
   _Cohesion score 0.12299465240641712 - nodes in this community are weakly interconnected._
 - **Why does `Os` connect `Os` to `.parse`, `chart.umd.min.js`, `.getDataset`, `P`, `pa`, `.getParsed`, `.applyStack`?**

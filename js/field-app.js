@@ -70,7 +70,7 @@ window.AEFieldApp = {
     window.addEventListener('appinstalled', () => {
       this.deferredInstallPrompt = null;
       this.isAppInstalled = true;
-      this.showToast('AE Field Collector installed to your device.', 'success');
+      this.showToast('AE Field App is installed on your device.', 'success');
       this.renderHeader();
     });
 
@@ -268,7 +268,7 @@ window.AEFieldApp = {
 
     // Browser online/offline transitions (db.js owns the online push trigger)
     window.addEventListener('online', () => {
-      this.showToast('Online connection restored. Syncing outbox…', 'success');
+      this.showToast('Back online — syncing your saved responses…', 'success');
       this.renderHeader();
       if (window.aeStore && typeof window.aeStore.triggerBackgroundSyncNow !== 'function') {
         this.triggerCloudSync(false);
@@ -276,7 +276,7 @@ window.AEFieldApp = {
     });
 
     window.addEventListener('offline', () => {
-      this.showToast('Offline mode active. All responses saved locally.', 'warning');
+      this.showToast('You’re offline — your answers are saved safely on this device.', 'warning');
       this.renderHeader();
     });
 
@@ -308,8 +308,8 @@ window.AEFieldApp = {
       ? window.aeStore.isEffectivelyOnline()
       : true;
     const statusLabel = isSynced
-      ? 'Synced to Sheets'
-      : (isOnline ? 'Saved locally — syncing…' : this.t('storedLocallyPending'));
+      ? 'Saved & synced'
+      : (isOnline ? 'Saved — syncing now…' : this.t('storedLocallyPending'));
 
     this.justSubmittedReceipt.syncStatus = isSynced ? 'synced' : 'pending';
     this.justSubmittedReceipt.syncBadge = statusLabel;
@@ -379,7 +379,7 @@ window.AEFieldApp = {
     this.persistDraft();
     this.initRunnerForActiveSurvey(false);
     this.render();
-    this.showToast('Survey refreshed with latest cloud updates.', 'success');
+    this.showToast('Survey updated with the latest changes.', 'success');
   },
 
   initRunnerForActiveSurvey(forceReset = false) {
@@ -563,7 +563,7 @@ window.AEFieldApp = {
         ? 'fa-triangle-exclamation text-[#D97706]'
         : 'fa-circle-check text-[#3FC07A]';
 
-    toast.className = `px-3.5 py-2.5 rounded-[8px] text-xs font-medium flex items-center gap-2.5 transition-opacity duration-200 pointer-events-auto ${palette}`;
+    toast.className = `ae-toast-enter px-3.5 py-2.5 rounded-[8px] text-xs font-medium flex items-center gap-2.5 pointer-events-auto ${palette}`;
     toast.innerHTML = `<i class="fa-solid ${icon} shrink-0 text-xs"></i><span class="flex-1">${this.escapeHtml(message)}</span>`;
     container.appendChild(toast);
 
@@ -601,8 +601,8 @@ window.AEFieldApp = {
     }
     this.showToast(
       this.sunlightMode
-        ? 'High-Contrast Sunlight Mode enabled (Maximum visibility under direct field sun).'
-        : 'Standard display mode restored.',
+        ? 'Sunlight Mode on — higher contrast for bright outdoor glare.'
+        : 'Standard display restored.',
       'info'
     );
     this.render();
@@ -756,8 +756,8 @@ window.AEFieldApp = {
     const roleBadge = document.getElementById('ae_hdr_role_badge');
     if (roleBadge) {
       if (this.isRespondentMode) {
-        roleBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1 shrink-0';
-        roleBadge.innerHTML = `<i class="fa-solid fa-earth-africa text-[9px] text-[#247B50]"></i><span>Self-Administered</span>`;
+        roleBadge.className = 'hidden';
+        roleBadge.innerHTML = '';
       } else if (currentUser && currentUser.role === 'admin') {
         roleBadge.className = 'text-[10px] font-semibold px-1.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] inline-flex items-center gap-1 shrink-0';
         roleBadge.innerHTML = `<i class="fa-solid fa-shield-halved text-[9px] text-[#247B50]"></i><span>${this.t('adminAudit')}</span>`;
@@ -990,7 +990,7 @@ window.AEFieldApp = {
         }
 
         <!-- Respondent Header Greeting Card (Fraunces Serif Accent) -->
-        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-3 border-t-4" style="border-top-color: ${accent};">
+        <div class="bg-white border border-[#E4E7E4] rounded-[12px] p-6 sm:p-8 space-y-4 border-t-4" style="border-top-color: ${accent};">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0">
               <picture>
@@ -999,15 +999,17 @@ window.AEFieldApp = {
                   alt="Agri Experience Logo"
                   width="76" height="32"
                   fetchpriority="high"
-                  class="h-8 w-auto max-w-[130px] object-contain shrink-0"
+                  class="h-7 w-auto max-w-[124px] object-contain shrink-0"
                   onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
               </picture>
-              <div class="w-8 h-8 rounded-[6px] bg-[#247B50] text-white hidden items-center justify-center font-bold text-xs shrink-0">
-                <i class="fa-solid fa-seedling text-sm"></i>
+              <div class="w-7 h-7 rounded-[6px] bg-[#247B50] text-white hidden items-center justify-center font-bold text-xs shrink-0">
+                <i class="fa-solid fa-seedling text-xs"></i>
               </div>
-              <span class="text-xs font-semibold text-[#247B50] truncate">${
-                this.isRespondentMode ? 'Self-Administered Survey' : this.t('fieldCollector')
-              }</span>
+              ${
+                this.isRespondentMode
+                  ? ''
+                  : `<span class="text-xs font-medium text-[#525B56] truncate">${this.t('fieldCollector')}</span>`
+              }
             </div>
             <div class="flex items-center gap-2.5 shrink-0">
               ${
@@ -1021,36 +1023,36 @@ window.AEFieldApp = {
                   : ''
               }
               <span class="text-xs text-[#525B56] tabular-nums shrink-0">
-                ${this.t('section')} <strong>${this.currentPageIndex + 1}</strong> ${this.t('of')} ${pages.length}
+                ${this.t('section')} <strong class="text-[#111613]">${this.currentPageIndex + 1}</strong> ${this.t('of')} ${pages.length}
               </span>
             </div>
           </div>
-          <h1 class="text-xl sm:text-2xl font-semibold font-display text-[#111613] leading-snug tracking-tight ae-break-words">
+          <h1 class="text-[22px] sm:text-[26px] font-semibold font-display text-[#111613] leading-snug tracking-tight ae-break-words" style="text-wrap: balance;">
             ${this.escapeHtml(survey.title)}
           </h1>
           ${
             survey.description
-              ? `<p class="text-xs text-[#525B56] leading-relaxed ae-break-words">${this.escapeHtml(survey.description)}</p>`
+              ? `<p class="text-sm text-[#525B56] leading-relaxed ae-break-words max-w-2xl" style="text-wrap: pretty;">${this.escapeHtml(survey.description)}</p>`
               : ''
           }
 
           <!-- Live Progress Bar & Draft Save Indicator -->
-          <div class="pt-3 border-t border-[#EFEFEF] space-y-2">
-            <div class="flex items-center justify-between text-xs text-[#525B56] tabular-nums">
-              <span>${this.t('section')} ${this.currentPageIndex + 1}: ${this.escapeHtml((page.title || '').replace(/^section\s*\d+\s*:\s*/i, '').trim() || page.title)}</span>
-              <span class="inline-flex items-center gap-1 text-[#247B50] font-medium">
-                <i class="fa-solid fa-floppy-disk text-[10px]"></i>
-                <span>${this.t('draftSaved')} (${answeredCount}/${allQuestions.length})</span>
+          <div class="pt-4 border-t border-[#EFEFEF] space-y-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-[#525B56] tabular-nums">
+              <span class="font-medium text-[#111613]">${this.escapeHtml((page.title || '').replace(/^section\s*\d+\s*:\s*/i, '').trim() || page.title)}</span>
+              <span class="inline-flex items-center gap-1.5 text-[#247B50] font-medium">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+                <span>${answeredCount > 0 ? `${this.t('draftSaved')} · ${answeredCount} of ${allQuestions.length}` : 'Auto-saves as you go'}</span>
               </span>
             </div>
             <div class="w-full h-1.5 bg-[#EFEFEF] rounded-full overflow-hidden">
-              <div class="h-full bg-[#247B50] transition-[width] duration-300" style="width: ${progressPct}%;"></div>
+              <div class="h-full bg-[#247B50] transition-transform duration-300 ease-out origin-left" style="transform: scaleX(${progressPct / 100});"></div>
             </div>
           </div>
         </div>
 
         <!-- Section Questions List -->
-        <div class="space-y-4 pb-4">
+        <div class="space-y-5 pb-4">
           ${(() => {
             const pageQuestions = page.questions || [];
             const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
@@ -1066,16 +1068,16 @@ window.AEFieldApp = {
         </div>
 
         <!-- Section Bottom Navigation & Submission Bar (Floating Card Dock) -->
-        <div data-ui="sticky-bar" class="sticky ${this.isRespondentMode ? 'bottom-3' : 'bottom-[4.25rem]'} md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[10px] p-3 sm:p-4 shadow-sm flex items-center justify-between gap-3">
+        <div data-ui="sticky-bar" class="sticky ${this.isRespondentMode ? 'bottom-3' : 'bottom-[4.25rem]'} md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[12px] p-3.5 sm:p-4 shadow-sm flex items-center justify-between gap-3">
           <div>
             ${
               this.currentPageIndex > 0
                 ? `<button type="button" onclick="AEFieldApp.prevPage()"
-                    class="h-10 px-3.5 sm:px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
+                    class="h-10 px-4 rounded-[8px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
                     <i class="fa-solid fa-arrow-left text-xs"></i> <span>${this.t('prevSection')}</span>
                   </button>`
                 : `<button type="button" onclick="AEFieldApp.resetCurrentDraft()"
-                    class="h-10 px-3 rounded-[6px] text-xs font-medium text-[#831C1E] hover:bg-[#FFEDEA] inline-flex items-center gap-1.5 ae-press">
+                    class="h-10 px-3 rounded-[8px] text-xs font-medium text-[#525B56] hover:text-[#831C1E] hover:bg-[#FFEDEA]/70 inline-flex items-center gap-1.5 ae-press">
                     <i class="fa-solid fa-rotate-left text-xs"></i> <span>${this.t('clearForm')}</span>
                   </button>`
             }
@@ -1085,16 +1087,16 @@ window.AEFieldApp = {
             ${
               this.currentPageIndex < pages.length - 1
                 ? `<button id="ae_field_next_btn" type="button" onclick="AEFieldApp.nextPage()"
-                    class="h-11 px-5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press shadow-xs">
+                    class="h-11 px-5 rounded-[8px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                     <span>${this.t('nextSection')}</span>
                     <i class="fa-solid fa-arrow-right text-xs"></i>
-                    <span class="ae-kbd hidden sm:inline ml-1">Shift+Enter</span>
+                    ${this.isRespondentMode ? '' : '<span class="ae-kbd hidden sm:inline ml-1">Shift+Enter</span>'}
                   </button>`
                 : `<button id="ae_field_submit_btn" type="button" onclick="AEFieldApp.submitResponse()"
-                    class="h-11 px-5 sm:px-6 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press shadow-xs">
+                    class="h-11 px-5 sm:px-6 rounded-[8px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-2 ae-press">
                     <i class="fa-solid fa-check text-xs"></i>
                     <span>${this.t('submitSurvey')}</span>
-                    <span class="ae-kbd hidden sm:inline ml-1">Shift+Enter</span>
+                    ${this.isRespondentMode ? '' : '<span class="ae-kbd hidden sm:inline ml-1">Shift+Enter</span>'}
                   </button>`
             }
           </div>
@@ -1115,36 +1117,36 @@ window.AEFieldApp = {
 
     return `
       <div id="field_q_${q.id}" class="bg-white border ${
-        errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : (q.parentQuestionId ? 'border-[#247B50]/30' : 'border-[#E4E7E4]')
-      } ${q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-4 border-l-[#247B50] bg-[#FAFBF9]' : ''} rounded-[8px] p-5 space-y-3 transition-colors">
+        errorMsg ? 'border-[#F5C2C0] ring-1 ring-[#C4242A]/20' : (q.parentQuestionId ? 'border-[#247B50]/25' : 'border-[#E4E7E4]')
+      } ${q.parentQuestionId ? 'ml-3 sm:ml-6 border-l-[3px] border-l-[#247B50] bg-[#FAFBF9]' : ''} rounded-[12px] p-6 sm:p-7 space-y-4 transition-colors">
         <div class="flex items-start justify-between gap-3">
-          <label class="block text-sm font-semibold text-[#111613] leading-snug ae-break-words flex-1 min-w-0">
-            ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums ${q.parentQuestionId ? 'text-[#247B50] font-bold' : 'text-[#525B56]'} mr-1.5">${numInfo.label}.</span>` : ''}
+          <label class="block text-[15px] sm:text-base font-semibold text-[#111613] leading-snug ae-break-words flex-1 min-w-0">
+            ${survey.theme?.showQuestionNumbers !== false ? `<span class="tabular-nums text-xs font-semibold ${q.parentQuestionId ? 'text-[#247B50]' : 'text-[#525B56]'} mr-1.5">${numInfo.label}.</span>` : ''}
             <span data-piped-title-for="${q.id}">${this.escapeHtml(pipedTitle)}</span>
-            ${q.parentQuestionId ? `<span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] ml-1.5">Part (${numInfo.letter || 'b'})</span>` : ''}
+            ${q.parentQuestionId ? `<span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-[#DCFAE5]/80 text-[#04250E] ml-1.5">Part ${this.escapeHtml(numInfo.letter || 'b')}</span>` : ''}
             ${q.required ? '<span class="text-[#C4242A] ml-1" title="Required">*</span>' : ''}
           </label>
           <button type="button" onclick="AEFieldApp.speakQuestion('${q.id}')"
-            title="Soma kwa sauti / Read question aloud (Voice Assist)"
-            class="w-7 h-7 rounded-[4px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#DCFAE5] hover:border-[#247B50] text-[#525B56] hover:text-[#04250E] flex items-center justify-center text-xs shrink-0 ae-press"
+            title="Read question aloud"
+            class="w-8 h-8 rounded-[6px] text-[#646E68] hover:text-[#247B50] hover:bg-[#F4F6F4] flex items-center justify-center text-xs shrink-0 ae-press"
             aria-label="Read Question Aloud">
-            <i class="fa-solid fa-volume-high text-[11px]"></i>
+            <i class="fa-solid fa-volume-high text-[12px]"></i>
           </button>
         </div>
         ${
           q.helpText
-            ? `<p data-piped-help-for="${q.id}" class="text-xs text-[#525B56] leading-relaxed ae-break-words ${pipedHelp ? '' : 'hidden'}">${this.escapeHtml(pipedHelp)}</p>`
+            ? `<p data-piped-help-for="${q.id}" class="text-[13px] text-[#525B56] leading-relaxed ae-break-words ${pipedHelp ? '' : 'hidden'}" style="text-wrap: pretty;">${this.escapeHtml(pipedHelp)}</p>`
             : ''
         }
 
         <!-- Question Input Control -->
-        <div class="pt-1">
+        <div class="pt-0.5">
           ${this.renderQuestionControl(q)}
         </div>
 
         ${
           errorMsg
-            ? `<div class="text-xs font-medium text-[#831C1E] bg-[#FFEDEA] px-3 py-1.5 rounded-[5px] flex items-center gap-1.5">
+            ? `<div class="text-xs font-medium text-[#831C1E] bg-[#FFEDEA] px-3.5 py-2 rounded-[6px] flex items-center gap-2">
                 <i class="fa-solid fa-circle-exclamation text-xs text-[#C4242A]"></i>
                 <span>${this.escapeHtml(errorMsg)}</span>
               </div>`
@@ -1233,20 +1235,20 @@ window.AEFieldApp = {
                   tabindex="0"
                   onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();AEFieldApp.setAnswer('${q.id}','${this.escapeJs(opt)}');}"
                   onclick="AEFieldApp.setAnswer('${q.id}', '${this.escapeJs(opt)}')"
-                  class="flex items-center justify-between p-3.5 rounded-[6px] border ${
+                  class="flex items-center justify-between px-4 py-3.5 rounded-[8px] border ${
                     checked
-                      ? 'border-[#247B50] bg-[#DCFAE5]/40 text-[#04250E] font-medium'
-                      : 'border-[#E4E7E4] hover:bg-[#F8F9F8] text-[#111613]'
-                  } cursor-pointer ae-press transition-colors min-h-[48px]">
+                      ? 'border-[#247B50] bg-[#DCFAE5]/45 text-[#04250E] font-medium'
+                      : 'border-[#E4E7E4] hover:bg-[#F8F9F8] hover:border-[#CFD5D0] text-[#111613]'
+                  } cursor-pointer ae-choice-press min-h-[48px]">
                   <div class="flex items-center gap-3 min-w-0">
                     <span class="w-5 h-5 rounded-full border ${
                       checked ? 'border-[#247B50] bg-[#247B50]' : 'border-[#CFD5D0] bg-white'
-                    } flex items-center justify-center shrink-0">
+                    } flex items-center justify-center shrink-0 transition-colors">
                       ${checked ? '<span class="w-2 h-2 rounded-full bg-white"></span>' : ''}
                     </span>
-                    <span class="text-xs sm:text-sm ae-break-words">${this.escapeHtml(opt)}</span>
+                    <span class="text-sm ae-break-words">${this.escapeHtml(opt)}</span>
                   </div>
-                  ${shortcutNum ? `<span class="ae-kbd shrink-0 ml-2">${shortcutNum}</span>` : ''}
+                  ${shortcutNum && !this.isRespondentMode ? `<span class="ae-kbd shrink-0 ml-2">${shortcutNum}</span>` : ''}
                 </div>
               `;
             })
@@ -1270,18 +1272,18 @@ window.AEFieldApp = {
                   tabindex="0"
                   onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();AEFieldApp.toggleCheckbox('${q.id}','${this.escapeJs(opt)}');}"
                   onclick="AEFieldApp.toggleCheckbox('${q.id}', '${this.escapeJs(opt)}')"
-                  class="flex items-center justify-between p-3.5 rounded-[6px] border ${
+                  class="flex items-center justify-between px-4 py-3.5 rounded-[8px] border ${
                     checked
-                      ? 'border-[#247B50] bg-[#DCFAE5]/40 text-[#04250E] font-medium'
-                      : 'border-[#E4E7E4] hover:bg-[#F8F9F8] text-[#111613]'
-                  } cursor-pointer ae-press transition-colors min-h-[48px]">
+                      ? 'border-[#247B50] bg-[#DCFAE5]/45 text-[#04250E] font-medium'
+                      : 'border-[#E4E7E4] hover:bg-[#F8F9F8] hover:border-[#CFD5D0] text-[#111613]'
+                  } cursor-pointer ae-choice-press min-h-[48px]">
                   <div class="flex items-center gap-3 min-w-0">
                     <span class="w-5 h-5 rounded-[4px] border ${
                       checked ? 'border-[#247B50] bg-[#247B50]' : 'border-[#CFD5D0] bg-white'
-                    } flex items-center justify-center shrink-0">
+                    } flex items-center justify-center shrink-0 transition-colors">
                       ${checked ? '<i class="fa-solid fa-check text-white text-[10px]"></i>' : ''}
                     </span>
-                    <span class="text-xs sm:text-sm ae-break-words">${this.escapeHtml(opt)}</span>
+                    <span class="text-sm ae-break-words">${this.escapeHtml(opt)}</span>
                   </div>
                 </div>
               `;
@@ -2067,15 +2069,15 @@ window.AEFieldApp = {
 
       const isSavedSynced = saved.syncStatus === 'synced';
       const initialSyncBadge = isSavedSynced
-        ? 'Synced to Sheets'
-        : (window.aeStore.isEffectivelyOnline() ? 'Saved locally — syncing…' : this.t('storedLocallyPending'));
+        ? 'Saved & synced'
+        : (window.aeStore.isEffectivelyOnline() ? 'Saved — syncing now…' : this.t('storedLocallyPending'));
 
       this.justSubmittedReceipt = {
         title: this.isRespondentMode
-          ? 'Thank you! Your survey response has been submitted.'
+          ? 'Thank you — your answers are saved.'
           : `${this.t('interviewLogged')} (${initialSyncBadge})`,
         subtitle: this.isRespondentMode
-          ? `Self-Administered Web Link · Your response has been securely recorded.`
+          ? 'Your response has been recorded safely. You can close this page or submit another response below.'
           : `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`,
         receiptId: saved.id,
         syncStatus: saved.syncStatus || 'pending',
@@ -2131,7 +2133,7 @@ window.AEFieldApp = {
 
   async triggerCloudSync(showToast = true) {
     if (!window.aeStore.isEffectivelyOnline()) {
-      if (showToast) this.showToast('Device is offline. Connect to internet to sync.', 'warning');
+      if (showToast) this.showToast('You’re offline — we’ll sync as soon as you reconnect.', 'warning');
       return;
     }
     this.isSyncing = true;
@@ -2520,8 +2522,8 @@ window.AEFieldApp = {
     localStorage.setItem('ae_field_runner_mode', this.runnerMode);
     this.showToast(
       this.runnerMode === 'focus'
-        ? 'Typeform Single-Question Focus Mode active.'
-        : 'Classic Section Form view restored.',
+        ? 'Focus mode on — one question at a time.'
+        : 'Full section view restored.',
       'info'
     );
     this.render();
@@ -2651,18 +2653,18 @@ window.AEFieldApp = {
         </div>
 
         <!-- Micro-Progress Line -->
-        <div class="w-full h-1 bg-[#E4E7E4] rounded-full overflow-hidden">
-          <div class="h-full bg-[#247B50] transition-[width] duration-300 ease-out" style="width: ${progressPct}%;"></div>
+        <div class="w-full h-1.5 bg-[#E4E7E4] rounded-full overflow-hidden">
+          <div class="h-full bg-[#247B50] transition-transform duration-300 ease-out origin-left" style="transform: scaleX(${progressPct / 100});"></div>
         </div>
 
         <!-- Single Question Focus Card -->
-        <div class="bg-white border border-[#E4E7E4] rounded-[10px] p-6 sm:p-8 space-y-6 ae-question-animate">
-          <div class="space-y-2">
+        <div class="bg-white border border-[#E4E7E4] rounded-[12px] p-7 sm:p-9 space-y-6 ae-question-animate">
+          <div class="space-y-2.5">
             <div class="flex items-center gap-2">
               <span class="text-xs font-semibold text-[#247B50]">${this.t('question')} ${numLabel}</span>
-              ${q.required ? `<span class="text-[#C4242A] text-xs font-semibold">* ${this.t('required')}</span>` : `<span class="text-[#646E68] text-xs">${this.t('optional')}</span>`}
+              ${q.required ? `<span class="text-[#C4242A] text-xs font-medium">* ${this.t('required')}</span>` : `<span class="text-[#646E68] text-xs">${this.t('optional')}</span>`}
             </div>
-            <h2 data-piped-title-for="${q.id}" class="text-lg sm:text-xl md:text-2xl font-semibold text-[#111613] leading-snug tracking-tight">
+            <h2 data-piped-title-for="${q.id}" class="text-xl sm:text-2xl font-semibold text-[#111613] leading-snug tracking-tight" style="text-wrap: balance;">
               ${this.escapeHtml(
                 (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
                   ? window.AEPiping.interpolate(q.title, this.draftAnswers, survey)
@@ -2674,7 +2676,7 @@ window.AEFieldApp = {
               const pipedHelp = (window.AEPiping && typeof window.AEPiping.interpolate === 'function')
                 ? window.AEPiping.interpolate(q.helpText, this.draftAnswers, survey)
                 : q.helpText;
-              return `<p data-piped-help-for="${q.id}" class="text-xs sm:text-sm text-[#525B56] leading-relaxed ${pipedHelp ? '' : 'hidden'}">${this.escapeHtml(pipedHelp)}</p>`;
+              return `<p data-piped-help-for="${q.id}" class="text-sm text-[#525B56] leading-relaxed ${pipedHelp ? '' : 'hidden'}" style="text-wrap: pretty;">${this.escapeHtml(pipedHelp)}</p>`;
             })()}
           </div>
 
@@ -3697,7 +3699,7 @@ window.AEFieldApp = {
             <!-- Visual Donut Chart Card -->
             <div class="p-4 rounded-[10px] bg-[#F8F9F8] border border-[#E4E7E4] flex items-center justify-between gap-4">
               <div class="space-y-1">
-                <span class="text-[10px] font-bold uppercase tracking-wider text-[#525B56]">Shift Progress</span>
+                <span class="text-xs font-medium text-[#525B56]">Shift progress</span>
                 <div class="text-2xl font-bold text-[#111613] tabular-nums tracking-tight">
                   ${completed} <span class="text-sm text-[#525B56] font-normal">/ ${shiftTarget} ${this.t('plots')}</span>
                 </div>
