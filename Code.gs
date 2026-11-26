@@ -1989,9 +1989,11 @@ function sampleVerbatimsForAi_(rawVerbatims, maxCount) {
       var text = String(rawText).replace(/\s+/g, ' ').trim();
       if (!text) continue;
       var metaParts = [];
-      var qLabel = item.question || item.questionLabel || item.field || '';
-      if (qLabel) metaParts.push('Q:' + String(qLabel).replace(/\s+/g, ' ').trim().substring(0, 60));
-      var loc = item.county || item.region || item.location || '';
+      var qTitle = item.questionTitle || item.question || item.questionLabel || item.field || '';
+      if (qTitle) metaParts.push('Q:' + String(qTitle).replace(/\s+/g, ' ').trim().substring(0, 90));
+      var seg = item.segment || '';
+      if (seg) metaParts.push('Seg:' + String(seg).replace(/\s+/g, ' ').trim().substring(0, 40));
+      var loc = item.location || item.county || item.region || '';
       if (loc) metaParts.push('Loc:' + String(loc).replace(/\s+/g, ' ').trim().substring(0, 40));
       var lang = item.lang || item.language || '';
       if (lang) metaParts.push('Lang:' + String(lang).trim().substring(0, 12));
@@ -2050,22 +2052,23 @@ function analyzeVerbatimsWithGemini_(payload) {
 
   var model = 'gemini-2.5-flash';
   var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
-  var surveyTitle = (payload && payload.surveyTitle) ? String(payload.surveyTitle).trim().substring(0, 140) : 'Field Survey';
+  var surveyTitle = (payload && payload.surveyTitle) ? String(payload.surveyTitle).trim().substring(0, 140) : 'Survey';
   var numberedList = [];
   for (var i = 0; i < sampled.length; i++) {
     numberedList.push((i + 1) + '. ' + sampled[i]);
   }
 
   var promptText = [
-    'You are an agricultural field research analyst for Agri Experience Limited.',
-    'Analyze the following ' + sampled.length + ' field survey verbatim responses (sampled from ' + rawVerbatims.length + ' total) for survey: "' + surveyTitle + '".',
+    'You are an expert qualitative research and survey intelligence analyst.',
+    'Analyze the following ' + sampled.length + ' survey verbatim responses (sampled from ' + rawVerbatims.length + ' total) for the survey: "' + surveyTitle + '".',
+    'Each verbatim may include its exact question title [Q:...] and respondent segment/context. Ground all themes, terminology, and recommendations strictly in the actual domain and questions of this survey.',
     'Responses may contain English, Swahili, French, or Portuguese; synthesize all findings in clear, concise executive English.',
     'Return strictly valid JSON with exactly these keys:',
     '- "headline": string (1 concise executive takeaway sentence)',
     '- "summaryBullets": string[] (3 to 5 crisp findings)',
     '- "topThemes": Array<{ "theme": string, "countEstimate": number, "sentiment": "positive"|"neutral"|"negative"|"mixed", "summary": string }> (3 to 6 themes)',
-    '- "recommendations": string[] (3 to 5 concrete operational actions)',
-    '- "urgentRisks": string[] (0 to 5 urgent field/quality/supply risks; empty array if none)',
+    '- "recommendations": string[] (3 to 5 concrete, actionable recommendations tailored to this survey)',
+    '- "urgentRisks": string[] (0 to 5 urgent risks, safety/quality issues, or critical complaints; empty array if none)',
     '',
     'Verbatim sample:',
     numberedList.join('\n')

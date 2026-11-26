@@ -12,44 +12,44 @@
  *       fraction & lower series), Wilson-Hilferty transformation for df > 30, exact p-value,
  *       Cramér's V with bias correction, and Standardized Pearson Residuals (z_ij)
  * - Dynamic Multi-Dimensional Filtering Engine:
- *     * Date Range Presets (Today, 7 Days, 30 Days, Season, All)
- *     * Administrative County Filter (Nakuru, Machakos, Meru, etc.)
+ *     * Date Range Presets (Today, 7 Days, 30 Days, Current Period, All)
+ *     * Dynamic Location / Region Filter (shown when location/GPS data exists)
  *     * Field Enumerator Filter
  *     * Sync State (Synced to Sheets / Queued Offline)
  *     * Supervisor Review State (Approved / Flagged / Pending)
  *     * NPS Segment (Promoters [9-10], Passives [7-8], Detractors [0-6])
- *     * Seed Variety Slicer
+ *     * Dynamic Primary Categorical Question Slicer
  *     * Visual Dismissable Filter Chips with Live Sample Counter & Percentage
- * - Automated Agronomic Key Driver & Insight Discovery Engine:
+ * - Automated Key Driver & Insight Discovery Engine:
  *     * Algorithmic narrative takeaway cards with statistical hypothesis testing
- *     * Variety Yield Superiority Driver (Welch's t, p-value, % lift)
- *     * Input Co-Application Synergy Driver (CAN / DAP fertilizer rankings)
- *     * Regional NPS & Stockout Detractor Anomaly Detection
- *     * Field Enumeration Pacing & QA Telemetry Audit
+ *     * Cohort Performance Driver (Welch's t, p-value, % lift)
+ *     * Factor Co-Occurrence & Treatment Lift Discovery
+ *     * Regional / Segment NPS Anomaly Detection
+ *     * Enumeration Pacing & QA Telemetry Audit
  * - 4-Tab Question Cards & Single-Question PNG Chart Export:
  *     * Chart View (Horizontal Bar, Bar, Doughnut)
  *     * Tabulation Table (Counts, %, Progress Bar, Cumulative %)
  *     * Parametric & Non-Parametric Statistics Summary
- *     * Field Verbatim Notes Explorer
+ *     * Open-Ended Verbatim Notes Explorer
  *     * Branded High-Resolution PNG Chart Export (Canvas + Watermark)
  * - Interactive 2-Way Contingency Cross-Tabulation:
  *     * Metric Toggles: Count, Row %, Column %, Standardized Residuals
  *     * Residuals Heatmap (Emerald for z >= +1.96, Rose for z <= -1.96)
  *     * Exact χ² test banner with df, exact p-value, and Cramér's V
- * - Bivariate Agronomic Impact & Correlation Matrix:
- *     * Input Applications vs. Harvest Yield (kg/acre)
+ * - Bivariate Impact & Variable Correlation Matrix:
+ *     * Factor vs. Continuous Outcome Evaluation
  *     * Cohen's d effect sizes, Welch's t-stat, lift %, sample counts
- * - Qualitative Field Notes Intelligence (AETeXtEngine):
- *     * Fast tokenization with East African Swahili + English agronomic stop words
- *     * N-gram keyword frequency extraction
- *     * Agronomic sentiment & risk valence classifier (Positive / Alert / Observation)
- *     * Real-time search and filter
+ * - Qualitative Verbatim Intelligence (AETeXtEngine):
+ *     * Fast tokenization with multilingual grammatical stop words (EN / SW / FR / PT)
+ *     * TF-IDF unigram/bigram keyword & dynamic topic discovery
+ *     * Negation-aware sentiment & risk valence classifier (Positive / Alert / Neutral)
+ *     * Per-question breakdown, custom survey codebook, and real-time search/filter
  * - Chart.js v4 Memory & Hardware-Adaptive DPR Management:
  *     * Explicit teardown (destroyCharts) with GPU buffer zeroing
  *     * Tablet-capped devicePixelRatio (1.5x) to eliminate memory leaks
  * - Enterprise Multi-Sheet Formatted Excel Workbook Export (7 Worksheets):
  *     * Executive_Summary, Question_Tabulations, Contingency_CrossTab,
- *       Agronomic_Correlations, Verbatim_Intelligence, Raw_Responses, SPSS_Codebook
+ *       Variable_Correlations, Verbatim_Intelligence, Raw_Responses, SPSS_Codebook
  * ============================================================================
  */
 
@@ -1025,20 +1025,22 @@ if (!window.AETeXtEngine) {
           const isActionable = /\b(should|recommend|suggest|improve|need to|more time|better|napendekeza|tafadhali|boresha)\b/i.test(analysisText);
           const urgency = /\b(fake|counterfeit|broken|excluded|failed|hasara|urgent)\b/i.test(analysisText) ? 'high' : sentiment === 'negative' ? 'medium' : 'normal';
 
+          const rawLoc = String(r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || '').trim();
           analyzedRows.push({
             id: respId,
             recordKey,
             questionId: item.qId,
             questionTitle: item.qTitle,
-            enumerator: r.enumerator || 'Field Officer',
+            enumerator: r.enumerator || 'Respondent',
             submittedAt: r.submittedAt,
-            county: r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || 'Kenya',
-            segment: r.answers?.q_county || r.enumerator || 'All',
+            location: rawLoc,
+            county: rawLoc,
+            segment: rawLoc || r.enumerator || 'All',
             text: item.text,
             translatedText,
             sentiment,
             sentimentScore,
-            themes: [{ id: 'general', name: 'Other / General', color: '#646E68' }],
+            themes: [{ id: 'general', name: 'General Feedback', color: '#646E68' }],
             isActionable,
             urgency,
             matchedKeywords: words.filter((w) => this.lexicon.positive.includes(w) || this.lexicon.negative.includes(w))
@@ -1046,33 +1048,178 @@ if (!window.AETeXtEngine) {
         });
       });
 
+      const customThemes = survey ? this.getCustomThemes(survey.id) : [];
+      if (customThemes.length > 0) {
+        analyzedRows.forEach((row) => {
+          const lower = String(row.translatedText || row.text || '').toLowerCase();
+          const matched = customThemes.filter((ct) =>
+            (ct.keywords || []).some((kw) => kw && lower.includes(String(kw).toLowerCase()))
+          );
+          if (matched.length > 0) {
+            row.themes = matched.map((ct) => ({ id: ct.id, name: ct.name, color: ct.color || '#247B50', isCustom: true }));
+          }
+        });
+      }
+
       const sortedTerms = Object.entries(termFreq)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 30)
         .map(([term, count]) => ({ term, count }));
 
       const total = analyzedRows.length;
-      const themes = total > 0 ? [{
-        id: 'general',
-        name: 'Other / General',
-        color: '#646E68',
-        count: total,
-        pct: 100,
-        positive: totalPos,
-        neutral: totalNeu,
-        negative: totalNeg,
-        netSentiment: Math.round(((totalPos - totalNeg) / total) * 100),
-        topQuote: analyzedRows[0]?.text || ''
-      }] : [];
+      const themeMap = new Map();
+      analyzedRows.forEach((row) => {
+        (row.themes || []).forEach((t) => {
+          if (!themeMap.has(t.id)) {
+            themeMap.set(t.id, {
+              id: t.id,
+              name: t.name,
+              color: t.color || '#646E68',
+              isCustom: !!t.isCustom,
+              count: 0,
+              positive: 0,
+              neutral: 0,
+              negative: 0,
+              topQuote: row.text || ''
+            });
+          }
+          const b = themeMap.get(t.id);
+          b.count++;
+          if (row.sentiment === 'positive') b.positive++;
+          else if (row.sentiment === 'negative') b.negative++;
+          else b.neutral++;
+        });
+      });
+      const themes = Array.from(themeMap.values())
+        .sort((a, b) => b.count - a.count)
+        .map((t) => ({
+          ...t,
+          pct: total > 0 ? Math.round((t.count / total) * 100) : 0,
+          netSentiment: t.count > 0 ? Math.round(((t.positive - t.negative) / t.count) * 100) : 0
+        }));
+
+      const byQMap = new Map();
+      analyzedRows.forEach((row) => {
+        if (!byQMap.has(row.questionId)) {
+          byQMap.set(row.questionId, {
+            qId: row.questionId,
+            code: row.questionId,
+            title: row.questionTitle || row.questionId,
+            count: 0,
+            positive: 0,
+            neutral: 0,
+            negative: 0,
+            actionableCount: 0,
+            highUrgencyCount: 0,
+            _terms: {},
+            topQuote: row.text || ''
+          });
+        }
+        const qEntry = byQMap.get(row.questionId);
+        qEntry.count++;
+        if (row.sentiment === 'positive') qEntry.positive++;
+        else if (row.sentiment === 'negative') qEntry.negative++;
+        else qEntry.neutral++;
+        if (row.isActionable) qEntry.actionableCount++;
+        if (row.urgency === 'high') qEntry.highUrgencyCount++;
+        String(row.translatedText || row.text || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, ' ')
+          .split(/\s+/)
+          .filter((w) => w.length > 2 && !this.stopWords.has(w))
+          .forEach((w) => { qEntry._terms[w] = (qEntry._terms[w] || 0) + 1; });
+      });
+      const byQuestion = Array.from(byQMap.values()).map((qEntry) => ({
+        qId: qEntry.qId,
+        code: qEntry.code,
+        title: qEntry.title,
+        count: qEntry.count,
+        positive: qEntry.positive,
+        neutral: qEntry.neutral,
+        negative: qEntry.negative,
+        actionableCount: qEntry.actionableCount,
+        highUrgencyCount: qEntry.highUrgencyCount,
+        topTerms: Object.entries(qEntry._terms)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([term, count]) => ({ term, count })),
+        topQuote: qEntry.topQuote
+      }));
 
       return {
         totalAnalyzed: total,
         sentimentSummary: { positive: totalPos, negative: totalNeg, neutral: totalNeu },
         themes,
+        byQuestion,
         themeBySegment: { segmentLabel: 'Segment', segments: [], rows: [] },
         topTerms: sortedTerms,
         records: analyzedRows
       };
+    },
+
+    getSegmentOptions(survey, responses = []) {
+      const opts = [{ id: 'auto', label: 'Auto / Primary Segment' }];
+      const qs = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+        ? window.aeStore.getQuestionsForSurvey(survey)
+        : (survey?.pages || []).flatMap((p) => p.questions || []);
+      const segTypes = new Set(['multiple_choice', 'single_choice', 'radio', 'dropdown', 'select', 'checkboxes', 'cascading_dropdown', 'nps', 'star_rating', 'rating', 'likert']);
+      qs.forEach((q) => {
+        if (q && segTypes.has(q.type)) {
+          opts.push({ id: q.id, label: String(q.title || q.id) });
+        }
+      });
+      const enums = new Set((responses || []).map((r) => String(r.enumerator || '').trim()).filter(Boolean));
+      if (enums.size > 1) opts.push({ id: 'enumerator', label: 'Enumerator' });
+      const locs = new Set((responses || []).map((r) => String(r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || '').trim()).filter(Boolean));
+      if (locs.size > 0) opts.push({ id: 'location', label: 'Location / Region' });
+      return opts;
+    },
+
+    _memCustomThemes: {},
+
+    getCustomThemes(surveyId) {
+      const key = `ae_custom_themes_${surveyId || 'global'}`;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem(key);
+          if (raw) return JSON.parse(raw);
+        }
+      } catch (e) {}
+      return this._memCustomThemes[key] || [];
+    },
+
+    saveCustomTheme(surveyId, theme) {
+      const key = `ae_custom_themes_${surveyId || 'global'}`;
+      const list = this.getCustomThemes(surveyId).slice();
+      const keywords = Array.isArray(theme.keywords)
+        ? theme.keywords.map((k) => String(k).trim()).filter(Boolean)
+        : String(theme.keywords || '').split(',').map((k) => k.trim()).filter(Boolean);
+      const id = theme.id || `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const entry = {
+        id,
+        name: String(theme.name || 'Custom Theme').trim(),
+        keywords,
+        color: theme.color || '#247B50',
+        isCustom: true
+      };
+      const idx = list.findIndex((t) => t.id === id);
+      if (idx >= 0) list[idx] = entry;
+      else list.push(entry);
+      this._memCustomThemes[key] = list;
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(list));
+      } catch (e) {}
+      return list;
+    },
+
+    deleteCustomTheme(surveyId, themeId) {
+      const key = `ae_custom_themes_${surveyId || 'global'}`;
+      const list = this.getCustomThemes(surveyId).filter((t) => t.id !== themeId);
+      this._memCustomThemes[key] = list;
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(list));
+      } catch (e) {}
+      return list;
     },
 
     generateExecutiveBriefing(analysis, survey) {
@@ -1175,6 +1322,7 @@ window.AEAnalytics = {
   verbatimTranslations: {},
   verbatimAiBriefing: null,
   verbatimBusy: false,
+  verbatimShowCustomThemeForm: false,
   selectedRegressionTarget: null,
   selectedAnovaOutcome: null,
   selectedAnovaGroup: null,
@@ -1201,12 +1349,94 @@ window.AEAnalytics = {
     const questions = window.aeStore.getQuestionsForSurvey(survey);
     return questions.filter((q) =>
       q.type === 'multiple_choice' ||
+      q.type === 'single_choice' ||
+      q.type === 'radio' ||
       q.type === 'dropdown' ||
+      q.type === 'select' ||
       q.type === 'checkboxes' ||
       q.type === 'cascading_dropdown' ||
       q.type === 'nps' ||
       q.type === 'star_rating'
     );
+  },
+
+  _extractResponseLocationValue(r, locQ = null) {
+    if (!r) return '';
+    if (locQ && r.answers && r.answers[locQ.id] !== undefined && r.answers[locQ.id] !== null) {
+      const v = r.answers[locQ.id];
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        return String(v.level1 || v.label || v.name || v.value || '').split('>')[0].trim();
+      }
+      if (Array.isArray(v)) return String(v[0] || '').trim();
+      return String(v).split('>')[0].trim();
+    }
+    const fallback = r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || '';
+    return String(fallback).split('>')[0].trim();
+  },
+
+  getLocationFilterConfig(survey, responses = []) {
+    const qs = survey && window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const locQ = qs.find((q) =>
+      q && (
+        q.type === 'cascading_dropdown' ||
+        q.type === 'gps' ||
+        /^(q_county|cascading_county|q_region|q_location|q_district)$/i.test(String(q.id || '')) ||
+        /\b(county|region|location|district|province|country|site|branch)\b/i.test(String(q.title || ''))
+      )
+    ) || null;
+
+    const values = Array.from(
+      new Set(
+        (responses || [])
+          .map((r) => this._extractResponseLocationValue(r, locQ))
+          .filter(Boolean)
+      )
+    ).sort();
+
+    const cleanLabel = locQ
+      ? this.cleanQuestionTitle(locQ, {}, survey).split(/[:\?(]/)[0].trim().slice(0, 28)
+      : 'Location / Region';
+
+    return {
+      question: locQ,
+      label: cleanLabel || 'Location / Region',
+      values,
+      hasLocation: values.length > 0
+    };
+  },
+
+  getPrimaryCategoricalFilterConfig(survey, responses = [], excludeQId = null) {
+    const qs = survey && window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const choiceTypes = new Set(['multiple_choice', 'single_choice', 'radio', 'dropdown', 'select', 'checkboxes']);
+    const candidates = qs.filter((q) => q && choiceTypes.has(q.type) && q.id !== excludeQId);
+    const chosenQ = candidates.find((q) =>
+      (responses || []).some((r) => {
+        const v = r.answers?.[q.id];
+        return Array.isArray(v) ? v.length > 0 : (v !== undefined && v !== null && String(v).trim() !== '');
+      })
+    ) || candidates[0] || null;
+
+    if (!chosenQ) return null;
+
+    const valSet = new Set();
+    (responses || []).forEach((r) => {
+      const v = r.answers?.[chosenQ.id];
+      if (Array.isArray(v)) {
+        v.forEach((item) => {
+          const s = String(item || '').trim();
+          if (s) valSet.add(s);
+        });
+      } else if (v !== undefined && v !== null && String(v).trim() !== '') {
+        valSet.add(String(v).trim());
+      }
+    });
+
+    const cleanLabel = this.cleanQuestionTitle(chosenQ, {}, survey).split(/[:\?(]/)[0].trim().slice(0, 28);
+    return {
+      question: chosenQ,
+      label: cleanLabel || 'Category',
+      values: Array.from(valSet).sort()
+    };
   },
 
   getContinuousValue(r, qId) {
@@ -1444,7 +1674,12 @@ window.AEAnalytics = {
 
   getFilteredResponses(surveyId) {
     const all = window.aeStore.getResponsesForSurvey(surveyId);
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
     const f = this.filterState;
+    const locCfg = this.getLocationFilterConfig(survey, all);
+    const catCfg = this.getPrimaryCategoricalFilterConfig(survey, all, locCfg.question?.id || null);
 
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
@@ -1469,7 +1704,7 @@ window.AEAnalytics = {
       } else if (f.datePreset === 'last_30_days') {
         startMs = now.getTime() - 30 * 86400000;
       } else if (f.datePreset === 'season') {
-        // Kenya Long Rains Season (March 1st)
+        // Current quarter / campaign period (start of March or 90 days)
         startMs = new Date(now.getFullYear(), 2, 1).getTime();
       }
     }
@@ -1516,9 +1751,9 @@ window.AEAnalytics = {
         if (subMs < startMs || subMs > endMs) return false;
       }
 
-      // 6. County
+      // 6. Dynamic Location / Region Filter
       if (f.county !== 'all') {
-        const cVal = String(r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || '');
+        const cVal = this._extractResponseLocationValue(r, locCfg.question);
         if (!cVal.toLowerCase().includes(f.county.toLowerCase())) return false;
       }
 
@@ -1530,10 +1765,13 @@ window.AEAnalytics = {
         if (seg !== f.npsSegment) return false;
       }
 
-      // 8. Seed Variety Slicer
+      // 8. Dynamic Primary Categorical Question Slicer (uses f.seedVariety for backward compatibility)
       if (f.seedVariety !== 'all') {
-        const varietyVal = String(r.answers?.q_seed_variety || r.answers?.q_variety || '');
-        if (!varietyVal.toLowerCase().includes(f.seedVariety.toLowerCase())) return false;
+        const rawCatVal = catCfg && catCfg.question
+          ? r.answers?.[catCfg.question.id]
+          : (r.answers?.q_seed_variety || r.answers?.q_variety || '');
+        const catStr = Array.isArray(rawCatVal) ? rawCatVal.join(' | ') : String(rawCatVal || '');
+        if (!catStr.toLowerCase().includes(f.seedVariety.toLowerCase())) return false;
       }
 
       return true;
@@ -1608,6 +1846,44 @@ window.AEAnalytics = {
   togglePinVerbatim(surveyId, key) {
     if (!surveyId || !key || !window.AETeXtEngine || typeof window.AETeXtEngine.togglePinQuote !== 'function') return;
     window.AETeXtEngine.togglePinQuote(surveyId, key);
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  toggleCustomThemeForm(forceState) {
+    this.verbatimShowCustomThemeForm = typeof forceState === 'boolean' ? forceState : !this.verbatimShowCustomThemeForm;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  saveCustomThemeFromForm(surveyId, nameOverride, keywordsOverride) {
+    if (!surveyId || !window.AETeXtEngine || typeof window.AETeXtEngine.saveCustomTheme !== 'function') return;
+    const nameEl = typeof document !== 'undefined' ? document.getElementById('ae_custom_theme_name') : null;
+    const kwEl = typeof document !== 'undefined' ? document.getElementById('ae_custom_theme_keywords') : null;
+    const name = String(nameOverride !== undefined ? nameOverride : (nameEl ? nameEl.value : '')).trim();
+    const rawKeywords = String(keywordsOverride !== undefined ? keywordsOverride : (kwEl ? kwEl.value : '')).trim();
+    const keywords = rawKeywords.split(',').map((k) => k.trim()).filter(Boolean);
+    if (!name || keywords.length === 0) {
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('Please enter a theme name and at least one comma-separated keyword.', 'warning');
+      }
+      return;
+    }
+    window.AETeXtEngine.saveCustomTheme(surveyId, { name, keywords });
+    this.verbatimShowCustomThemeForm = false;
+    this.verbatimAiBriefing = null;
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast(`Custom theme "${name}" added and applied.`, 'success');
+    }
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  deleteCustomTheme(surveyId, themeId) {
+    if (!surveyId || !themeId || !window.AETeXtEngine || typeof window.AETeXtEngine.deleteCustomTheme !== 'function') return;
+    window.AETeXtEngine.deleteCustomTheme(surveyId, themeId);
+    if (this.verbatimThemeFilter === themeId) this.verbatimThemeFilter = 'all';
+    this.verbatimAiBriefing = null;
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast('Custom theme removed.', 'info');
+    }
     if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
   },
 
@@ -2030,7 +2306,7 @@ window.AEAnalytics = {
               alt="Agri Experience Limited" class="h-10 w-auto object-contain" />
             <div>
               <div class="text-sm font-bold text-[#111613]">Agri Experience Limited</div>
-              <div class="text-[11px] text-[#525B56]">Field Survey Analytics &amp; Yield Intelligence Report</div>
+              <div class="text-[11px] text-[#525B56]">Survey Analytics &amp; Intelligence Report</div>
             </div>
           </div>
           <div class="text-right text-[11px] text-[#525B56] tabular-nums">
@@ -2043,7 +2319,7 @@ window.AEAnalytics = {
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2.5">
-              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Analyze Results &amp; Agronomic Intelligence</h1>
+              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Analyze Results &amp; Survey Intelligence</h1>
               ${
                 survey.status === 'Archived'
                   ? `<span class="px-2.5 py-0.5 rounded-[4px] text-xs font-semibold bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0] inline-flex items-center gap-1">
@@ -2057,7 +2333,7 @@ window.AEAnalytics = {
               </span>
             </div>
             <p class="text-sm text-[#525B56] mt-1">
-              Cross-tabulations with hypothesis testing (χ²), Pearson agronomic correlations, automated key drivers, and verbatim NLP.
+              Cross-tabulations with hypothesis testing (χ²), Pearson variable correlations, automated key drivers, and verbatim NLP.
             </p>
           </div>
 
@@ -2115,7 +2391,7 @@ window.AEAnalytics = {
         <!-- 2. Dynamic Multi-Dimensional Filter Bar -->
         ${this.renderMultiDimensionalFilterBar(survey, allResponses, filtered, collectors)}
 
-        <!-- 3. Automated Executive Agronomic Insights Callout -->
+        <!-- 3. Automated Executive Survey Insights Callout -->
         ${this.renderAutomatedInsightsBanner(survey, filtered)}
 
         <!-- 4. Executive KPI Strip (Framed-Sheet Pattern) -->
@@ -2141,7 +2417,7 @@ window.AEAnalytics = {
                 : this.activeTab === 'crosstab'
                 ? this.renderCrossTab(survey, filtered)
                 : this.activeTab === 'correlations'
-                ? this.renderAgronomicCorrelationsTab(survey, filtered)
+                ? this.renderVariableCorrelationsTab(survey, filtered)
                 : this.activeTab === 'pacing'
                 ? this.renderPacingForecastTab(survey, filtered)
                 : this.activeTab === 'forensics'
@@ -2166,36 +2442,22 @@ window.AEAnalytics = {
   renderMultiDimensionalFilterBar(survey, allResponses, filtered, collectors) {
     const f = this.filterState;
 
-    // Distinct values from current survey responses
-    const counties = Array.from(
-      new Set(
-        allResponses
-          .map((r) => r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || '')
-          .filter(Boolean)
-          .map((c) => String(c).split('>')[0].trim())
-      )
-    ).sort();
-
+    // Dynamic location/region filter — only shown if the survey actually has location/cascading/GPS data
+    const locCfg = this.getLocationFilterConfig(survey, allResponses);
     const enumerators = Array.from(new Set(allResponses.map((r) => r.enumerator).filter(Boolean))).sort();
-
-    const varieties = Array.from(
-      new Set(
-        allResponses
-          .map((r) => r.answers?.q_seed_variety || r.answers?.q_variety)
-          .filter(Boolean)
-          .map((v) => (Array.isArray(v) ? v[0] : String(v)))
-      )
-    ).sort();
+    // Dynamic primary categorical question filter (driven by the survey's first categorical/choice question)
+    const catCfg = this.getPrimaryCategoricalFilterConfig(survey, allResponses, locCfg.question?.id || null);
+    const hasNpsQ = (window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : []).some((q) => q && q.type === 'nps');
 
     // Active filters tracking
     const activeFilters = [];
     if (f.datePreset !== 'all') activeFilters.push({ key: 'datePreset', label: `Date: ${f.datePreset.replace(/_/g, ' ')}` });
-    if (f.county !== 'all') activeFilters.push({ key: 'county', label: `County: ${f.county}` });
+    if (f.county !== 'all') activeFilters.push({ key: 'county', label: `${locCfg.label}: ${f.county}` });
     if (f.enumerator !== 'all') activeFilters.push({ key: 'enumerator', label: `Enum: ${f.enumerator}` });
     if (f.syncStatus !== 'all') activeFilters.push({ key: 'syncStatus', label: `Sync: ${f.syncStatus}` });
     if (f.reviewStatus !== 'all') activeFilters.push({ key: 'reviewStatus', label: `Status: ${f.reviewStatus}` });
     if (f.npsSegment !== 'all') activeFilters.push({ key: 'npsSegment', label: `NPS: ${f.npsSegment}` });
-    if (f.seedVariety !== 'all') activeFilters.push({ key: 'seedVariety', label: `Variety: ${f.seedVariety}` });
+    if (f.seedVariety !== 'all') activeFilters.push({ key: 'seedVariety', label: `${catCfg?.label || 'Category'}: ${f.seedVariety}` });
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-3 space-y-3">
@@ -2220,20 +2482,36 @@ window.AEAnalytics = {
             <option value="today" ${f.datePreset === 'today' ? 'selected' : ''}>Today</option>
             <option value="last_7_days" ${f.datePreset === 'last_7_days' ? 'selected' : ''}>Last 7 Days</option>
             <option value="last_30_days" ${f.datePreset === 'last_30_days' ? 'selected' : ''}>Last 30 Days</option>
-            <option value="season" ${f.datePreset === 'season' ? 'selected' : ''}>Current Season</option>
+            <option value="season" ${f.datePreset === 'season' ? 'selected' : ''}>Current Period</option>
           </select>
 
-          <!-- County -->
-          <select onchange="AEAnalytics.setFilter('county', this.value)"
-            aria-label="Filter by Administrative County"
-            class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613] truncate">
-            <option value="all" ${f.county === 'all' ? 'selected' : ''}>County: All (${counties.length})</option>
-            ${counties.map((c) => `<option value="${AEApp.escapeAttr(c)}" ${f.county === c ? 'selected' : ''}>${AEApp.escapeHtml(c)}</option>`).join('')}
-          </select>
+          ${
+            locCfg.hasLocation
+              ? `<!-- Dynamic Location / Region -->
+                <select onchange="AEAnalytics.setFilter('county', this.value)"
+                  aria-label="Filter by ${AEApp.escapeAttr(locCfg.label)}"
+                  class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613] truncate">
+                  <option value="all" ${f.county === 'all' ? 'selected' : ''}>${AEApp.escapeHtml(locCfg.label)}: All (${locCfg.values.length})</option>
+                  ${locCfg.values.map((c) => `<option value="${AEApp.escapeAttr(c)}" ${f.county === c ? 'selected' : ''}>${AEApp.escapeHtml(c)}</option>`).join('')}
+                </select>`
+              : ''
+          }
+
+          ${
+            catCfg && catCfg.values.length > 0
+              ? `<!-- Dynamic Primary Categorical Question Slicer -->
+                <select onchange="AEAnalytics.setFilter('seedVariety', this.value)"
+                  aria-label="Filter by ${AEApp.escapeAttr(catCfg.label)}"
+                  class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613] truncate">
+                  <option value="all" ${f.seedVariety === 'all' ? 'selected' : ''}>${AEApp.escapeHtml(catCfg.label)}: All (${catCfg.values.length})</option>
+                  ${catCfg.values.map((v) => `<option value="${AEApp.escapeAttr(v)}" ${f.seedVariety === v ? 'selected' : ''}>${AEApp.escapeHtml(v)}</option>`).join('')}
+                </select>`
+              : ''
+          }
 
           <!-- Enumerator -->
           <select onchange="AEAnalytics.setFilter('enumerator', this.value)"
-            aria-label="Filter by Field Enumerator"
+            aria-label="Filter by Enumerator"
             class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613] truncate">
             <option value="all" ${f.enumerator === 'all' ? 'selected' : ''}>Enumerator: All</option>
             ${enumerators.map((e) => `<option value="${AEApp.escapeAttr(e)}" ${f.enumerator === e ? 'selected' : ''}>${AEApp.escapeHtml(e)}</option>`).join('')}
@@ -2259,15 +2537,19 @@ window.AEAnalytics = {
             <option value="pending" ${f.reviewStatus === 'pending' || f.reviewStatus === 'pending_review' ? 'selected' : ''}>Pending Review</option>
           </select>
 
-          <!-- NPS Segment -->
-          <select onchange="AEAnalytics.setFilter('npsSegment', this.value)"
-            aria-label="Filter by Net Promoter Score Segment"
-            class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613] truncate">
-            <option value="all" ${f.npsSegment === 'all' ? 'selected' : ''}>NPS: All Tiers</option>
-            <option value="promoter" ${f.npsSegment === 'promoter' ? 'selected' : ''}>Promoters (9–10)</option>
-            <option value="passive" ${f.npsSegment === 'passive' ? 'selected' : ''}>Passives (7–8)</option>
-            <option value="detractor" ${f.npsSegment === 'detractor' ? 'selected' : ''}>Detractors (0–6)</option>
-          </select>
+          ${
+            hasNpsQ
+              ? `<!-- NPS Segment -->
+                <select onchange="AEAnalytics.setFilter('npsSegment', this.value)"
+                  aria-label="Filter by Net Promoter Score Segment"
+                  class="h-8 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[6px] px-2 text-[#111613] truncate">
+                  <option value="all" ${f.npsSegment === 'all' ? 'selected' : ''}>NPS: All Tiers</option>
+                  <option value="promoter" ${f.npsSegment === 'promoter' ? 'selected' : ''}>Promoters (9–10)</option>
+                  <option value="passive" ${f.npsSegment === 'passive' ? 'selected' : ''}>Passives (7–8)</option>
+                  <option value="detractor" ${f.npsSegment === 'detractor' ? 'selected' : ''}>Detractors (0–6)</option>
+                </select>`
+              : ''
+          }
         </div>
 
         <!-- Active Filter Dismissable Chips Strip -->
@@ -2819,10 +3101,10 @@ window.AEAnalytics = {
           <div class="flex items-center justify-between text-xs text-[#525B56] px-0.5">
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center gap-1.5 font-semibold text-[#111613]">
-                <i class="fa-solid fa-layer-group text-[#247B50]"></i> Agronomic Trait Stacked Distribution
+                <i class="fa-solid fa-layer-group text-[#247B50]"></i> Matrix / Scale Stacked Distribution
               </span>
               <span class="text-[11px] bg-[#EAECE9] px-2 py-0.5 rounded text-[#525B56] font-mono tabular-nums">
-                ${(q.rows || []).length} Traits Evaluated
+                ${(q.rows || []).length} Items Evaluated
               </span>
             </div>
             <span class="text-[11px] text-[#646E68]">Stacked 100% Likert Rating</span>
@@ -2909,7 +3191,7 @@ window.AEAnalytics = {
           <table class="w-full text-xs text-left">
             <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
               <tr>
-                <th class="p-2.5 font-semibold">Agronomic Trait / Dimension</th>
+                <th class="p-2.5 font-semibold">Item / Dimension</th>
                 ${cols
                   .map(
                     (col) => `
@@ -3377,21 +3659,21 @@ window.AEAnalytics = {
         <div class="bg-white border border-[#E4E7E4] rounded-[6px] overflow-hidden space-y-3">
           <div class="grid grid-cols-2 sm:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[#EFEFEF] bg-[#FAFBF9] border-b border-[#EFEFEF] p-3 text-xs">
             <div>
-              <span class="text-[#525B56] block">Overall Agronomic Score</span>
+              <span class="text-[#525B56] block">Overall Composite Score</span>
               <strong class="text-base text-[#111613] font-mono tabular-nums mt-0.5 block">${overallMean.toFixed(2)} / 4.00</strong>
             </div>
             <div>
-              <span class="text-[#525B56] block">Positive Trait Sentiment</span>
+              <span class="text-[#525B56] block">Positive Item Sentiment</span>
               <strong class="text-base text-[#247B50] font-mono tabular-nums mt-0.5 block">${overallTop2Pct.toFixed(1)}%</strong>
             </div>
             <div>
-              <span class="text-[#525B56] block">Highest Rated Trait</span>
+              <span class="text-[#525B56] block">Highest Rated Item</span>
               <strong class="text-xs text-[#111613] mt-0.5 block truncate" title="${AEApp.escapeHtml(bestTrait.name)}">
                 ${AEApp.escapeHtml(bestTrait.name.split('(')[0].trim())} (${bestTrait.mean.toFixed(2)})
               </strong>
             </div>
             <div>
-              <span class="text-[#525B56] block">Trait Needing Attention</span>
+              <span class="text-[#525B56] block">Item Needing Attention</span>
               <strong class="text-xs text-[#C4242A] mt-0.5 block truncate" title="${AEApp.escapeHtml(lowestTrait.name)}">
                 ${AEApp.escapeHtml(lowestTrait.name.split('(')[0].trim())} (${lowestTrait.mean.toFixed(2)})
               </strong>
@@ -3588,11 +3870,11 @@ window.AEAnalytics = {
 
     // Card 1: Dynamic group ranking on primary numeric vs primary categorical
     let card1Title = primaryCat && primaryNum
-      ? `1. ${AEApp.escapeHtml(primaryCat.title.split(/[:\?(]/)[0].trim())} Performance`
-      : '1. Certified Seed Variety Performance';
+      ? `1. ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryCat, {}, survey).split(/[:\?(]/)[0].trim())} Performance`
+      : '1. Primary Cohort Comparison';
     let card1Desc = primaryCat && primaryNum
-      ? `Evaluating mean ${AEApp.escapeHtml(primaryNum.title.split(/[:\?(]/)[0].trim().toLowerCase())} (${AEApp.escapeHtml(unitLbl)}) across distinct ${AEApp.escapeHtml(primaryCat.title.split(/[:\?(]/)[0].trim().toLowerCase())} cohorts (n=${responses.length}).`
-      : 'Evaluating mean harvest output per acre across distinct hybrid varieties vs. recycled seed.';
+      ? `Evaluating mean ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryNum, {}, survey).split(/[:\?(]/)[0].trim().toLowerCase())} (${AEApp.escapeHtml(unitLbl)}) across distinct ${AEApp.escapeHtml(this.cleanQuestionTitle(primaryCat, {}, survey).split(/[:\?(]/)[0].trim().toLowerCase())} cohorts (n=${responses.length}).`
+      : 'Evaluating outcome disparities across distinct categorical cohorts once both categorical and numeric/rating responses are collected.';
     let card1RowsHtml = '';
 
     if (primaryCat && primaryNum) {
@@ -3626,17 +3908,8 @@ window.AEAnalytics = {
 
     if (!card1RowsHtml) {
       card1RowsHtml = `
-        <div class="flex justify-between items-center text-[#111613]">
-          <span>DH04 (Drought-Tolerant Hybrid)</span>
-          <strong class="font-mono text-[#247B50]">1,640 kg/acre (+41%)</strong>
-        </div>
-        <div class="flex justify-between items-center text-[#111613]">
-          <span>SC Duma 43 (Early Maturing)</span>
-          <strong class="font-mono text-[#247B50]">1,520 kg/acre (+30%)</strong>
-        </div>
-        <div class="flex justify-between items-center text-[#525B56]">
-          <span>Local Recycled / Farm-Saved Seed</span>
-          <strong class="font-mono">1,160 kg/acre (Baseline)</strong>
+        <div class="text-xs text-[#646E68] py-1">
+          Collect responses across at least 2 distinct categorical groups with a numeric or rating question to rank cohort performance automatically.
         </div>
       `;
     }
@@ -3651,7 +3924,7 @@ window.AEAnalytics = {
       <div class="space-y-6">
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
           <div class="border-b border-[#EFEFEF] pb-3">
-            <h2 class="text-base font-semibold text-[#111613]">Automated Agronomic Key Driver Discovery (Stats iQ)</h2>
+            <h2 class="text-base font-semibold text-[#111613]">Automated Key Driver Discovery</h2>
             <p class="text-xs text-[#525B56] mt-0.5">
               Machine-synthesized findings evaluating outcome disparities, factor differentials, and field telemetry across ${responses.length} active records.
             </p>
@@ -3747,13 +4020,16 @@ window.AEAnalytics = {
       }
     });
 
-    // Add administrative County dimension
-    eligible.push({
-      id: 'dim_county',
-      title: 'Administrative County',
-      isCustom: true,
-      extract: (r) => r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || 'Kenya'
-    });
+    // Add Location / Region dimension only if the survey actually has location/cascading/GPS data
+    const locCfg = this.getLocationFilterConfig(survey, responses);
+    if (locCfg.hasLocation) {
+      eligible.push({
+        id: 'dim_county',
+        title: locCfg.label,
+        isCustom: true,
+        extract: (r) => this._extractResponseLocationValue(r, locCfg.question) || 'Unspecified'
+      });
+    }
 
     // Add NPS Category dimension
     eligible.push({
@@ -3928,6 +4204,10 @@ window.AEAnalytics = {
   // TAB 4: BIVARIATE CORRELATIONS & FACTOR LIFT MATRIX
   // --------------------------------------------------------------------------
   renderAgronomicCorrelationsTab(survey, responses) {
+    return this.renderVariableCorrelationsTab(survey, responses);
+  },
+
+  renderVariableCorrelationsTab(survey, responses) {
     if (!responses || responses.length === 0) {
       return '<div class="p-8 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses available.</div>';
     }
@@ -4231,6 +4511,84 @@ window.AEAnalytics = {
     const segTable = analysis.themeBySegment || { segmentLabel: 'Segment', segments: [], rows: [] };
     const pinnedSet = this._getPinnedSet(survey.id);
 
+    // Per-question breakdown (use engine's byQuestion or compute defensibly from records)
+    const byQuestion = Array.isArray(analysis.byQuestion) && analysis.byQuestion.length > 0
+      ? analysis.byQuestion
+      : (() => {
+          const map = new Map();
+          records.forEach((rec) => {
+            const qid = rec.questionId || 'unknown';
+            if (!map.has(qid)) {
+              const qObj = qLookup[qid];
+              const qNum = numMap[qid]?.label;
+              map.set(qid, {
+                qId: qid,
+                code: qNum ? `Q${qNum}` : qid,
+                title: qObj ? this.cleanQuestionTitle(qObj, {}, survey) : (rec.questionTitle || qid),
+                count: 0,
+                positive: 0,
+                neutral: 0,
+                negative: 0,
+                actionableCount: 0,
+                highUrgencyCount: 0,
+                topTerms: [],
+                topQuote: rec.text || ''
+              });
+            }
+            const entry = map.get(qid);
+            entry.count++;
+            if (rec.sentiment === 'positive') entry.positive++;
+            else if (rec.sentiment === 'negative') entry.negative++;
+            else entry.neutral++;
+            if (rec.isActionable) entry.actionableCount++;
+            if (rec.urgency === 'high') entry.highUrgencyCount++;
+          });
+          return Array.from(map.values());
+        })();
+
+    // Custom themes for this survey (from AETeXtEngine)
+    const customThemes = engine && typeof engine.getCustomThemes === 'function'
+      ? (engine.getCustomThemes(survey.id) || [])
+      : [];
+    const customThemeIdSet = new Set(customThemes.map((ct) => ct.id));
+
+    // Strictly question-driven Segment-By options from AETeXtEngine.getSegmentOptions(survey, responses)
+    const rawSegmentOptions = engine && typeof engine.getSegmentOptions === 'function'
+      ? (engine.getSegmentOptions(survey, responses || []) || [])
+      : (() => {
+          const fallbackOpts = [{ id: 'auto', label: 'Auto / Primary Segment' }];
+          catQuestions.forEach((q) => {
+            const qNum = numMap[q.id]?.label || '';
+            const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
+            fallbackOpts.push({ id: q.id, label: qNum ? `Q${qNum}: ${cleanTitle}` : cleanTitle });
+          });
+          const uniqueEnums = new Set((responses || []).map((r) => String(r.enumerator || '').trim()).filter(Boolean));
+          if (uniqueEnums.size > 1) fallbackOpts.push({ id: 'enumerator', label: 'Enumerator' });
+          const locCheck = this.getLocationFilterConfig(survey, responses || []);
+          if (locCheck.hasLocation) fallbackOpts.push({ id: 'county', label: locCheck.label });
+          return fallbackOpts;
+        })();
+
+    const segmentOptions = [];
+    const seenSegIds = new Set();
+    rawSegmentOptions.forEach((opt) => {
+      if (!opt) return;
+      const id = String(opt.id ?? opt.value ?? '').trim();
+      if (!id || seenSegIds.has(id)) return;
+      seenSegIds.add(id);
+      const qObj = qLookup[id];
+      const qNum = qObj ? (numMap[id]?.label || '') : '';
+      const rawLbl = String(opt.label || opt.title || id).trim();
+      const label = qObj && qNum && !rawLbl.startsWith(`Q${qNum}`) ? `Q${qNum}: ${this.cleanQuestionTitle(qObj, {}, survey)}` : rawLbl;
+      segmentOptions.push({ id, label });
+    });
+    if (!seenSegIds.has('auto')) {
+      segmentOptions.unshift({ id: 'auto', label: 'Auto / Primary Segment' });
+    }
+    const activeSegmentId = segmentOptions.some((o) => o.id === this.verbatimSegmentQId)
+      ? this.verbatimSegmentQId
+      : 'auto';
+
     const hasAiBriefing = !!(this.verbatimAiBriefing && this.verbatimAiBriefing.surveyId === survey.id && this.verbatimAiBriefing.briefing);
     const briefingProvider = hasAiBriefing ? (this.verbatimAiBriefing.provider || 'offline_fallback') : 'offline_fallback';
     const briefing = hasAiBriefing
@@ -4346,21 +4704,80 @@ window.AEAnalytics = {
               <label class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Segment Themes By</label>
               <select onchange="AEAnalytics.setVerbatimSegment(this.value)"
                 class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
-                <option value="auto" ${this.verbatimSegmentQId === 'auto' ? 'selected' : ''}>Auto / Primary Rating Segment</option>
-                <option value="county" ${this.verbatimSegmentQId === 'county' ? 'selected' : ''}>County / Region</option>
-                <option value="enumerator" ${this.verbatimSegmentQId === 'enumerator' ? 'selected' : ''}>Field Enumerator</option>
-                ${catQuestions
-                  .map((q) => {
-                    const qNum = numMap[q.id]?.label || '';
-                    const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
-                    const label = qNum ? `Q${qNum}: ${cleanTitle}` : cleanTitle;
-                    return `<option value="${AEApp.escapeAttr(q.id)}" ${this.verbatimSegmentQId === q.id ? 'selected' : ''}>${AEApp.escapeHtml(label)}</option>`;
-                  })
+                ${segmentOptions
+                  .map(
+                    (opt) =>
+                      `<option value="${AEApp.escapeAttr(opt.id)}" ${activeSegmentId === opt.id ? 'selected' : ''}>${AEApp.escapeHtml(opt.label)}</option>`
+                  )
                   .join('')}
               </select>
             </div>
           </div>
         </div>
+
+        ${
+          activeQId === 'all' && byQuestion.length > 1
+            ? `<!-- 1B. PER-QUESTION VERBATIM OVERVIEW STRIP -->
+              <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 class="text-sm font-semibold text-[#111613]">Per-Question Verbatim Breakdown</h3>
+                    <p class="text-[11px] text-[#525B56]">Compare sentiment &amp; top discovered concepts across each open-ended question. Click any card to drill down.</p>
+                  </div>
+                  <span class="px-2 py-0.5 rounded bg-[#F4F6F4] text-[#525B56] text-[10px] font-bold tabular-nums shrink-0">${byQuestion.length} Questions</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  ${byQuestion
+                    .map((bq) => {
+                      const qObj = qLookup[bq.qId];
+                      const qNum = numMap[bq.qId]?.label;
+                      const qCode = bq.code && /^Q\d/i.test(String(bq.code)) ? bq.code : (qNum ? `Q${qNum}` : bq.qId);
+                      const cleanTitle = qObj ? this.cleanQuestionTitle(qObj, {}, survey) : this.cleanQuestionTitle(bq.title || bq.qId, {}, survey);
+                      const qTotal = Math.max(1, Number(bq.count || 0));
+                      const posW = Math.round(((bq.positive || 0) / qTotal) * 100);
+                      const neuW = Math.round(((bq.neutral || 0) / qTotal) * 100);
+                      const negW = Math.max(0, 100 - posW - neuW);
+                      const concepts = (bq.topTerms || []).slice(0, 3);
+                      return `
+                        <button type="button" onclick="AEAnalytics.setVerbatimQuestion('${AEApp.escapeJs(bq.qId)}')"
+                          class="text-left p-3 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] hover:border-[#247B50] hover:bg-[#F4FAF6] transition-colors space-y-2 ae-press">
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                              <span class="px-1.5 py-0.5 rounded bg-[#141A17] text-white text-[10px] font-bold tabular-nums shrink-0">${AEApp.escapeHtml(qCode)}</span>
+                              <span class="text-xs font-semibold text-[#111613] truncate" title="${AEApp.escapeAttr(cleanTitle)}">${AEApp.escapeHtml(cleanTitle)}</span>
+                            </div>
+                            <span class="px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[10px] font-bold text-[#111613] tabular-nums shrink-0">${bq.count} resp</span>
+                          </div>
+                          <div class="w-full h-1.5 rounded-full bg-[#EFEFEF] overflow-hidden flex" title="Positive: ${bq.positive || 0}, Neutral: ${bq.neutral || 0}, Negative: ${bq.negative || 0}">
+                            ${posW > 0 ? `<div style="width: ${posW}%; background-color: #247B50;"></div>` : ''}
+                            ${neuW > 0 ? `<div style="width: ${neuW}%; background-color: #9CA3AF;"></div>` : ''}
+                            ${negW > 0 ? `<div style="width: ${negW}%; background-color: #C4242A;"></div>` : ''}
+                          </div>
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="flex flex-wrap gap-1 min-w-0">
+                              ${
+                                concepts.length > 0
+                                  ? concepts
+                                      .map((c) => {
+                                        const termTxt = typeof c === 'string' ? c : (c.term || c.label || '');
+                                        return termTxt
+                                          ? `<span class="px-1.5 py-0.5 rounded bg-white border border-[#E4E7E4] text-[10px] font-medium text-[#525B56] truncate max-w-[110px]">${AEApp.escapeHtml(termTxt)}</span>`
+                                          : '';
+                                      })
+                                      .join('')
+                                  : '<span class="text-[10px] text-[#646E68]">Click to inspect responses</span>'
+                              }
+                            </div>
+                            <span class="text-[10px] font-semibold text-[#247B50] shrink-0">Drill down &rarr;</span>
+                          </div>
+                        </button>
+                      `;
+                    })
+                    .join('')}
+                </div>
+              </div>`
+            : ''
+        }
 
         <!-- 2. EXECUTIVE BRIEFING CARD -->
         <div class="bg-[#F4FAF6] border border-[#247B50]/30 rounded-[8px] p-5 space-y-4 print:bg-white print:border-[#CFD5D0]">
@@ -4476,22 +4893,76 @@ window.AEAnalytics = {
 
         <!-- 3. THEME DISTRIBUTION & SENTIMENT-BY-THEME MATRIX + THEME × SEGMENT TABLE -->
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
-          <!-- Stacked Bar Matrix -->
+          <!-- Stacked Bar Matrix + Custom Survey Codebook Manager -->
           <div class="xl:col-span-7 bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
-            <div class="flex items-center justify-between gap-2 border-b border-[#EFEFEF] pb-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[#EFEFEF] pb-2.5">
               <div>
                 <h3 class="text-sm font-semibold text-[#111613]">Theme Distribution &amp; Sentiment Matrix</h3>
                 <p class="text-[11px] text-[#525B56]">Click any theme row to filter the coded verbatim stream below.</p>
               </div>
-              ${
-                this.verbatimThemeFilter !== 'all'
-                  ? `<button type="button" onclick="AEAnalytics.setVerbatimTheme('all')"
-                      class="px-2 py-1 rounded text-[11px] font-semibold bg-[#F4F6F4] hover:bg-[#E4E7E4] text-[#111613]">
-                      Show All Themes
-                    </button>`
-                  : ''
-              }
+              <div class="flex items-center gap-1.5">
+                ${
+                  this.verbatimThemeFilter !== 'all'
+                    ? `<button type="button" onclick="AEAnalytics.setVerbatimTheme('all')"
+                        class="px-2 py-1 rounded text-[11px] font-semibold bg-[#F4F6F4] hover:bg-[#E4E7E4] text-[#111613]">
+                        Show All Themes
+                      </button>`
+                    : ''
+                }
+                <button type="button" onclick="AEAnalytics.toggleCustomThemeForm()"
+                  class="px-2.5 py-1 rounded-[5px] border border-[#247B50]/40 bg-[#F4FAF6] hover:bg-[#DCFAE5] text-[11px] font-semibold text-[#04250E] inline-flex items-center gap-1 ae-press">
+                  <i class="fa-solid ${this.verbatimShowCustomThemeForm ? 'fa-xmark' : 'fa-plus'} text-[10px]"></i>
+                  <span>${this.verbatimShowCustomThemeForm ? 'Close' : '+ Add Custom Theme'}</span>
+                </button>
+              </div>
             </div>
+
+            ${
+              this.verbatimShowCustomThemeForm
+                ? `<div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-[#247B50]/30 space-y-2.5">
+                    <div class="text-[11px] font-bold text-[#04250E] uppercase tracking-wider">Custom Survey Codebook Rule</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input type="text" id="ae_custom_theme_name" placeholder="Theme Name (e.g. Breakout Sessions)"
+                        class="h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                      <input type="text" id="ae_custom_theme_keywords" placeholder="Keywords, comma-separated (e.g. breakout, group, table)"
+                        class="h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                    </div>
+                    <div class="flex items-center justify-end gap-2">
+                      <button type="button" onclick="AEAnalytics.toggleCustomThemeForm(false)"
+                        class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white text-xs font-medium text-[#525B56] hover:text-[#111613]">
+                        Cancel
+                      </button>
+                      <button type="button" onclick="AEAnalytics.saveCustomThemeFromForm('${safeSurveyIdJs}')"
+                        class="h-7 px-3 rounded-[5px] bg-[#247B50] hover:bg-[#1D6340] text-white text-xs font-semibold ae-press">
+                        Save &amp; Re-Analyze
+                      </button>
+                    </div>
+                  </div>`
+                : ''
+            }
+
+            ${
+              customThemes.length > 0
+                ? `<div class="flex flex-wrap items-center gap-1.5 pb-1">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[#525B56]">Custom Codebook:</span>
+                    ${customThemes
+                      .map(
+                        (ct) => `
+                          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#F4FAF6] border border-[#247B50]/30 text-[#04250E]">
+                            <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${AEApp.escapeAttr(ct.color || '#247B50')}"></span>
+                            <span>${AEApp.escapeHtml(ct.name)}</span>
+                            <button type="button" onclick="AEAnalytics.deleteCustomTheme('${safeSurveyIdJs}', '${AEApp.escapeJs(ct.id)}')"
+                              title="Delete custom theme" aria-label="Delete custom theme ${AEApp.escapeAttr(ct.name)}"
+                              class="hover:text-[#C4242A] focus:outline-none">
+                              <i class="fa-solid fa-xmark text-[10px]"></i>
+                            </button>
+                          </span>
+                        `
+                      )
+                      .join('')}
+                  </div>`
+                : ''
+            }
 
             ${
               themes.length > 0
@@ -4499,6 +4970,7 @@ window.AEAnalytics = {
                     ${themes
                       .map((t) => {
                         const isSelected = this.verbatimThemeFilter === t.id;
+                        const isCustom = !!(t.isCustom || customThemeIdSet.has(t.id));
                         const totalT = Math.max(1, Number(t.count || 0));
                         const posW = Math.round(((t.positive || 0) / totalT) * 100);
                         const neuW = Math.round(((t.neutral || 0) / totalT) * 100);
@@ -4510,31 +4982,41 @@ window.AEAnalytics = {
                           ? 'bg-[#FFEDEA] text-[#831C1E]'
                           : 'bg-[#F4F6F4] text-[#525B56]';
                         return `
-                          <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(t.id)}')"
-                            class="w-full text-left p-2.5 rounded-[6px] border transition-colors ${
-                              isSelected
-                                ? 'border-[#247B50] bg-[#F4FAF6] ring-1 ring-[#247B50]'
-                                : 'border-[#EFEFEF] bg-white hover:border-[#CFD5D0] hover:bg-[#FAFBF9]'
-                            }">
+                          <div class="w-full p-2.5 rounded-[6px] border transition-colors ${
+                            isSelected
+                              ? 'border-[#247B50] bg-[#F4FAF6] ring-1 ring-[#247B50]'
+                              : 'border-[#EFEFEF] bg-white hover:border-[#CFD5D0] hover:bg-[#FAFBF9]'
+                          }">
                             <div class="flex items-center justify-between gap-2 mb-1.5">
-                              <div class="flex items-center gap-2 min-w-0">
+                              <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(t.id)}')"
+                                class="flex items-center gap-2 min-w-0 flex-1 text-left">
                                 <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(t.color || '#247B50')}"></span>
                                 <span class="text-xs font-semibold text-[#111613] truncate">${AEApp.escapeHtml(t.name)}</span>
-                              </div>
+                                ${isCustom ? '<span class="px-1.5 py-0.2 rounded bg-[#DCFAE5] text-[#04250E] text-[9px] font-bold uppercase shrink-0">Custom</span>' : ''}
+                              </button>
                               <div class="flex items-center gap-2 shrink-0 text-xs">
                                 <span class="font-semibold text-[#111613] tabular-nums">${t.count}</span>
                                 <span class="text-[#646E68] tabular-nums text-[11px]">(${t.pct}%)</span>
                                 <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${netBadge}">
                                   ${net > 0 ? '+' : ''}${net}%
                                 </span>
+                                ${
+                                  isCustom
+                                    ? `<button type="button" onclick="AEAnalytics.deleteCustomTheme('${safeSurveyIdJs}', '${AEApp.escapeJs(t.id)}')"
+                                        title="Remove custom theme" class="text-[#646E68] hover:text-[#C4242A] px-1">
+                                        <i class="fa-solid fa-trash-can text-[10px]"></i>
+                                      </button>`
+                                    : ''
+                                }
                               </div>
                             </div>
-                            <div class="w-full h-2 rounded-full bg-[#EFEFEF] overflow-hidden flex" title="Positive: ${t.positive || 0}, Neutral: ${t.neutral || 0}, Negative: ${t.negative || 0}">
+                            <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(t.id)}')"
+                              class="w-full h-2 rounded-full bg-[#EFEFEF] overflow-hidden flex" title="Positive: ${t.positive || 0}, Neutral: ${t.neutral || 0}, Negative: ${t.negative || 0}">
                               ${posW > 0 ? `<div style="width: ${posW}%; background-color: #247B50;"></div>` : ''}
                               ${neuW > 0 ? `<div style="width: ${neuW}%; background-color: #9CA3AF;"></div>` : ''}
                               ${negW > 0 ? `<div style="width: ${negW}%; background-color: #C4242A;"></div>` : ''}
-                            </div>
-                          </button>
+                            </button>
+                          </div>
                         `;
                       })
                       .join('')}
@@ -4793,8 +5275,12 @@ window.AEAnalytics = {
 
                             <div class="flex flex-wrap items-center gap-2 text-[11px] text-[#646E68]">
                               ${rec.segment ? `<span class="font-medium text-[#111613]">${AEApp.escapeHtml(rec.segment)}</span><span>·</span>` : ''}
-                              <span>${AEApp.escapeHtml(rec.county || 'Kenya')}</span>
-                              <span>·</span>
+                              ${(() => {
+                                const locText = String(rec.location || rec.county || '').trim();
+                                return locText && locText.toLowerCase() !== 'unspecified'
+                                  ? `<span>${AEApp.escapeHtml(locText)}</span><span>·</span>`
+                                  : '';
+                              })()}
                               <span>${AEApp.escapeHtml(rec.enumerator || 'Respondent')}</span>
                               <span>·</span>
                               <span class="tabular-nums">${AEApp.escapeHtml(this._formatVerbatimDate(rec.submittedAt))}</span>
@@ -5351,7 +5837,7 @@ window.AEAnalytics = {
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 shadow-xs text-center space-y-2">
           <div class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Insufficient Variable Types for Causal Evaluation</div>
           <p class="text-xs text-[#525B56] max-w-md mx-auto leading-relaxed">
-            Quasi-experimental impact evaluation requires at least 1 categorical treatment factor (e.g., Seed Variety, Certified Source) and 1 continuous outcome metric (e.g., Harvest Yield).
+            Quasi-experimental impact evaluation requires at least 1 categorical treatment factor (e.g., Cohort, Department, or Group) and 1 continuous outcome metric (e.g., Score, Rating, or Numeric Metric).
           </p>
         </div>
       `;
@@ -7566,9 +8052,9 @@ window.AEAnalytics = {
     }
     xml += `</Table></Worksheet>`;
 
-    // Sheet 6: Agronomic_Correlations
+    // Sheet 6: Variable_Correlations
     const numQs = this.getNumericQuestions(survey);
-    xml += `<Worksheet ss:Name="Agronomic_Correlations"><Table>`;
+    xml += `<Worksheet ss:Name="Variable_Correlations"><Table>`;
     if (numQs.length >= 2) {
       xml += `<Row ss:StyleID="Header">
         <Cell><Data ss:Type="String">Metric</Data></Cell>

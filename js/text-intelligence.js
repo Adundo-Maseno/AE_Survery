@@ -1,20 +1,27 @@
 /**
  * ============================================================================
  * AE SURVEY — Qualitative & Verbatim Intelligence Engine (window.AETeXtEngine)
- * Zero-Dependency, 100% Offline-First Multilingual NLP Module
+ * Zero-Dependency, 100% Offline-First, Domain-Agnostic Multilingual NLP Module
  *
  * Capabilities:
  *  1. Multi-Question Extraction (short_text, long_text, audio_note transcripts)
  *     with clean piped-title sanitization and backward-compatible API.
- *  2. Multi-Domain (Agronomic/Smallholder + Corporate/Team/Training/Operations)
- *     & Multilingual (EN / SW / FR / PT) Negation-Aware Sentiment Scoring
- *     (-1.0 to +1.0) with 3-word lookbehind negation window & clause resets.
+ *  2. Domain-Agnostic & Multilingual (EN / SW / FR / PT) Negation-Aware
+ *     Sentiment Scoring (-1.0 to +1.0) with 3-word lookbehind negation window
+ *     and clause resets.
  *  3. Actionability & Urgency Risk Detection (recommendations vs. critical alerts).
- *  4. 12-Theme Auto Thematic Coding + Theme x Sentiment + Theme x Segment
- *     cross-tabulation + TF-IDF weighted unigram/bigram keyphrase extraction.
- *  5. Extractive Executive Briefing Generator (report-ready + plain-text copy).
- *  6. LocalStorage Pinned Quotes Persistence + Hybrid Cloud GAS Helpers
- *     (BATCH_TRANSLATE & ANALYZE_VERBATIMS_AI with graceful offline fallback).
+ *  4. Dynamic 3-Layer Theme Engine (Zero Hardcoded Domain Taxonomy):
+ *     - Layer 1: Survey-Specific Custom Codebook persisted in localStorage
+ *                (`ae_custom_themes_<surveyId>`).
+ *     - Layer 2: Unsupervised Dynamic Topic Discovery (TF-IDF unigrams &
+ *                bigrams clustered by co-occurrence into 8-10 clean Title-Cased
+ *                themes directly from the survey's actual verbatims).
+ *     - Layer 3: Per-Question Verbatim Breakdown (`byQuestion`) for side-by-side
+ *                comparison across every open-ended question in the survey.
+ *  5. Dynamic Segment Discovery (`getSegmentOptions`) driven strictly by the
+ *     survey's actual questions, GPS/location data (if present), and enumerators.
+ *  6. Extractive Executive Briefing Generator + Pinned Quotes Persistence +
+ *     Hybrid Cloud GAS Helpers (BATCH_TRANSLATE & ANALYZE_VERBATIMS_AI).
  * ============================================================================
  */
 
@@ -22,37 +29,64 @@
   'use strict';
 
   // --------------------------------------------------------------------------
-  // 1. Multilingual Stop Words (EN, SW, FR, PT) — used for TF-IDF term mining
+  // 1. Pure Grammatical Stop Words (EN, SW, FR, PT) — Zero Domain Nouns
   // --------------------------------------------------------------------------
   const STOP_WORDS = new Set([
-    // English
+    // English function words
     'the', 'and', 'to', 'of', 'a', 'an', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with',
     'i', 'you', 'it', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'all', 'have', 'has', 'had',
     'was', 'were', 'we', 'our', 'us', 'they', 'them', 'their', 'he', 'she', 'his', 'her', 'its',
     'will', 'would', 'can', 'could', 'may', 'might', 'shall', 'do', 'does', 'did', 'done', 'my',
     'me', 'so', 'if', 'but', 'about', 'into', 'out', 'up', 'down', 'over', 'under', 'just', 'also',
     'very', 'really', 'quite', 'too', 'much', 'many', 'some', 'any', 'more', 'most', 'other',
-    'than', 'then', 'there', 'here', 'when', 'where', 'what', 'which', 'who', 'how', 'why',
-    'been', 'being', 'get', 'got', 'make', 'made', 'like', 'one', 'two', 'well', 'even', 'still',
-    'only', 'such', 'each', 'both', 'few', 'own', 'same', 'through', 'during', 'before', 'after',
-    'between', 'while', 'because', 'since', 'until', 'though', 'although', 'however', 'therefore',
-    'yes', 'ok', 'okay', 'etc', 'able', 'lot', 'lots', 'bit', 'way', 'things', 'thing', 'per',
-    // Swahili
+    'than', 'then', 'there', 'here', 'when', 'where', 'what', 'which', 'who', 'whom', 'whose',
+    'how', 'why', 'been', 'being', 'get', 'got', 'make', 'made', 'like', 'one', 'two', 'well',
+    'even', 'still', 'only', 'such', 'each', 'both', 'few', 'own', 'same', 'through', 'during',
+    'before', 'after', 'between', 'while', 'because', 'since', 'until', 'though', 'although',
+    'however', 'therefore', 'these', 'those', 'yes', 'ok', 'okay', 'etc', 'able', 'lot', 'lots',
+    'bit', 'way', 'things', 'thing', 'per', 'via', 'not', 'no', 'nor', 'too', 'very',
+    // Swahili function words
     'na', 'ya', 'wa', 'kwa', 'ni', 'katika', 'la', 'za', 'cha', 'vya', 'ili', 'kama', 'hadi',
     'yake', 'sana', 'yangu', 'hawa', 'hiyo', 'hii', 'wale', 'wote', 'pia', 'lakini', 'ingawa',
     'ndani', 'kwenye', 'kutoka', 'baada', 'kabla', 'kuhusu', 'kila', 'zaidi', 'tu', 'hata',
     'sasa', 'tena', 'bado', 'kuwa', 'alikuwa', 'walikuwa', 'ilikuwa', 'yeye', 'mimi', 'sisi',
     'wao', 'ninyi', 'wewe', 'hapa', 'pale', 'kule', 'huko', 'kwamba', 'au', 'ama', 'ila',
-    // French
+    // French function words
     'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'et', 'en', 'au', 'aux', 'pour', 'par',
     'sur', 'dans', 'avec', 'est', 'sont', 'était', 'être', 'avoir', 'nous', 'vous', 'ils',
     'elles', 'que', 'qui', 'quoi', 'ce', 'cette', 'ces', 'mais', 'ou', 'donc', 'car', 'très',
     'plus', 'moins', 'tout', 'tous', 'bien', 'aussi', 'comme', 'leur', 'leurs', 'notre', 'votre',
-    // Portuguese
+    // Portuguese function words
     'o', 'a', 'os', 'as', 'um', 'uma', 'uns', 'umas', 'de', 'do', 'da', 'dos', 'das', 'em', 'no',
     'na', 'nos', 'nas', 'por', 'para', 'com', 'que', 'e', 'é', 'são', 'foi', 'ser', 'estar',
     'ter', 'nós', 'você', 'vocês', 'eles', 'elas', 'mas', 'ou', 'como', 'muito', 'mais', 'menos',
     'todo', 'todos', 'também', 'isso', 'este', 'esta', 'esse', 'essa', 'seu', 'sua', 'nosso'
+  ]);
+
+  // Generic adjectives/action verbs excluded ONLY from anchoring unsupervised topic names
+  // (never removed from topTerms or sentiment scoring)
+  const TOPIC_ANCHOR_NOISE = new Set([
+    'good', 'great', 'best', 'better', 'bad', 'worse', 'worst', 'nice', 'fine', 'poor',
+    'excellent', 'awesome', 'amazing', 'wonderful', 'fantastic', 'outstanding', 'superb',
+    'terrible', 'horrible', 'awful', 'happy', 'pleased', 'satisfied', 'disappointed',
+    'disappointing', 'frustrated', 'frustrating', 'please', 'thank', 'thanks', 'thankful',
+    'grateful', 'appreciate', 'appreciated', 'recommend', 'recommended', 'suggest', 'suggested',
+    'suggestion', 'suggestions', 'improve', 'improved', 'improvement', 'consider', 'should',
+    'need', 'needs', 'needed', 'want', 'wanted', 'think', 'thought', 'feel', 'felt', 'know',
+    'give', 'gave', 'take', 'took', 'keep', 'kept', 'come', 'came', 'went', 'going', 'used',
+    'using', 'use', 'try', 'tried', 'overall', 'general', 'always', 'never', 'often', 'sometimes',
+    'next', 'last', 'first', 'second', 'third', 'really', 'actually', 'basically', 'definitely',
+    'especially', 'particularly', 'extremely', 'highly', 'completely', 'totally', 'absolutely',
+    'enough', 'sufficient', 'insufficient', 'adequate', 'inadequate', 'little', 'small', 'large',
+    'big', 'high', 'low', 'long', 'short', 'new', 'old', 'different', 'important', 'helpful',
+    'useful', 'valuable', 'positive', 'negative', 'neutral',
+    // Swahili generic sentiment/request modifiers
+    'mzuri', 'nzuri', 'vizuri', 'mbaya', 'vibaya', 'bora', 'safi', 'poa', 'asante', 'hongera',
+    'shukrani', 'tafadhali', 'napendekeza', 'pendekeza', 'kabisa', 'mno', 'kubwa', 'ndogo',
+    'nyingi', 'chache', 'inafaa', 'tunahitaji', 'boresha', 'kuboresha',
+    // French / Portuguese generic modifiers
+    'bon', 'bonne', 'bons', 'bonnes', 'mauvais', 'mauvaise', 'merci', 'bravo', 'devrait',
+    'bom', 'boa', 'ruim', 'otimo', 'ótimo', 'obrigado', 'deveria', 'precisamos', 'melhorar'
   ]);
 
   // --------------------------------------------------------------------------
@@ -92,12 +126,7 @@
   // 3. Multi-Domain + Multilingual Sentiment Lexicon (EN / SW / FR / PT)
   // --------------------------------------------------------------------------
   const POSITIVE_WORDS = new Set([
-    // Agronomic / Smallholder (EN)
-    'uniform', 'germinated', 'germination', 'vigor', 'vigorous', 'tolerant', 'drought-tolerant',
-    'heavy', 'sweet', 'high-yielding', 'yielding', 'bumper', 'certified', 'pure', 'resistant',
-    'healthy', 'thriving', 'fertile', 'abundant', 'reliable', 'quality', 'affordable', 'fair',
-    'timely', 'available', 'clean', 'fresh', 'robust', 'resilient', 'profitable', 'profit',
-    // Corporate / Team / Training / Event (EN)
+    // General / Corporate / Team / Education / Retail / Healthcare / Field (EN)
     'good', 'great', 'best', 'better', 'excellent', 'awesome', 'amazing', 'fantastic',
     'wonderful', 'outstanding', 'superb', 'brilliant', 'insightful', 'engaging', 'engaged',
     'interactive', 'collaborative', 'collaboration', 'teamwork', 'inclusive', 'inclusion',
@@ -112,67 +141,78 @@
     'constructive', 'empowering', 'informative', 'effective', 'efficient', 'enough',
     'sufficient', 'adequate', 'comfortable', 'pleasant', 'positive', 'recommend', 'recommended',
     'worthwhile', 'memorable', 'meaningful', 'seamless', 'responsive', 'attentive', 'prompt',
+    'caring', 'compassionate', 'empathetic', 'gentle', 'courteous', 'polite', 'kind',
+    'thorough', 'reassuring', 'hygienic', 'sanitary', 'spotless', 'accurate', 'fast', 'quick',
+    'reliable', 'quality', 'affordable', 'fair', 'timely', 'available', 'clean', 'fresh',
+    'robust', 'resilient', 'profitable', 'profit', 'healthy', 'thriving', 'abundant',
+    'uniform', 'germinated', 'germination', 'vigor', 'vigorous', 'tolerant', 'drought-tolerant',
+    'heavy', 'sweet', 'high-yielding', 'yielding', 'bumper', 'certified', 'pure', 'resistant',
+    'fertile',
     // Swahili
     'mzuri', 'nzuri', 'vizuri', 'bora', 'faida', 'kuvuna', 'haraka', 'kinga', 'stahimili',
     'halisi', 'nafuu', 'mapema', 'asante', 'hongera', 'safi', 'poa', 'kubwa', 'nyingi',
     'furaha', 'kuridhika', 'manufaa', 'mafanikio', 'ushirikiano', 'uwazi', 'ubora', 'imara',
-    'rahisi', 'salama', 'inapendeza', 'pendeza', 'shukrani', 'hongera',
+    'rahisi', 'salama', 'inapendeza', 'pendeza', 'shukrani',
     // French
     'bon', 'bonne', 'bons', 'bonnes', 'excellent', 'excellente', 'super', 'génial', 'genial',
     'utile', 'clair', 'claire', 'organisé', 'organise', 'interactif', 'collaboratif',
     'satisfait', 'satisfaite', 'efficace', 'fiable', 'rapide', 'abordable', 'qualité',
     'qualite', 'merci', 'bravo', 'positif', 'positive', 'productif', 'pertinent', 'suffisant',
+    'propre', 'aimable', 'attentif', 'attentive',
     // Portuguese
     'bom', 'boa', 'ótimo', 'otimo', 'ótima', 'otima', 'excelente', 'maravilhoso', 'útil',
     'util', 'claro', 'clara', 'organizado', 'interativo', 'colaborativo', 'satisfeito',
     'satisfeita', 'eficaz', 'confiável', 'confiavel', 'rápido', 'rapido', 'acessível',
     'acessivel', 'qualidade', 'produtivo', 'produtiva', 'saudável', 'saudavel', 'obrigado',
-    'positivo', 'positiva', 'relevante', 'suficiente', 'inspirador'
+    'positivo', 'positiva', 'relevante', 'suficiente', 'inspirador', 'limpo', 'atencioso'
   ]);
 
   const NEGATIVE_WORDS = new Set([
-    // Agronomic / Smallholder (EN)
-    'fake', 'counterfeit', 'adulterated', 'expired', 'stockout', 'stockouts', 'shortage',
-    'shortages', 'unavailable', 'late', 'delayed', 'delay', 'delays', 'rot', 'rotting',
-    'rotten', 'pest', 'pests', 'armyworm', 'borer', 'striga', 'blight', 'disease', 'diseases',
-    'drought', 'dry', 'wilting', 'yellowing', 'stunted', 'poor', 'weak', 'loss', 'losses',
-    'failed', 'failure', 'fail', 'expensive', 'costly', 'overpriced', 'unaffordable',
-    'complaint', 'complaints', 'problem', 'problems', 'issue', 'issues', 'broken', 'damaged',
-    'damage', 'contaminated', 'spoiled', 'scarce', 'scarcity', 'defective', 'substandard',
-    // Corporate / Team / Training / Event (EN)
+    // General / Corporate / Healthcare / Service / Retail / Education / Field (EN)
     'bad', 'worse', 'worst', 'terrible', 'horrible', 'awful', 'disappointed', 'disappointing',
     'frustrating', 'frustrated', 'frustration', 'rushed', 'rushing', 'disorganized', 'chaotic',
     'chaos', 'confusing', 'confused', 'confusion', 'unclear', 'vague', 'boring', 'tedious',
     'repetitive', 'insufficient', 'missing', 'excluded', 'exclusion', 'ignored', 'sidelined',
     'dominated', 'unfair', 'biased', 'rude', 'unprofessional', 'unprepared', 'noisy', 'crowded',
-    'uncomfortable', 'slow', 'tiring', 'exhausting', 'waste', 'wasted', 'pointless',
-    'irrelevant', 'disconnected', 'siloed', 'tension', 'conflict', 'stressful', 'overwhelming',
-    'overwhelmed', 'limited', 'inadequate', 'mediocre', 'subpar', 'underwhelming', 'awkward',
-    'unstructured', 'unfocused', 'distracted', 'defensive', 'hesitant', 'uncertain', 'difficult',
-    'hard', 'struggle', 'struggled', 'struggling', 'negative', 'unhelpful', 'unresponsive',
-    'shortcoming', 'shortcomings', 'gap', 'gaps', 'bottleneck', 'bottlenecks', 'concern',
-    'concerns', 'risk', 'risks', 'error', 'errors', 'bug', 'bugs', 'crash', 'crashed',
-    'scam', 'fraud', 'corrupt', 'unsafe', 'hazard', 'toxic', 'hostile', 'unacceptable',
+    'overcrowded', 'understaffed', 'uncomfortable', 'slow', 'tiring', 'exhausting', 'waste',
+    'wasted', 'pointless', 'irrelevant', 'disconnected', 'siloed', 'tension', 'conflict',
+    'stressful', 'overwhelming', 'overwhelmed', 'limited', 'inadequate', 'mediocre', 'subpar',
+    'underwhelming', 'awkward', 'unstructured', 'unfocused', 'distracted', 'defensive',
+    'hesitant', 'uncertain', 'difficult', 'hard', 'struggle', 'struggled', 'struggling',
+    'negative', 'unhelpful', 'unresponsive', 'shortcoming', 'shortcomings', 'gap', 'gaps',
+    'bottleneck', 'bottlenecks', 'concern', 'concerns', 'risk', 'risks', 'error', 'errors',
+    'bug', 'bugs', 'crash', 'crashed', 'scam', 'fraud', 'corrupt', 'unsafe', 'hazard', 'toxic',
+    'hostile', 'unacceptable', 'dirty', 'unclean', 'unsanitary', 'unhygienic', 'neglect',
+    'neglected', 'negligent', 'negligence', 'dismissive', 'overcharged', 'misdiagnosed',
+    'painful', 'incompetent', 'fake', 'counterfeit', 'adulterated', 'expired', 'stockout',
+    'stockouts', 'shortage', 'shortages', 'unavailable', 'late', 'delayed', 'delay', 'delays',
+    'rot', 'rotting', 'rotten', 'pest', 'pests', 'armyworm', 'borer', 'striga', 'blight',
+    'disease', 'diseases', 'drought', 'dry', 'wilting', 'yellowing', 'stunted', 'poor', 'weak',
+    'loss', 'losses', 'failed', 'failure', 'fail', 'expensive', 'costly', 'overpriced',
+    'unaffordable', 'complaint', 'complaints', 'problem', 'problems', 'issue', 'issues',
+    'broken', 'damaged', 'damage', 'contaminated', 'spoiled', 'scarce', 'scarcity',
+    'defective', 'substandard',
     // Swahili
     'gumu', 'ngumu', 'hasara', 'ghali', 'wadudu', 'ugonjwa', 'magonjwa', 'ukame', 'kuchelewa',
     'chelewa', 'mbaya', 'vibaya', 'mbovu', 'bandia', 'feki', 'uhaba', 'tatizo', 'matatizo',
     'malalamiko', 'kufa', 'kauka', 'oza', 'haribika', 'shida', 'upungufu', 'duni', 'fujo',
-    'changamoto', 'machungu', 'kutengwa', 'udanganyifu',
+    'changamoto', 'machungu', 'kutengwa', 'udanganyifu', 'chafu',
     // French
     'mauvais', 'mauvaise', 'cher', 'chère', 'chere', 'retard', 'faux', 'fausse', 'contrefait',
     'perte', 'pertes', 'ravageurs', 'maladie', 'sécheresse', 'secheresse', 'problème',
     'probleme', 'problèmes', 'problemes', 'confus', 'désorganisé', 'desorganise', 'insuffisant',
     'lent', 'ennuyeux', 'déçu', 'decu', 'frustrant', 'exclu', 'manque', 'rupture', 'faible',
+    'sale', 'impoli',
     // Portuguese
     'ruim', 'péssimo', 'pessimo', 'caro', 'cara', 'atraso', 'atrasado', 'atrasada', 'falso',
     'falsa', 'falsificado', 'praga', 'pragas', 'doença', 'doenca', 'seca', 'perda', 'perdas',
     'problema', 'problemas', 'fraco', 'fraca', 'confuso', 'desorganizado', 'insuficiente',
     'lento', 'chato', 'frustrante', 'excluído', 'excluido', 'falta', 'falha', 'quebrado',
-    'reclamação', 'reclamacao'
+    'reclamação', 'reclamacao', 'sujo', 'grosseiro'
   ]);
 
   // --------------------------------------------------------------------------
-  // 4. Actionability & Urgency Detectors (Multilingual)
+  // 4. Actionability & Urgency Detectors (Domain-Agnostic, Multilingual)
   // --------------------------------------------------------------------------
   const ACTIONABLE_REGEX = new RegExp(
     '(?:\\b(?:' +
@@ -180,7 +220,7 @@
       'should|recommend|recommended|recommendation|recommendations|suggest|suggested|suggestion|suggestions|' +
       'improve|improved|improvement|improvements|consider|propose|proposed|proposal|encourage|' +
       'please|wish|hope|prioritize|strengthen|expand|increase|reduce|provide|ensure|allocate|include|' +
-      'breakout|follow-up|actionable|better|' +
+      'follow-up|actionable|better|hire|add|upgrade|fix|resolve|train|streamline|' +
       // Swahili
       'napendekeza|pendekeza|pendekezo|mapendekezo|tafadhali|boresha|kuboresha|inafaa|tunahitaji|' +
       'ongeza|punguza|zingatia|hakikisha|' +
@@ -204,204 +244,44 @@
       'fake|counterfeit|adulterated|expired|scam|fraud|corrupt|corruption|bribe|unsafe|hazard|danger|' +
       'broken|collapsed|failed|failure|excluded|harassment|discrimination|toxic|hostile|unacceptable|' +
       'urgent|urgently|emergency|critical|immediately|crisis|catastrophic|destroyed|' +
+      'negligence|malpractice|unsanitary|misdiagnosed|infection|contamination|contaminated|' +
       'bandia|feki|hasara|kufa|dharura|udanganyifu|kutengwa|' +
       'contrefait|fraude|urgence|dangereux|falsificado|urgente|emergência|emergencia' +
-    ')\\b|(?:\\b(?:total loss|zero germination|did not germinate|never arrived|no germination|not working)\\b)',
+    ')\\b|(?:\\b(?:total loss|zero germination|did not germinate|never arrived|no germination|not working|wrong medication|wrong bill)\\b)',
     'i'
   );
 
   const MEDIUM_URGENCY_REGEX = new RegExp(
     '\\b(?:' +
-      'stockout|stockouts|shortage|shortages|delayed|delay|late|rushed|disorganized|confusing|unclear|' +
-      'overpriced|expensive|costly|complaint|complaints|problem|problems|issue|issues|armyworm|pest|pests|' +
-      'drought|disease|blight|wilting|stunted|frustrating|disappointed|inadequate|insufficient|' +
-      'ghali|kuchelewa|wadudu|ukame|ugonjwa|uhaba|tatizo|matatizo|malalamiko|' +
+      'stockout|stockouts|shortage|shortages|delayed|delay|delays|late|rushed|disorganized|confusing|unclear|' +
+      'overpriced|expensive|costly|overcharged|complaint|complaints|problem|problems|issue|issues|' +
+      'understaffed|overcrowded|dirty|unclean|rude|dismissive|frustrating|disappointed|inadequate|insufficient|' +
+      'armyworm|pest|pests|drought|disease|blight|wilting|stunted|' +
+      'ghali|kuchelewa|wadudu|ukame|ugonjwa|uhaba|tatizo|matatizo|malalamiko|chafu|' +
       'retard|cher|ravageurs|problème|probleme|atraso|caro|praga|seca' +
     ')\\b',
     'i'
   );
 
   // --------------------------------------------------------------------------
-  // 5. 12-Theme Auto Thematic Coding Taxonomy (Agronomic + Corporate/Team/Ops)
+  // 5. Dynamic Theme Palette & Fallback Constant (Zero Static Domain Themes)
   // --------------------------------------------------------------------------
-  const THEME_DEFINITIONS = [
-    {
-      id: 'seed_input_quality',
-      name: 'Seed & Input Quality',
-      color: '#247B50',
-      keywords: [
-        'seed', 'seeds', 'germination', 'germinated', 'germinate', 'vigor', 'vigorous', 'uniform',
-        'variety', 'varieties', 'hybrid', 'certified', 'fake', 'counterfeit', 'adulterated',
-        'fertilizer', 'fertiliser', 'dap', 'can', 'npk', 'urea', 'pack', 'packaging', 'yield',
-        'yielding', 'harvest', 'cob', 'cobs', 'grain', 'crop', 'crops', 'maize', 'beans', 'input',
-        'inputs', 'purity', 'pure', 'expired', 'stunted', 'quality', 'mbegu', 'mavuno', 'ubora',
-        'bandia', 'feki', 'mbolea', 'mahindi', 'shamba', 'semence', 'semences', 'rendement',
-        'engrais', 'semente', 'sementes', 'colheita', 'adubo'
-      ]
-    },
-    {
-      id: 'pricing_affordability',
-      name: 'Pricing & Affordability',
-      color: '#D97706',
-      keywords: [
-        'price', 'prices', 'pricing', 'cost', 'costs', 'costly', 'expensive', 'overpriced',
-        'cheap', 'cheaper', 'affordable', 'unaffordable', 'subsidy', 'subsidies', 'credit',
-        'loan', 'loans', 'payment', 'budget', 'money', 'margin', 'profit', 'profitable',
-        'discount', 'discounts', 'fee', 'fees', 'bei', 'ghali', 'nafuu', 'pesa', 'mkopo',
-        'faida', 'garama', 'gharama', 'prix', 'cher', 'chère', 'coût', 'abordable', 'preço',
-        'preco', 'caro', 'custo', 'acessível', 'desconto'
-      ]
-    },
-    {
-      id: 'supply_timeliness',
-      name: 'Supply & Timeliness',
-      color: '#2563EB',
-      keywords: [
-        'stock', 'stockout', 'stockouts', 'shortage', 'shortages', 'availability', 'available',
-        'unavailable', 'supply', 'supplies', 'delivery', 'deliver', 'delivered', 'late',
-        'delayed', 'delay', 'delays', 'timely', 'early', 'agro-dealer', 'agrodealer', 'dealer',
-        'shop', 'store', 'distributor', 'distribution', 'warehouse', 'access', 'accessible',
-        'distance', 'restock', 'uhaba', 'kuchelewa', 'chelewa', 'mapema', 'duka', 'maduka',
-        'usambazaji', 'upatikanaji', 'retard', 'livraison', 'rupture', 'disponible', 'estoque',
-        'atraso', 'atrasado', 'entrega', 'distribuição'
-      ]
-    },
-    {
-      id: 'pests_disease_climate',
-      name: 'Pests, Disease & Climate',
-      color: '#DC2626',
-      keywords: [
-        'pest', 'pests', 'armyworm', 'borer', 'striga', 'weed', 'weeds', 'disease', 'diseases',
-        'blight', 'rot', 'rotting', 'virus', 'fungus', 'drought', 'rain', 'rains', 'rainfall',
-        'dry', 'flood', 'floods', 'weather', 'climate', 'heat', 'frost', 'soil', 'pesticide',
-        'herbicide', 'chemical', 'spray', 'wilting', 'yellowing', 'tolerant', 'resistant',
-        'wadudu', 'ugonjwa', 'magonjwa', 'ukame', 'mvua', 'dawa', 'udongo', 'kauka', 'oza',
-        'ravageurs', 'maladie', 'sécheresse', 'secheresse', 'pluie', 'praga', 'pragas', 'doença',
-        'doenca', 'seca', 'chuva', 'solo'
-      ]
-    },
-    {
-      id: 'extension_training',
-      name: 'Extension & Training',
-      color: '#0D9488',
-      keywords: [
-        'training', 'train', 'trained', 'trainer', 'extension', 'agronomist', 'demo',
-        'demonstration', 'workshop', 'workshops', 'learn', 'learning', 'learned', 'knowledge',
-        'skill', 'skills', 'coaching', 'coach', 'mentor', 'mentorship', 'guide', 'guidance',
-        'advice', 'advisory', 'manual', 'curriculum', 'teach', 'teaching', 'module', 'modules',
-        'mafunzo', 'elimu', 'mtaalamu', 'wataalamu', 'ushauri', 'formation', 'apprentissage',
-        'treinamento', 'capacitação', 'conhecimento', 'ensino'
-      ]
-    },
-    {
-      id: 'facilitation_leadership',
-      name: 'Facilitation & Leadership',
-      color: '#7C3AED',
-      keywords: [
-        'facilitation', 'facilitator', 'facilitators', 'facilitated', 'moderator', 'host',
-        'leadership', 'leader', 'leaders', 'management', 'manager', 'managers', 'executive',
-        'director', 'steering', 'speaker', 'speakers', 'presenter', 'presenters', 'presentation',
-        'energy', 'engaging', 'guided', 'uongozi', 'kiongozi', 'mwezeshaji', 'animateur',
-        'animation', 'direction', 'liderança', 'lideranca', 'facilitador', 'gestão', 'gestao'
-      ]
-    },
-    {
-      id: 'participation_inclusion',
-      name: 'Participation & Inclusion',
-      color: '#DB2777',
-      keywords: [
-        'participation', 'participate', 'participatory', 'participative', 'interactive',
-        'engagement', 'engage', 'teamwork', 'team', 'teams', 'collaboration', 'collaborative',
-        'collaborate', 'bonding', 'inclusive', 'inclusion', 'everyone', 'voice', 'voices',
-        'heard', 'excluded', 'exclusion', 'breakout', 'breakouts', 'group', 'groups',
-        'discussion', 'discussions', 'brainstorming', 'peer', 'peers', 'cross-team',
-        'colleagues', 'unity', 'cohesion', 'ushirikiano', 'timu', 'kikundi', 'vikundi',
-        'kutengwa', 'majadiliano', 'équipe', 'equipe', 'participation', 'participação',
-        'participacao', 'equipa', 'colaboração', 'inclusão'
-      ]
-    },
-    {
-      id: 'communication_clarity',
-      name: 'Communication & Clarity',
-      color: '#0284C7',
-      keywords: [
-        'communication', 'communicate', 'communicated', 'clarity', 'clear', 'clearer', 'unclear',
-        'confusing', 'confused', 'confusion', 'transparent', 'transparency', 'alignment',
-        'aligned', 'feedback', 'listen', 'listening', 'expectations', 'instructions', 'objectives',
-        'message', 'messaging', 'open', 'honest', 'vague', 'explain', 'explanation',
-        'mawasiliano', 'uwazi', 'ufafanuzi', 'maelezo', 'communication', 'clarté', 'clarte',
-        'comunicação', 'comunicacao', 'clareza', 'transparência'
-      ]
-    },
-    {
-      id: 'time_agenda_management',
-      name: 'Time & Agenda Management',
-      color: '#EA580C',
-      keywords: [
-        'time', 'timing', 'schedule', 'scheduled', 'agenda', 'rushed', 'rushing', 'pace',
-        'pacing', 'duration', 'long', 'longer', 'short', 'shorter', 'break', 'breaks',
-        'punctual', 'punctuality', 'overtime', 'session', 'sessions', 'minutes', 'hours',
-        'days', 'muda', 'wakati', 'ratiba', 'temps', 'horaire', 'durée', 'tempo', 'horário',
-        'horario', 'duração', 'pausa'
-      ]
-    },
-    {
-      id: 'strategy_action_planning',
-      name: 'Strategy & Action Planning',
-      color: '#4F46E5',
-      keywords: [
-        'strategy', 'strategic', 'plan', 'plans', 'planning', 'action', 'actions', 'roadmap',
-        'goal', 'goals', 'target', 'targets', 'kpi', 'kpis', 'okr', 'priority', 'priorities',
-        'follow-up', 'followup', 'execution', 'execute', 'implement', 'implementation',
-        'accountability', 'ownership', 'vision', 'mission', 'next', 'steps', 'commitments',
-        'mkakati', 'mpango', 'mipango', 'malengo', 'utekelezaji', 'stratégie', 'strategie',
-        'objectifs', 'estratégia', 'estrategia', 'metas', 'planejamento'
-      ]
-    },
-    {
-      id: 'logistics_support',
-      name: 'Logistics & Support',
-      color: '#64748B',
-      keywords: [
-        'venue', 'room', 'rooms', 'hall', 'food', 'catering', 'lunch', 'meals', 'breakfast',
-        'refreshments', 'transport', 'travel', 'accommodation', 'hotel', 'audio', 'mic',
-        'microphone', 'sound', 'projector', 'slides', 'wifi', 'internet', 'network', 'materials',
-        'handouts', 'seating', 'chairs', 'comfort', 'comfortable', 'support', 'admin',
-        'logistics', 'organization', 'organized', 'disorganized', 'ukumbi', 'chakula', 'usafiri',
-        'vifaa', 'malazi', 'logistique', 'salle', 'repas', 'logística', 'logistica', 'local',
-        'transporte', 'alimentação'
-      ]
-    },
-    {
-      id: 'impact_satisfaction',
-      name: 'Impact & Satisfaction',
-      color: '#059669',
-      keywords: [
-        'impact', 'impactful', 'value', 'valuable', 'takeaway', 'takeaways', 'insightful',
-        'inspiring', 'motivating', 'useful', 'helpful', 'overall', 'experience', 'satisfied',
-        'satisfaction', 'enjoy', 'enjoyed', 'enjoyable', 'worthwhile', 'productive', 'outcome',
-        'outcomes', 'benefit', 'benefits', 'beneficial', 'great', 'excellent', 'awesome',
-        'fantastic', 'appreciate', 'appreciated', 'grateful', 'matokeo', 'manufaa', 'furaha',
-        'kuridhika', 'asante', 'hongera', 'satisfaction', 'expérience', 'satisfação', 'satisfacao',
-        'experiência', 'impacto'
-      ]
-    }
+  const DYNAMIC_THEME_PALETTE = [
+    '#247B50', '#2563EB', '#D97706', '#7C3AED', '#0D9488',
+    '#DB2777', '#0284C7', '#EA580C', '#4F46E5', '#059669'
   ];
 
-  const OTHER_THEME = {
-    id: 'other_general',
-    name: 'Other / General',
-    color: '#6B7280'
+  const GENERAL_THEME = {
+    id: 'general_feedback',
+    name: 'General Feedback',
+    color: '#6B7280',
+    isCustom: false,
+    isFallback: true
   };
 
-  // Pre-build Set lookup per theme for O(1) keyword matching
-  const THEME_LOOKUP = THEME_DEFINITIONS.map((t) => ({
-    ...t,
-    keywordSet: new Set(t.keywords)
-  }));
-
-  // In-memory fallback for pinned quotes when localStorage is unavailable (e.g. Node tests)
+  // In-memory fallbacks when localStorage is unavailable (e.g. headless Node tests)
   const _memPinStore = new Map();
+  const _memCustomThemeStore = new Map();
 
   // --------------------------------------------------------------------------
   // 6. Internal Utility Helpers
@@ -435,7 +315,6 @@
       ? qOrTitle
       : String((qOrTitle && (qOrTitle.title || qOrTitle.label || qOrTitle.id)) || '');
     if (!raw) return '';
-    // Delegate to AEAnalytics.cleanQuestionTitle if available and safe
     const ansObj = answers && typeof answers === 'object' ? answers : {};
     return raw
       .replace(/\{\{\s*([^}]+?)\s*\}\}/g, function (_m, refId) {
@@ -444,7 +323,6 @@
           const val = ansObj[key];
           return Array.isArray(val) ? val.join(', ') : String(val).trim();
         }
-        // Look up referenced question title in survey for a clean fallback phrase
         if (survey) {
           const refQ = _getSurveyQuestions(survey).find((item) => item && item.id === key);
           if (refQ && refQ.title) {
@@ -463,8 +341,9 @@
     if (q.code && String(q.code).trim()) return String(q.code).trim();
     const title = String(q.title || '').trim();
     const prefixMatch = title.match(/^(Q\d+[a-z]?)\b/i);
-    if (prefixMatch) return prefixMatch[1].toUpperCase().replace(/^Q(\d+)([A-Z])$/, 'Q$1$2'.toLowerCase().replace(/^q/, 'Q'));
-    // Check ID like q2b, q3b, q_2b, q4_takeaway
+    if (prefixMatch) {
+      return prefixMatch[1].replace(/^q/i, 'Q').replace(/([A-Z])$/, (c) => c.toLowerCase());
+    }
     const idStr = String(q.id || '');
     const idMatch = idStr.match(/^q[_-]?(\d+[a-z]?)(?:_|$)/i);
     if (idMatch) {
@@ -489,11 +368,9 @@
     }
 
     const combined = `${q.id || ''} ${q.title || ''}`.toLowerCase();
-    // Always keep explicit open-ended / feedback / follow-up prompts
     if (/(comment|note|feedback|reason|why|explain|suggest|takeaway|describe|verbatim|remark|improve|thought|experience|opinion|challenge|lesson|highlight|recommend|elaborate|share|tell us|what did|how can)/i.test(combined)) {
       return false;
     }
-    // Exclude obvious ID / phone / email / date / GPS / numeric metadata fields
     if (/(^|[\s_-])(phone|telephone|mobile|email|e-mail|national[\s_-]?id|id[\s_-]?number|passport|kra[\s_-]?pin|pin[\s_-]?code|date[\s_-]?of[\s_-]?birth|dob|latitude|longitude|gps|serial[\s_-]?no|receipt[\s_-]?no|invoice[\s_-]?no|postal[\s_-]?code|zip[\s_-]?code)([\s_-]|$)/i.test(combined)) {
       return true;
     }
@@ -529,11 +406,43 @@
     return String(val).trim();
   }
 
+  function _toTitleCase(phrase) {
+    return String(phrase || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => {
+        if (w.length <= 3 && /^[a-z0-9]+$/i.test(w) && ['hr', 'it', 'qa', 'ui', 'ux', 'er', 'icu', 'gps', 'nps', 'kpi', 'okr', 'dap', 'npk', 'can'].includes(w.toLowerCase())) {
+          return w.toUpperCase();
+        }
+        return w.charAt(0).toUpperCase() + w.slice(1);
+      })
+      .join(' ');
+  }
+
+  function _slugify(str) {
+    return String(str || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48) || 'theme';
+  }
+
+  function _simpleStem(word) {
+    const w = String(word || '').toLowerCase();
+    if (w.length <= 4) return w;
+    if (w.endsWith('ies') && w.length > 5) return w.slice(0, -3) + 'y';
+    if (w.endsWith('ing') && w.length > 6) return w.slice(0, -3);
+    if (w.endsWith('ed') && w.length > 5) return w.slice(0, -2);
+    if (w.endsWith('es') && w.length > 5) return w.slice(0, -2);
+    if (w.endsWith('s') && !w.endsWith('ss') && w.length > 4) return w.slice(0, -1);
+    return w;
+  }
+
   function _tokenizeForSentiment(text) {
-    // Preserve clause boundaries as special '__BRK__' sentinel tokens
     const normalized = String(text || '')
       .toLowerCase()
-      .replace(/['’](?=[a-z])/g, '') // collapse contractions: don't -> dont, isn't -> isnt
+      .replace(/['’](?=[a-z])/g, '')
       .replace(/[.,;!?()\n\r]+/g, ' __BRK__ ')
       .replace(/[^a-z0-9àáâãäåèéêëìíîïòóôõöùúûüñçýÿ\s_-]/g, ' ');
     return normalized
@@ -566,7 +475,6 @@
       const isNeg = NEGATIVE_WORDS.has(tok);
       if (!isPos && !isNeg) continue;
 
-      // 3-word lookbehind negation window (stops at clause boundaries)
       let negated = false;
       let intensified = false;
       for (let back = 1; back <= 3 && i - back >= 0; back++) {
@@ -584,7 +492,7 @@
         if (negated) negWeight += weight;
         else posWeight += weight;
       } else if (isNeg) {
-        if (negated) posWeight += weight * 0.85; // e.g. "no complaints" -> positive
+        if (negated) posWeight += weight * 0.85;
         else negWeight += weight;
       }
 
@@ -598,7 +506,6 @@
     const total = posWeight + negWeight;
     let sentimentScore = 0;
     if (total > 0) {
-      // Smoothly scaled to [-1.0, +1.0]
       const raw = (net / (total + 0.75)) * 1.25;
       sentimentScore = Math.max(-1, Math.min(1, Number(raw.toFixed(2))));
     }
@@ -611,8 +518,7 @@
 
     let urgency = 'normal';
     if (HIGH_URGENCY_REGEX.test(text) && (sentiment === 'negative' || !POSITIVE_WORDS.has(text.trim().toLowerCase()))) {
-      // Ensure "no fake seed" or "not broken" doesn't trigger high urgency falsely
-      const hasNegatedUrgency = /\b(no|not|never|without|hakuna|si|sio|pas|não|nao)\s+(fake|counterfeit|broken|failed|loss|hasara|bandia|feki|urgent)\b/i.test(text);
+      const hasNegatedUrgency = /\b(no|not|never|without|hakuna|si|sio|pas|não|nao)\s+(fake|counterfeit|broken|failed|loss|hasara|bandia|feki|urgent|unsafe|negligence)\b/i.test(text);
       if (!hasNegatedUrgency) {
         urgency = 'high';
       }
@@ -634,63 +540,146 @@
     };
   }
 
-  function _assignThemes(text) {
-    const rawTokens = String(text || '')
-      .toLowerCase()
-      .replace(/['’](?=[a-z])/g, '')
-      .replace(/[^a-z0-9àáâãäåèéêëìíîïòóôõöùúûüñçýÿ\s-]/g, ' ')
-      .split(/\s+/)
-      .filter(Boolean);
-
-    const tokenSet = new Set(rawTokens);
-    const lowerText = String(text || '').toLowerCase();
-    const scored = [];
-
-    for (let i = 0; i < THEME_LOOKUP.length; i++) {
-      const theme = THEME_LOOKUP[i];
-      let hits = 0;
-      for (const tok of tokenSet) {
-        if (theme.keywordSet.has(tok)) hits++;
-      }
-      // Also check multi-word phrases inside keywords if any
-      if (theme.id === 'time_agenda_management' && /\b(more time|enough time|short time|muda zaidi|wakati zaidi)\b/i.test(lowerText)) {
-        hits += 2;
-      }
-      if (theme.id === 'participation_inclusion' && /\b(breakout groups?|small groups?|team building|cross[- ]?functional)\b/i.test(lowerText)) {
-        hits += 2;
-      }
-      if (theme.id === 'strategy_action_planning' && /\b(action plan|next steps|follow[- ]?up)\b/i.test(lowerText)) {
-        hits += 2;
-      }
-      if (theme.id === 'pests_disease_climate' && /\b(fall armyworm|late rains?|dry spell)\b/i.test(lowerText)) {
-        hits += 2;
-      }
-      if (hits > 0) {
-        scored.push({ theme, hits });
+  // --------------------------------------------------------------------------
+  // 7. Dynamic Location & Segment Resolution (Zero Hardcoded 'Kenya'/q_county)
+  // --------------------------------------------------------------------------
+  function _findSurveyLocationQuestion(survey) {
+    const questions = _getSurveyQuestions(survey);
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q || !q.id) continue;
+      const type = String(q.type || '').toLowerCase();
+      if (['cascading_select', 'cascading_location', 'location', 'gps'].includes(type)) {
+        return q;
       }
     }
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q || !q.id) continue;
+      const type = String(q.type || '').toLowerCase();
+      if (!['single_choice', 'radio', 'dropdown', 'select', 'short_text', 'text'].includes(type)) continue;
+      const combined = `${q.id || ''} ${q.title || ''}`.toLowerCase();
+      if (/(^|[\s_-])(county|region|district|province|location|ward|sub[\s_-]?county|city|branch|site|clinic|facility)([\s_-]|$)/i.test(combined)) {
+        return q;
+      }
+    }
+    return null;
+  }
 
-    if (scored.length === 0) {
-      return [OTHER_THEME];
+  function _extractLocationValue(r, survey, locationQ) {
+    if (!r || typeof r !== 'object') return '';
+    if (locationQ && r.answers && r.answers[locationQ.id] !== undefined) {
+      const v = _formatSegmentValue(r.answers[locationQ.id]);
+      if (v) return v;
+    }
+    const gpsLabel = _formatSegmentValue(r.gps && r.gps.label);
+    if (gpsLabel) return gpsLabel;
+    return '';
+  }
+
+  function _getDynamicSegmentOptions(survey, responses) {
+    const safeResponses = Array.isArray(responses) ? responses : [];
+    const questions = _getSurveyQuestions(survey);
+    const allowedTypes = new Set([
+      'rating', 'star_rating', 'emoji_rating', 'likert', 'nps', 'scale',
+      'single_choice', 'radio', 'dropdown', 'select',
+      'cascading_select', 'cascading_location'
+    ]);
+
+    const options = [
+      { id: 'auto', value: 'auto', label: 'Auto (Best Segment)', type: 'auto' }
+    ];
+
+    const locationQ = _findSurveyLocationQuestion(survey);
+    let locationQIncluded = false;
+
+    questions.forEach((q, idx) => {
+      if (!q || !q.id) return;
+      const qType = String(q.type || '').toLowerCase();
+      if (!allowedTypes.has(qType)) return;
+      const code = _extractQuestionCode(q, idx);
+      const cleanTitle = _cleanQuestionTitle(q, {}, survey);
+      const hasCodePrefix = new RegExp(`^${code}\\b`, 'i').test(cleanTitle);
+      const label = hasCodePrefix ? cleanTitle : `${code}: ${cleanTitle}`;
+
+      const distinct = new Set();
+      for (let j = 0; j < safeResponses.length; j++) {
+        const val = _formatSegmentValue(safeResponses[j]?.answers?.[q.id]);
+        if (val) distinct.add(val);
+      }
+
+      if (locationQ && locationQ.id === q.id) {
+        locationQIncluded = true;
+      }
+
+      options.push({
+        id: q.id,
+        value: q.id,
+        code,
+        title: cleanTitle,
+        label,
+        type: qType,
+        distinctCount: distinct.size
+      });
+    });
+
+    // Include Location ONLY if responses have non-empty GPS labels or an unincluded location question
+    const distinctGpsLabels = new Set();
+    const distinctLocations = new Set();
+    for (let i = 0; i < safeResponses.length; i++) {
+      const g = _formatSegmentValue(safeResponses[i]?.gps?.label);
+      if (g) distinctGpsLabels.add(g);
+      const loc = _extractLocationValue(safeResponses[i], survey, locationQ);
+      if (loc) distinctLocations.add(loc);
     }
 
-    scored.sort((a, b) => b.hits - a.hits);
-    return scored.slice(0, 3).map((s) => ({
-      id: s.theme.id,
-      name: s.theme.name,
-      color: s.theme.color
-    }));
+    if (distinctGpsLabels.size > 0 || (!locationQIncluded && distinctLocations.size > 0)) {
+      const locLabel = (locationQ && !locationQIncluded)
+        ? _cleanQuestionTitle(locationQ, {}, survey)
+        : 'Location';
+      options.push({
+        id: 'location',
+        value: 'location',
+        label: locLabel || 'Location',
+        type: 'location',
+        distinctCount: distinctLocations.size
+      });
+    }
+
+    // Include Enumerator ONLY if >1 unique non-empty enumerator exists
+    const distinctEnumerators = new Set();
+    for (let i = 0; i < safeResponses.length; i++) {
+      const en = _formatSegmentValue(safeResponses[i]?.enumerator || safeResponses[i]?.enumeratorId);
+      if (en && en.toLowerCase() !== 'anonymous' && en.toLowerCase() !== 'unspecified') {
+        distinctEnumerators.add(en);
+      }
+    }
+    if (distinctEnumerators.size > 1) {
+      options.push({
+        id: 'enumerator',
+        value: 'enumerator',
+        label: 'Enumerator',
+        type: 'enumerator',
+        distinctCount: distinctEnumerators.size
+      });
+    }
+
+    return options;
   }
 
   function _resolveSegmentConfig(responses, survey, requestedSegQId) {
     const req = requestedSegQId || 'auto';
-    if (req === 'county') {
+    const locationQ = _findSurveyLocationQuestion(survey);
+
+    if (req === 'location' || req === 'county') {
+      const locLabel = locationQ ? _cleanQuestionTitle(locationQ, {}, survey) : 'Location';
       return {
-        segmentQId: 'county',
-        segmentLabel: 'County / Location',
-        extract: (r) => _formatSegmentValue(r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label) || 'Unspecified'
+        segmentQId: 'location',
+        segmentLabel: locLabel || 'Location',
+        extract: (r) => _extractLocationValue(r, survey, locationQ) || 'Unspecified'
       };
     }
+
     if (req === 'enumerator') {
       return {
         segmentQId: 'enumerator',
@@ -711,8 +700,12 @@
       }
     }
 
-    // Auto-select best segmenter: prefer rating/likert/nps/single_choice/dropdown with >= 2 distinct values
-    const preferredTypes = ['rating', 'star_rating', 'emoji_rating', 'likert', 'nps', 'scale', 'single_choice', 'radio', 'dropdown', 'select'];
+    // Auto-select best segmenter from survey's actual categorical/rating/cascading questions
+    const preferredTypes = [
+      'rating', 'star_rating', 'emoji_rating', 'likert', 'nps', 'scale',
+      'single_choice', 'radio', 'dropdown', 'select',
+      'cascading_select', 'cascading_location'
+    ];
     const candidates = questions
       .filter((q) => q && preferredTypes.includes(String(q.type || '').toLowerCase()))
       .sort((a, b) => {
@@ -737,25 +730,376 @@
       }
     }
 
-    // Fallback to county if >= 2 distinct counties exist
-    const counties = new Set();
+    // Next: Location if >= 2 distinct real locations exist
+    const locations = new Set();
     for (let i = 0; i < responses.length; i++) {
-      const c = _formatSegmentValue(responses[i]?.answers?.q_county || responses[i]?.answers?.cascading_county?.level1 || responses[i]?.gps?.label);
-      if (c) counties.add(c);
+      const loc = _extractLocationValue(responses[i], survey, locationQ);
+      if (loc) locations.add(loc);
     }
-    if (counties.size >= 2) {
+    if (locations.size >= 2) {
       return {
-        segmentQId: 'county',
-        segmentLabel: 'County / Location',
-        extract: (r) => _formatSegmentValue(r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label) || 'Unspecified'
+        segmentQId: 'location',
+        segmentLabel: locationQ ? _cleanQuestionTitle(locationQ, {}, survey) : 'Location',
+        extract: (r) => _extractLocationValue(r, survey, locationQ) || 'Unspecified'
+      };
+    }
+
+    // Next: Enumerator if >= 2 distinct enumerators exist
+    const enums = new Set();
+    for (let i = 0; i < responses.length; i++) {
+      const en = _formatSegmentValue(responses[i]?.enumerator || responses[i]?.enumeratorId);
+      if (en && en.toLowerCase() !== 'anonymous') enums.add(en);
+    }
+    if (enums.size >= 2) {
+      return {
+        segmentQId: 'enumerator',
+        segmentLabel: 'Enumerator',
+        extract: (r) => _formatSegmentValue(r.enumerator || r.enumeratorId) || 'Unspecified'
+      };
+    }
+
+    // Fallback: first candidate question even with 1 distinct value, or All Responses
+    if (candidates.length > 0) {
+      const q = candidates[0];
+      return {
+        segmentQId: q.id,
+        segmentLabel: _cleanQuestionTitle(q, {}, survey),
+        extract: (r) => _formatSegmentValue(r.answers?.[q.id]) || 'Unspecified'
       };
     }
 
     return {
-      segmentQId: 'enumerator',
-      segmentLabel: 'Enumerator',
-      extract: (r) => _formatSegmentValue(r.enumerator || r.enumeratorId) || 'Unspecified'
+      segmentQId: 'all',
+      segmentLabel: 'All Responses',
+      extract: () => 'All Responses'
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // 8. Dynamic 3-Layer Theme Engine (Custom Codebook + Unsupervised Discovery)
+  // --------------------------------------------------------------------------
+  function _customThemesStorageKey(surveyId) {
+    return `ae_custom_themes_${String(surveyId || 'global').replace(/[^a-zA-Z0-9_.-]/g, '_')}`;
+  }
+
+  function _normalizeKeywords(rawKeywords) {
+    const arr = Array.isArray(rawKeywords)
+      ? rawKeywords
+      : typeof rawKeywords === 'string'
+        ? rawKeywords.split(/[,;\n]+/)
+        : [];
+    const seen = new Set();
+    const out = [];
+    for (let i = 0; i < arr.length; i++) {
+      const kw = String(arr[i] || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      if (kw && !seen.has(kw)) {
+        seen.add(kw);
+        out.push(kw);
+      }
+    }
+    return out;
+  }
+
+  function _buildTopTermsFromCounts(termFreq, docFreq, bigramSet, totalDocs, maxCount) {
+    const limit = maxCount > 0 ? maxCount : 30;
+    return Object.keys(termFreq)
+      .map((term) => {
+        const tf = termFreq[term];
+        const df = docFreq[term] || 1;
+        const idf = 1 + Math.log((totalDocs + 1) / (df + 1));
+        const isBigram = bigramSet.has(term);
+        const score = Number((tf * idf * (isBigram ? 1.25 : 1.0)).toFixed(3));
+        return { term, count: tf, df, score, isBigram };
+      })
+      .filter((item) => item.count >= 1 && (!item.isBigram || item.count >= 2 || totalDocs <= 6))
+      .sort((a, b) => (b.score - a.score) || (b.count - a.count))
+      .slice(0, limit);
+  }
+
+  function _isEligibleTopicAnchor(term, isBigram) {
+    if (!term) return false;
+    if (!isBigram) {
+      return !TOPIC_ANCHOR_NOISE.has(term) && !STOP_WORDS.has(term) && term.length >= 3;
+    }
+    const parts = term.split(' ');
+    if (parts.length !== 2) return false;
+    const [w1, w2] = parts;
+    if (STOP_WORDS.has(w1) || STOP_WORDS.has(w2)) return false;
+    // Reject if both words are generic noise/sentiment words
+    if (TOPIC_ANCHOR_NOISE.has(w1) && TOPIC_ANCHOR_NOISE.has(w2)) return false;
+    // Reject pure recommendation verb bigrams like "recommend adding" or "please improve"
+    const verbBlock = new Set(['please', 'should', 'recommend', 'suggest', 'need', 'needs', 'want', 'think', 'feel', 'make', 'give', 'take', 'keep', 'really', 'very', 'much', 'more', 'most', 'less', 'also', 'just']);
+    if (verbBlock.has(w1) || verbBlock.has(w2)) return false;
+    return true;
+  }
+
+  function _discoverDynamicThemes(docTokenList, customThemes, maxThemes) {
+    const N = docTokenList.length;
+    if (N === 0) return [];
+    const targetMax = maxThemes > 0 ? maxThemes : 9;
+
+    const termFreq = Object.create(null);
+    const docFreq = Object.create(null);
+    const termDocs = Object.create(null);
+    const bigramSet = new Set();
+
+    for (let docIdx = 0; docIdx < N; docIdx++) {
+      const tokens = docTokenList[docIdx] || [];
+      const seenInDoc = new Set();
+      for (let i = 0; i < tokens.length; i++) {
+        const w = tokens[i];
+        termFreq[w] = (termFreq[w] || 0) + 1;
+        seenInDoc.add(w);
+        if (i < tokens.length - 1) {
+          const w2 = tokens[i + 1];
+          if (w !== w2) {
+            const bg = `${w} ${w2}`;
+            termFreq[bg] = (termFreq[bg] || 0) + 1;
+            seenInDoc.add(bg);
+            bigramSet.add(bg);
+          }
+        }
+      }
+      seenInDoc.forEach((t) => {
+        docFreq[t] = (docFreq[t] || 0) + 1;
+        if (!termDocs[t]) termDocs[t] = new Set();
+        termDocs[t].add(docIdx);
+      });
+    }
+
+    // Score candidate topic anchors (high-signal TF-IDF unigrams & bigrams)
+    const minDfUnigram = N >= 6 ? 2 : 1;
+    const minDfBigram = N >= 5 ? 2 : 1;
+    const candidates = [];
+
+    Object.keys(termFreq).forEach((term) => {
+      const isBigram = bigramSet.has(term);
+      if (!_isEligibleTopicAnchor(term, isBigram)) return;
+      const tf = termFreq[term];
+      const df = docFreq[term] || 1;
+      if (isBigram && df < minDfBigram) return;
+      if (!isBigram && df < minDfUnigram) return;
+
+      // Downweight overly ubiquitous single words when corpus is larger
+      const ubiquityPenalty = (!isBigram && N >= 8 && df / N > 0.78) ? 0.45 : 1.0;
+      const idf = 1 + Math.log((N + 1) / (df + 1));
+      const phraseBoost = isBigram ? 1.65 : 1.0;
+      const score = tf * idf * phraseBoost * ubiquityPenalty;
+
+      candidates.push({
+        term,
+        isBigram,
+        tf,
+        df,
+        score,
+        docs: termDocs[term],
+        stems: term.split(' ').map(_simpleStem)
+      });
+    });
+
+    candidates.sort((a, b) => (b.score - a.score) || (b.df - a.df) || a.term.localeCompare(b.term));
+    const pool = candidates.slice(0, 48);
+
+    // Greedy co-occurrence + lexical stem clustering
+    const clusters = [];
+
+    for (let i = 0; i < pool.length; i++) {
+      const cand = pool[i];
+      let bestCluster = null;
+      let bestSim = 0;
+
+      for (let c = 0; c < clusters.length; c++) {
+        const cl = clusters[c];
+
+        // 1. Lexical stem overlap (e.g., "breakout" <-> "breakout groups", "delay" <-> "delayed")
+        let lexicalMatch = false;
+        for (let s = 0; s < cand.stems.length; s++) {
+          if (cl.stemSet.has(cand.stems[s])) {
+            lexicalMatch = true;
+            break;
+          }
+        }
+
+        // 2. Document co-occurrence Jaccard similarity (prevents broad terms from swallowing distinct topics)
+        let inter = 0;
+        cand.docs.forEach((d) => {
+          if (cl.docSet.has(d)) inter++;
+        });
+        const union = cand.docs.size + cl.docSet.size - inter;
+        const jaccard = union > 0 ? inter / union : 0;
+
+        let sim = 0;
+        if (lexicalMatch) {
+          sim = 0.85 + jaccard * 0.15;
+        } else if (jaccard >= 0.55 && inter >= (N >= 4 ? 2 : 1)) {
+          sim = jaccard;
+        }
+
+        if (sim > bestSim) {
+          bestSim = sim;
+          bestCluster = cl;
+        }
+      }
+
+      if (bestCluster && bestSim >= 0.55) {
+        bestCluster.keywords.add(cand.term);
+        cand.stems.forEach((st) => bestCluster.stemSet.add(st));
+        cand.docs.forEach((d) => bestCluster.docSet.add(d));
+        // If current anchor is a unigram and merged candidate is a strong bigram containing it, promote bigram name
+        if (!bestCluster.anchorIsBigram && cand.isBigram && cand.df >= Math.ceil(bestCluster.anchorDf * 0.5)) {
+          const anchorStem = _simpleStem(bestCluster.anchor);
+          if (cand.stems.includes(anchorStem)) {
+            bestCluster.anchor = cand.term;
+            bestCluster.anchorIsBigram = true;
+            bestCluster.anchorDf = cand.df;
+          }
+        }
+      } else if (clusters.length < targetMax) {
+        const kwSet = new Set([cand.term]);
+        // For bigrams, only add constituent words to keywords if they are non-noise and strongly specific
+        if (cand.isBigram) {
+          cand.term.split(' ').forEach((part) => {
+            if (!TOPIC_ANCHOR_NOISE.has(part) && !STOP_WORDS.has(part) && part.length >= 4) {
+              // Avoid adding ultra-generic words like "time" alone if bigram is "waiting time"
+              const partDf = docFreq[part] || 0;
+              if (partDf <= cand.df * 2.2) {
+                kwSet.add(part);
+              }
+            }
+          });
+        }
+        clusters.push({
+          anchor: cand.term,
+          anchorIsBigram: cand.isBigram,
+          anchorDf: cand.df,
+          score: cand.score,
+          keywords: kwSet,
+          stemSet: new Set(cand.stems),
+          docSet: new Set(cand.docs)
+        });
+      }
+    }
+
+    // Reserve colors already used by custom themes
+    const usedColors = new Set((customThemes || []).map((t) => String(t.color || '').toUpperCase()));
+    let paletteIdx = 0;
+    const nextColor = () => {
+      for (let tries = 0; tries < DYNAMIC_THEME_PALETTE.length; tries++) {
+        const c = DYNAMIC_THEME_PALETTE[(paletteIdx + tries) % DYNAMIC_THEME_PALETTE.length];
+        if (!usedColors.has(c.toUpperCase())) {
+          usedColors.add(c.toUpperCase());
+          paletteIdx = (paletteIdx + tries + 1) % DYNAMIC_THEME_PALETTE.length;
+          return c;
+        }
+      }
+      const c = DYNAMIC_THEME_PALETTE[paletteIdx % DYNAMIC_THEME_PALETTE.length];
+      paletteIdx++;
+      return c;
+    };
+
+    const usedIds = new Set((customThemes || []).map((t) => t.id));
+    return clusters.map((cl) => {
+      let id = `topic_${_slugify(cl.anchor)}`;
+      let suffix = 2;
+      while (usedIds.has(id)) {
+        id = `topic_${_slugify(cl.anchor)}_${suffix++}`;
+      }
+      usedIds.add(id);
+
+      const keywords = Array.from(cl.keywords);
+      return {
+        id,
+        name: _toTitleCase(cl.anchor),
+        color: nextColor(),
+        keywords,
+        stemSet: cl.stemSet,
+        isCustom: false,
+        isDiscovered: true
+      };
+    });
+  }
+
+  function _matchThemeKeywords(lowerText, tokenSet, stemSet, theme) {
+    const keywords = Array.isArray(theme.keywords) ? theme.keywords : [];
+    let hits = 0;
+    for (let i = 0; i < keywords.length; i++) {
+      const kw = keywords[i];
+      if (!kw) continue;
+      if (kw.includes(' ')) {
+        // Multi-word phrase check
+        if (lowerText.includes(kw)) {
+          hits += 2.5;
+        }
+      } else {
+        if (tokenSet.has(kw)) {
+          hits += 1.5;
+        } else if (kw.length >= 4 && stemSet.has(_simpleStem(kw))) {
+          hits += 1.0;
+        }
+      }
+    }
+    return hits;
+  }
+
+  function _assignDynamicThemes(analysisText, customThemes, discoveredThemes) {
+    const lowerText = String(analysisText || '')
+      .toLowerCase()
+      .replace(/['’](?=[a-z])/g, '')
+      .replace(/[^a-z0-9àáâãäåèéêëìíîïòóôõöùúûüñçýÿ\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const tokens = lowerText.split(' ').filter(Boolean);
+    const tokenSet = new Set(tokens);
+    const stemSet = new Set(tokens.map(_simpleStem));
+
+    const customMatches = [];
+    for (let i = 0; i < customThemes.length; i++) {
+      const th = customThemes[i];
+      const hits = _matchThemeKeywords(lowerText, tokenSet, stemSet, th);
+      if (hits > 0) {
+        customMatches.push({ theme: th, hits });
+      }
+    }
+    customMatches.sort((a, b) => b.hits - a.hits);
+
+    const discoveredMatches = [];
+    for (let i = 0; i < discoveredThemes.length; i++) {
+      const th = discoveredThemes[i];
+      const hits = _matchThemeKeywords(lowerText, tokenSet, stemSet, th);
+      if (hits > 0) {
+        discoveredMatches.push({ theme: th, hits });
+      }
+    }
+    discoveredMatches.sort((a, b) => b.hits - a.hits);
+
+    // Prioritize Layer 1 custom themes, then fill up to 3 total with Layer 2 discovered themes
+    const combined = [];
+    const seenIds = new Set();
+    const pushTheme = (th) => {
+      if (combined.length >= 3 || seenIds.has(th.id)) return;
+      seenIds.add(th.id);
+      combined.push({
+        id: th.id,
+        name: th.name,
+        color: th.color,
+        isCustom: Boolean(th.isCustom)
+      });
+    };
+
+    customMatches.forEach((m) => pushTheme(m.theme));
+    discoveredMatches.forEach((m) => pushTheme(m.theme));
+
+    if (combined.length === 0) {
+      return [{
+        id: GENERAL_THEME.id,
+        name: GENERAL_THEME.name,
+        color: GENERAL_THEME.color,
+        isCustom: false,
+        isFallback: true
+      }];
+    }
+    return combined;
   }
 
   function _getGasConfig() {
@@ -778,17 +1122,17 @@
   }
 
   // --------------------------------------------------------------------------
-  // 7. Public Engine Object: window.AETeXtEngine
+  // 9. Public Engine Object: window.AETeXtEngine
   // --------------------------------------------------------------------------
   const AETeXtEngine = {
-    version: '2.0.0',
+    version: '3.0.0',
     stopWords: STOP_WORDS,
     negationWords: NEGATION_WORDS,
     lexicon: {
       positive: Array.from(POSITIVE_WORDS),
       negative: Array.from(NEGATIVE_WORDS)
     },
-    themesCatalog: THEME_DEFINITIONS.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+    themesCatalog: [],
 
     /**
      * Sanitizes piped {{q_id}} placeholders in question titles.
@@ -819,11 +1163,15 @@
     },
 
     /**
-     * Returns categorical/rating questions suitable for Theme x Segment breakdown.
+     * Returns categorical/rating/cascading questions suitable for Theme x Segment breakdown.
      */
     getSegmentQuestions(survey) {
       const allQs = _getSurveyQuestions(survey);
-      const allowed = new Set(['rating', 'star_rating', 'emoji_rating', 'likert', 'nps', 'scale', 'single_choice', 'radio', 'dropdown', 'select']);
+      const allowed = new Set([
+        'rating', 'star_rating', 'emoji_rating', 'likert', 'nps', 'scale',
+        'single_choice', 'radio', 'dropdown', 'select',
+        'cascading_select', 'cascading_location'
+      ]);
       return allQs
         .filter((q) => q && q.id && allowed.has(String(q.type || '').toLowerCase()))
         .map((q, idx) => ({
@@ -834,12 +1182,113 @@
     },
 
     /**
-     * Primary Verbatim Intelligence Analyzer.
+     * Dynamically discovers valid segment options for a survey & response set.
+     * Never hardcodes County/Location when the survey has no location data.
+     */
+    getSegmentOptions(survey, responses) {
+      return _getDynamicSegmentOptions(survey, responses);
+    },
+
+    // ------------------------------------------------------------------------
+    // Layer 1: Survey-Specific Custom Codebook Persistence
+    // ------------------------------------------------------------------------
+    getCustomThemes(surveyId) {
+      const storageKey = _customThemesStorageKey(surveyId);
+      let rawList = null;
+      try {
+        if (typeof globalScope !== 'undefined' && globalScope.localStorage) {
+          const raw = globalScope.localStorage.getItem(storageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) rawList = parsed;
+          } else {
+            rawList = [];
+          }
+        }
+      } catch (e) {}
+
+      if (rawList === null) {
+        rawList = _memCustomThemeStore.get(storageKey) || [];
+      }
+
+      return rawList
+        .filter((t) => t && typeof t === 'object' && String(t.name || '').trim())
+        .map((t, idx) => ({
+          id: String(t.id || `custom_${_slugify(t.name)}_${idx + 1}`),
+          name: String(t.name).trim(),
+          keywords: _normalizeKeywords(t.keywords),
+          color: String(t.color || DYNAMIC_THEME_PALETTE[idx % DYNAMIC_THEME_PALETTE.length]),
+          isCustom: true
+        }));
+    },
+
+    saveCustomTheme(surveyId, themeInput) {
+      if (!themeInput || typeof themeInput !== 'object') return null;
+      const name = String(themeInput.name || '').trim();
+      if (!name) return null;
+
+      const storageKey = _customThemesStorageKey(surveyId);
+      const existing = this.getCustomThemes(surveyId);
+      const keywords = _normalizeKeywords(themeInput.keywords);
+      const id = String(themeInput.id || '').trim() || `custom_${_slugify(name)}_${Date.now().toString(36).slice(-4)}`;
+      const color = String(themeInput.color || '').trim() || DYNAMIC_THEME_PALETTE[existing.length % DYNAMIC_THEME_PALETTE.length];
+
+      const saved = {
+        id,
+        name,
+        keywords: keywords.length > 0 ? keywords : [name.toLowerCase()],
+        color,
+        isCustom: true
+      };
+
+      const idx = existing.findIndex((t) => t.id === id);
+      const nextList = existing.slice();
+      if (idx >= 0) {
+        nextList[idx] = saved;
+      } else {
+        nextList.push(saved);
+      }
+
+      try {
+        if (typeof globalScope !== 'undefined' && globalScope.localStorage) {
+          globalScope.localStorage.setItem(storageKey, JSON.stringify(nextList));
+        } else {
+          _memCustomThemeStore.set(storageKey, nextList);
+        }
+      } catch (e) {
+        _memCustomThemeStore.set(storageKey, nextList);
+      }
+
+      return saved;
+    },
+
+    deleteCustomTheme(surveyId, themeId) {
+      const targetId = String(themeId || '').trim();
+      const storageKey = _customThemesStorageKey(surveyId);
+      const existing = this.getCustomThemes(surveyId);
+      const nextList = existing.filter((t) => t.id !== targetId);
+      const deleted = nextList.length !== existing.length;
+
+      try {
+        if (typeof globalScope !== 'undefined' && globalScope.localStorage) {
+          globalScope.localStorage.setItem(storageKey, JSON.stringify(nextList));
+        } else {
+          _memCustomThemeStore.set(storageKey, nextList);
+        }
+      } catch (e) {
+        _memCustomThemeStore.set(storageKey, nextList);
+      }
+
+      return { deleted, themes: nextList };
+    },
+
+    /**
+     * Primary Verbatim Intelligence Analyzer (Dynamic 3-Layer Theme Engine).
      * Supports BOTH:
-     *  - Legacy signature: analyzeVerbatims(responses, 'q_field_notes')
+     *  - Legacy signature: analyzeVerbatims(responses, 'q_comments')
      *  - Full signature:   analyzeVerbatims(responses, survey, {
      *                        questionId: 'all' | qId,
-     *                        segmentQId: 'auto' | 'county' | 'enumerator' | qId,
+     *                        segmentQId: 'auto' | 'location' | 'enumerator' | qId,
      *                        translationsMap: {}
      *                      })
      */
@@ -851,7 +1300,7 @@
       const isSurveyObject = Boolean(surveyOrQId && typeof surveyOrQId === 'object' && !Array.isArray(surveyOrQId));
       const survey = isSurveyObject ? surveyOrQId : null;
       const legacyQId = typeof surveyOrQId === 'string' ? surveyOrQId : (opts.questionId && opts.questionId !== 'all' ? opts.questionId : null);
-      const requestedQId = opts.questionId || (isSurveyObject ? 'all' : (legacyQId || 'q_field_notes'));
+      const requestedQId = opts.questionId || (isSurveyObject ? 'all' : (legacyQId || 'all'));
 
       const textQuestions = survey ? this.getTextQuestions(survey) : [];
       const targetQuestions = survey
@@ -860,41 +1309,31 @@
           : textQuestions.filter((q) => q.id === requestedQId))
         : [];
 
+      const locationQ = _findSurveyLocationQuestion(survey);
       const segConfig = _resolveSegmentConfig(safeResponses, survey, opts.segmentQId || 'auto');
       const surveyId = opts.surveyId || (survey && survey.id) || 'global';
       const pinnedSet = new Set(this.getPinnedQuotes(surveyId));
+      const customThemes = this.getCustomThemes(surveyId);
 
-      const records = [];
+      // PASS 1: Extract all verbatim entries, tokenize, score sentiment & signals
+      const rawEntries = [];
+      const docTokenList = [];
       const termFreq = Object.create(null);
       const docFreq = Object.create(null);
       const bigramSet = new Set();
 
-      let totalPos = 0;
-      let totalNeg = 0;
-      let totalNeu = 0;
-      let totalActionable = 0;
-      let totalUrgentHigh = 0;
-      let totalUrgentMedium = 0;
-      let sentimentScoreSum = 0;
-
-      const themeAgg = Object.create(null);
-      const segmentCounts = Object.create(null);
-
-      const processEntry = (r, qMeta, rawText) => {
-        const respId = String(r.clientResponseId || r.id || `resp_${records.length + 1}`);
-        const qId = qMeta.id || 'q_field_notes';
+      const collectEntry = (r, qMeta, rawText) => {
+        const respId = String(r.clientResponseId || r.id || `resp_${rawEntries.length + 1}`);
+        const qId = qMeta.id || 'open_text';
         const recordKey = `${respId}::${qId}`;
         const translatedText = translationsMap[recordKey] || translationsMap[rawText] || '';
+        const primaryText = translatedText || rawText;
         const analysisText = translatedText ? `${translatedText} ${rawText}` : rawText;
 
-        const signals = _scoreSentimentAndSignals(translatedText || rawText);
-        const assignedThemes = _assignThemes(analysisText);
-        const segmentVal = segConfig.extract(r) || 'Unspecified';
-        const county = _formatSegmentValue(r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label) || 'Kenya';
-        const enumerator = _formatSegmentValue(r.enumerator || r.enumeratorId) || 'Anonymous';
+        const signals = _scoreSentimentAndSignals(primaryText);
+        const cleanTokens = _tokenizeForTerms(primaryText);
+        docTokenList.push(cleanTokens);
 
-        // TF-IDF unigrams + bigrams
-        const cleanTokens = _tokenizeForTerms(translatedText || rawText);
         const docTerms = new Set();
         for (let i = 0; i < cleanTokens.length; i++) {
           const w = cleanTokens[i];
@@ -911,6 +1350,97 @@
           docFreq[t] = (docFreq[t] || 0) + 1;
         });
 
+        rawEntries.push({
+          r,
+          qMeta,
+          qId,
+          respId,
+          recordKey,
+          rawText,
+          translatedText,
+          analysisText,
+          signals,
+          cleanTokens,
+          segmentVal: segConfig.extract(r) || 'Unspecified',
+          locationVal: _extractLocationValue(r, survey, locationQ),
+          enumerator: _formatSegmentValue(r.enumerator || r.enumeratorId) || 'Anonymous'
+        });
+      };
+
+      safeResponses.forEach((r) => {
+        if (!r || !r.answers || typeof r.answers !== 'object') return;
+
+        if (survey && targetQuestions.length > 0) {
+          targetQuestions.forEach((q) => {
+            const text = _extractTextValue(r.answers[q.id]);
+            if (text) {
+              collectEntry(r, q, text);
+            }
+          });
+        } else {
+          // Schema-less fallback: scan specified key or all open-ended string/transcript answers
+          if (requestedQId && requestedQId !== 'all') {
+            const extracted = _extractTextValue(r.answers[requestedQId]);
+            if (extracted) {
+              collectEntry(r, { id: requestedQId, code: 'Q', title: requestedQId }, extracted);
+            }
+          } else {
+            let foundAny = false;
+            const entries = Object.entries(r.answers);
+            for (let i = 0; i < entries.length; i++) {
+              const [k, v] = entries[i];
+              const isTranscriptObj = v && typeof v === 'object' && !Array.isArray(v) && (v.transcript || v.transcription);
+              if (isTranscriptObj) {
+                const extracted = _extractTextValue(v);
+                if (extracted) {
+                  collectEntry(r, { id: k, code: _extractQuestionCode({ id: k }, i), title: k }, extracted);
+                  foundAny = true;
+                }
+              } else if (typeof v === 'string' && v.trim().length >= 15 && !/^\d{4}-\d{2}-\d{2}/.test(v.trim()) && !v.startsWith('data:')) {
+                collectEntry(r, { id: k, code: _extractQuestionCode({ id: k }, i), title: k }, v.trim());
+                foundAny = true;
+              }
+            }
+            if (!foundAny) {
+              for (let i = 0; i < entries.length; i++) {
+                const [k, v] = entries[i];
+                const extracted = _extractTextValue(v);
+                if (extracted && extracted.includes(' ')) {
+                  collectEntry(r, { id: k, code: _extractQuestionCode({ id: k }, i), title: k }, extracted);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      const totalAnalyzed = rawEntries.length;
+
+      // PASS 2: Layer 2 Unsupervised Dynamic Topic Discovery from corpus
+      const discoveredThemes = _discoverDynamicThemes(docTokenList, customThemes, 9);
+
+      // PASS 3: Assign Layer 1 + Layer 2 themes, aggregate Theme x Sentiment, Theme x Segment, and Layer 3 byQuestion
+      const records = [];
+      let totalPos = 0;
+      let totalNeg = 0;
+      let totalNeu = 0;
+      let totalActionable = 0;
+      let totalUrgentHigh = 0;
+      let totalUrgentMedium = 0;
+      let sentimentScoreSum = 0;
+
+      const themeAgg = Object.create(null);
+      const segmentCounts = Object.create(null);
+      const byQuestionAgg = Object.create(null);
+      const byQuestionOrder = [];
+
+      for (let idx = 0; idx < rawEntries.length; idx++) {
+        const entry = rawEntries[idx];
+        const { r, qMeta, qId, respId, recordKey, rawText, translatedText, analysisText, signals, cleanTokens, segmentVal, locationVal, enumerator } = entry;
+
+        const assignedThemes = _assignDynamicThemes(analysisText, customThemes, discoveredThemes);
+
         if (signals.sentiment === 'positive') totalPos++;
         else if (signals.sentiment === 'negative') totalNeg++;
         else totalNeu++;
@@ -922,15 +1452,19 @@
 
         segmentCounts[segmentVal] = (segmentCounts[segmentVal] || 0) + 1;
 
+        const cleanQTitle = _cleanQuestionTitle(qMeta.title || qMeta.cleanTitle || qId, r.answers || {}, survey);
+        const genericQTitle = _cleanQuestionTitle(qMeta.title || qMeta.cleanTitle || qId, {}, survey);
+
         const record = {
           key: recordKey,
           id: respId,
           questionId: qId,
           questionCode: qMeta.code || 'Q',
-          questionTitle: _cleanQuestionTitle(qMeta.title || qMeta.cleanTitle || qId, r.answers || {}, survey),
+          questionTitle: cleanQTitle,
           enumerator,
           submittedAt: r.submittedAt || r.createdAt || '',
-          county,
+          location: locationVal,
+          county: locationVal, // backward-compatible alias (empty string if none; never 'Kenya')
           segment: segmentVal,
           text: rawText,
           translatedText: translatedText || null,
@@ -947,13 +1481,17 @@
 
         records.push(record);
 
-        // Update Theme x Sentiment and Theme x Segment accumulators
+        const quoteQuality = Math.min(rawText.length, 180) / 180 + Math.abs(signals.sentimentScore) * 0.6 + (signals.isActionable ? 0.35 : 0);
+
+        // Theme x Sentiment & Theme x Segment accumulators
         assignedThemes.forEach((th) => {
           if (!themeAgg[th.id]) {
             themeAgg[th.id] = {
               id: th.id,
               name: th.name,
               color: th.color,
+              isCustom: Boolean(th.isCustom),
+              isFallback: Boolean(th.isFallback),
               count: 0,
               positive: 0,
               neutral: 0,
@@ -971,90 +1509,80 @@
           bucket.scoreSum += signals.sentimentScore;
           bucket.countsBySegment[segmentVal] = (bucket.countsBySegment[segmentVal] || 0) + 1;
 
-          // Representative quote heuristic: informative length + clear valence/actionability
-          const quoteQuality = Math.min(rawText.length, 180) / 180 + Math.abs(signals.sentimentScore) * 0.6 + (signals.isActionable ? 0.35 : 0);
           if (quoteQuality > bucket.topQuoteScore) {
             bucket.topQuoteScore = quoteQuality;
             bucket.topQuote = rawText.length > 220 ? `${rawText.slice(0, 217)}...` : rawText;
             bucket.topQuoteRecord = record;
           }
         });
-      };
 
-      // Extract verbatims across all responses
-      safeResponses.forEach((r) => {
-        if (!r || !r.answers || typeof r.answers !== 'object') return;
+        // Layer 3: Per-Question accumulator
+        if (!byQuestionAgg[qId]) {
+          byQuestionOrder.push(qId);
+          byQuestionAgg[qId] = {
+            qId,
+            code: qMeta.code || 'Q',
+            title: genericQTitle || cleanQTitle || qId,
+            count: 0,
+            positive: 0,
+            neutral: 0,
+            negative: 0,
+            scoreSum: 0,
+            actionableCount: 0,
+            highUrgencyCount: 0,
+            termFreq: Object.create(null),
+            docFreq: Object.create(null),
+            bigramSet: new Set(),
+            topQuote: '',
+            topQuoteScore: -1
+          };
+        }
+        const qBucket = byQuestionAgg[qId];
+        qBucket.count++;
+        qBucket[signals.sentiment]++;
+        qBucket.scoreSum += signals.sentimentScore;
+        if (signals.isActionable) qBucket.actionableCount++;
+        if (signals.urgency === 'high') qBucket.highUrgencyCount++;
 
-        if (survey && targetQuestions.length > 0) {
-          targetQuestions.forEach((q) => {
-            const text = _extractTextValue(r.answers[q.id]);
-            if (text) {
-              processEntry(r, q, text);
-            }
-          });
-        } else {
-          // Legacy single-question or heuristic extraction
-          const fallbackKeys = [
-            requestedQId && requestedQId !== 'all' ? requestedQId : null,
-            'q_field_notes', 'q_verbatim', 'qe_takeaway', 'qd_notes'
-          ].filter(Boolean);
-
-          let matchedKey = null;
-          let text = '';
-          for (let i = 0; i < fallbackKeys.length; i++) {
-            const k = fallbackKeys[i];
-            const extracted = _extractTextValue(r.answers[k]);
-            if (extracted) {
-              matchedKey = k;
-              text = extracted;
-              break;
-            }
-          }
-
-          if (!text) {
-            for (const [k, v] of Object.entries(r.answers)) {
-              if (typeof v === 'string' && v.trim().length >= 15 && !/^\d{4}-\d{2}-\d{2}/.test(v.trim()) && !v.startsWith('data:')) {
-                matchedKey = k;
-                text = v.trim();
-                break;
-              }
-            }
-          }
-
-          if (text) {
-            processEntry(r, { id: matchedKey || 'q_field_notes', code: 'Note', title: 'Field Note' }, text);
+        const qDocTerms = new Set();
+        for (let t = 0; t < cleanTokens.length; t++) {
+          const w = cleanTokens[t];
+          qBucket.termFreq[w] = (qBucket.termFreq[w] || 0) + 1;
+          qDocTerms.add(w);
+          if (t < cleanTokens.length - 1) {
+            const bg = `${w} ${cleanTokens[t + 1]}`;
+            qBucket.termFreq[bg] = (qBucket.termFreq[bg] || 0) + 1;
+            qDocTerms.add(bg);
+            qBucket.bigramSet.add(bg);
           }
         }
-      });
+        qDocTerms.forEach((term) => {
+          qBucket.docFreq[term] = (qBucket.docFreq[term] || 0) + 1;
+        });
 
-      const totalAnalyzed = records.length;
+        if (quoteQuality > qBucket.topQuoteScore) {
+          qBucket.topQuoteScore = quoteQuality;
+          qBucket.topQuote = rawText.length > 220 ? `${rawText.slice(0, 217)}...` : rawText;
+        }
+      }
 
-      // Build TF-IDF topTerms (max 30)
-      const topTerms = Object.keys(termFreq)
-        .map((term) => {
-          const tf = termFreq[term];
-          const df = docFreq[term] || 1;
-          const idf = 1 + Math.log((totalAnalyzed + 1) / (df + 1));
-          const isBigram = bigramSet.has(term);
-          const score = Number((tf * idf * (isBigram ? 1.25 : 1.0)).toFixed(3));
-          return { term, count: tf, df, score, isBigram };
-        })
-        .filter((item) => item.count >= 1 && (!item.isBigram || item.count >= 2 || totalAnalyzed <= 6))
-        .sort((a, b) => (b.score - a.score) || (b.count - a.count))
-        .slice(0, 30);
+      // Build overall TF-IDF topTerms (max 30)
+      const topTerms = _buildTopTermsFromCounts(termFreq, docFreq, bigramSet, totalAnalyzed, 30);
 
-      // Build sorted themes array (auto-pruned to >= 1 hit)
+      // Build sorted themes array (custom + discovered, General Feedback last)
       const themes = Object.values(themeAgg)
         .filter((t) => t.count >= 1)
         .sort((a, b) => {
-          if (a.id === OTHER_THEME.id && b.id !== OTHER_THEME.id) return 1;
-          if (b.id === OTHER_THEME.id && a.id !== OTHER_THEME.id) return -1;
+          if (a.id === GENERAL_THEME.id && b.id !== GENERAL_THEME.id) return 1;
+          if (b.id === GENERAL_THEME.id && a.id !== GENERAL_THEME.id) return -1;
           return b.count - a.count;
         })
         .map((t) => ({
           id: t.id,
           name: t.name,
           color: t.color,
+          isCustom: t.isCustom,
+          isFallback: t.isFallback,
           count: t.count,
           pct: totalAnalyzed > 0 ? Number(((t.count / totalAnalyzed) * 100).toFixed(1)) : 0,
           positive: t.positive,
@@ -1082,8 +1610,37 @@
           themeId: t.id,
           theme: t.name,
           color: t.color,
+          isCustom: t.isCustom,
           countsBySegment,
           total: t.count
+        };
+      });
+
+      // Build Layer 3: Per-Question Verbatim Breakdown in survey question order
+      const surveyOrderIds = targetQuestions.map((q) => q.id);
+      const orderedQIds = surveyOrderIds.length > 0
+        ? [
+            ...surveyOrderIds.filter((id) => Boolean(byQuestionAgg[id])),
+            ...byQuestionOrder.filter((id) => !surveyOrderIds.includes(id))
+          ]
+        : byQuestionOrder;
+
+      const byQuestion = orderedQIds.map((qId) => {
+        const qb = byQuestionAgg[qId];
+        return {
+          qId: qb.qId,
+          code: qb.code,
+          title: qb.title,
+          count: qb.count,
+          positive: qb.positive,
+          neutral: qb.neutral,
+          negative: qb.negative,
+          netSentiment: qb.count > 0 ? Math.round(((qb.positive - qb.negative) / qb.count) * 100) : 0,
+          avgSentimentScore: qb.count > 0 ? Number((qb.scoreSum / qb.count).toFixed(2)) : 0,
+          actionableCount: qb.actionableCount,
+          highUrgencyCount: qb.highUrgencyCount,
+          topTerms: _buildTopTermsFromCounts(qb.termFreq, qb.docFreq, qb.bigramSet, qb.count, 8),
+          topQuote: qb.topQuote
         };
       });
 
@@ -1091,6 +1648,7 @@
         totalAnalyzed,
         questionId: requestedQId,
         textQuestions,
+        byQuestion,
         sentimentSummary: {
           positive: totalPos,
           negative: totalNeg,
@@ -1101,6 +1659,13 @@
           urgentMediumCount: totalUrgentMedium
         },
         themes,
+        customThemes,
+        discoveredThemes: discoveredThemes.map((t) => ({
+          id: t.id,
+          name: t.name,
+          color: t.color,
+          keywords: t.keywords
+        })),
         themeBySegment: {
           segmentQId: segConfig.segmentQId,
           segmentLabel: segConfig.segmentLabel,
@@ -1166,7 +1731,6 @@
         ? `Across ${total} verbatim response${total === 1 ? '' : 's'}, sentiment is ${toneLabel} (${posPct}% positive, ${negPct}% negative), led by ${leadThemesText}.`
         : `Across ${total} verbatim response${total === 1 ? '' : 's'}, sentiment is ${toneLabel} (${posPct}% positive, ${negPct}% negative).`;
 
-      // Rank top 5 actionable recommendations (diverse across themes)
       const actionablePool = (safeAnalysis.records || [])
         .filter((r) => r.isActionable)
         .map((r) => ({
@@ -1200,7 +1764,6 @@
         });
       }
 
-      // Rank top 5 urgent alerts (high first, then medium negative)
       const urgentPool = (safeAnalysis.records || [])
         .filter((r) => r.urgency === 'high' || (r.urgency === 'medium' && r.sentiment === 'negative'))
         .sort((a, b) => {
@@ -1257,7 +1820,6 @@
         `Actionability & risk: ${ss.actionableCount || actionableRecommendations.length} actionable suggestions identified and ${ss.urgentHighCount || 0} high-urgency alert${(ss.urgentHighCount || 0) === 1 ? '' : 's'} flagged.`
       );
 
-      // Compose clean copy-pasteable plainTextReport
       const lines = [
         `EXECUTIVE VERBATIM BRIEFING — ${surveyTitle}`,
         `Generated: ${new Date().toISOString().slice(0, 10)} | Sample: ${total} verbatims`,
@@ -1304,7 +1866,7 @@
     },
 
     // ------------------------------------------------------------------------
-    // 8. Pinned Quotes Persistence (localStorage with in-memory fallback)
+    // 10. Pinned Quotes Persistence (localStorage with in-memory fallback)
     // ------------------------------------------------------------------------
     getPinnedQuotes(surveyId) {
       const storageKey = _pinStorageKey(surveyId);
@@ -1353,7 +1915,7 @@
     },
 
     // ------------------------------------------------------------------------
-    // 9. Hybrid Cloud GAS Helpers (BATCH_TRANSLATE & ANALYZE_VERBATIMS_AI)
+    // 11. Hybrid Cloud GAS Helpers (BATCH_TRANSLATE & ANALYZE_VERBATIMS_AI)
     // ------------------------------------------------------------------------
     async translateVerbatimsViaGAS(records, targetLang = 'en', options = {}) {
       const safeRecords = Array.isArray(records) ? records : [];
@@ -1378,7 +1940,6 @@
         };
       }
 
-      // Deduplicate non-empty verbatim strings (capped at 150 per GAS batch)
       const items = [];
       const uniqueTexts = [];
       const textIndexMap = new Map();
@@ -1450,7 +2011,6 @@
           }
         }
 
-        // Also map by recordKey for direct lookup in analyzeVerbatims()
         items.forEach(({ key, rawText }) => {
           if (translations[rawText]) {
             translations[key] = translations[rawText];
@@ -1501,11 +2061,13 @@
 
       const sample = records.slice(0, 80).map((r) => ({
         id: r.id,
-        question: r.questionCode || r.questionTitle || 'Q',
+        question: r.questionCode || 'Q',
+        questionTitle: r.questionTitle || r.questionCode || 'Q',
         text: String(r.translatedText || r.text || '').slice(0, 350),
         sentiment: r.sentiment,
         themes: r.themeNames || [],
-        segment: r.segment || ''
+        segment: r.segment || '',
+        location: r.location || ''
       }));
 
       try {
@@ -1514,7 +2076,7 @@
           syncToken: cfg.syncToken,
           deviceId: cfg.deviceId,
           surveyId: (survey && survey.id) || '',
-          surveyTitle: (survey && survey.title) || 'AE Survey',
+          surveyTitle: (survey && survey.title) || 'Survey',
           verbatims: sample,
           summaryStats: {
             total: analysis.totalAnalyzed,
