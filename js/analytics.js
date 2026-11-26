@@ -1280,7 +1280,7 @@ if (!window.AETeXtEngine) {
 // ============================================================================
 window.AEAnalytics = {
   // Navigation & Sub-Tabs
-  activeTab: 'summary', // 'summary' | 'insights' | 'crosstab' | 'correlations' | 'text' | 'individual' | 'gps'
+  activeTab: 'summary', // 'summary' | 'insights' | 'longitudinal' | 'crosstab' | 'correlations' | 'text' | 'individual' | 'gps'
   
   // Multi-Dimensional Filter State
   filterState: {
@@ -1328,6 +1328,9 @@ window.AEAnalytics = {
   selectedAnovaOutcome: null,
   selectedAnovaGroup: null,
   selectedSpatialMetric: null,
+  waveMode: 'date_split', // 'date_split' | 'cross_survey'
+  waveSplitDate: '',
+  waveCompareSurveyId: '',
   questionSubTabs: {}, // qId -> 'chart' | 'table' | 'stats' | 'verbatim'
   questionChartTypes: {}, // qId -> 'horizontalBar' | 'bar' | 'doughnut'
   chartInstances: {}, // qId -> Chart.js instance
@@ -1339,6 +1342,7 @@ window.AEAnalytics = {
     const questions = window.aeStore.getQuestionsForSurvey(survey);
     return questions.filter((q) =>
       q.type === 'number_yield' ||
+      q.type === 'calculated' ||
       q.type === 'nps' ||
       q.type === 'star_rating' ||
       (q.type === 'short_text' && /yield|cost|price|income|acres|hectares|amount|quantity|size|score|rating|age|tenure|duration|temp|members|kg/i.test(q.title || ''))
@@ -1850,6 +1854,21 @@ window.AEAnalytics = {
     if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
   },
 
+  setWaveMode(mode) {
+    this.waveMode = mode === 'cross_survey' ? 'cross_survey' : 'date_split';
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setWaveSplitDate(dateStr) {
+    this.waveSplitDate = String(dateStr || '').trim();
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setWaveCompareSurvey(surveyId) {
+    this.waveCompareSurveyId = String(surveyId || '').trim();
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
   togglePinVerbatim(surveyId, key) {
     if (!surveyId || !key || !window.AETeXtEngine || typeof window.AETeXtEngine.togglePinQuote !== 'function') return;
     window.AETeXtEngine.togglePinQuote(surveyId, key);
@@ -2173,6 +2192,7 @@ window.AEAnalytics = {
       nps: 'Net Promoter Score',
       matrix: 'Likert matrix',
       number_yield: 'Numerical metric',
+      calculated: 'Calculated formula',
       gps_location: 'GPS coordinates',
       date_time: 'Date',
       short_text: 'Short text',
@@ -2453,6 +2473,8 @@ window.AEAnalytics = {
             ${
               this.activeTab === 'insights'
                 ? this.renderInsightsTab(survey, filtered)
+                : this.activeTab === 'longitudinal'
+                ? this.renderLongitudinalTab(survey, filtered)
                 : this.activeTab === 'regression'
                 ? this.renderRegressionTab(survey, filtered)
                 : this.activeTab === 'impact'
@@ -2925,6 +2947,7 @@ window.AEAnalytics = {
         name: 'Analysis',
         tabs: [
           { id: 'insights', label: 'Key Findings' },
+          { id: 'longitudinal', label: 'Wave Comparison', icon: 'fa-chart-line' },
           { id: 'regression', label: 'Regression (OLS)' },
           { id: 'impact', label: 'Causal Impact' },
           { id: 'anova', label: 'Group Comparison' },
@@ -2969,7 +2992,7 @@ window.AEAnalytics = {
                               ? 'bg-[#141A17] text-white font-semibold'
                               : 'bg-[#F8F9F8] text-[#525B56] hover:text-[#111613] hover:bg-[#EAECE9]'
                           }">
-                          <span>${t.label}</span>
+                          ${t.icon ? `<i class="fa-solid ${t.icon} mr-1.5 text-[11px] opacity-80"></i>` : ''}<span>${t.label}</span>
                         </button>
                       `
                     )
@@ -6160,6 +6183,900 @@ window.AEAnalytics = {
   },
 
   // --------------------------------------------------------------------------
+  // TAB: LONGITUDINAL WAVE / PRE-POST COMPARISON (BASELINE VS. ENDLINE)
+  // --------------------------------------------------------------------------
+  _normalizeWaveQuestionTitle(q, survey) {
+    const clean = this.cleanQuestionTitle(q, {}, survey);
+    return String(clean || q?.id || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  },
+
+  _isWaveNumericQuestion(q) {
+    if (!q) return false;
+    return (
+      q.type === 'number_yield' ||
+      q.type === 'number' ||
+      q.type === 'calculated' ||
+      q.type === 'nps' ||
+      q.type === 'star_rating' ||
+      q.type === 'rating' ||
+      (q.type === 'short_text' &&
+        /yield|cost|price|income|acres|hectares|amount|quantity|size|score|rating|age|tenure|duration|temp|members|kg/i.test(
+          q.title || ''
+        ))
+    );
+  },
+
+  _isWaveChoiceQuestion(q) {
+    if (!q) return false;
+    return (
+      q.type === 'multiple_choice' ||
+      q.type === 'single_choice' ||
+      q.type === 'radio' ||
+      q.type === 'dropdown' ||
+      q.type === 'select' ||
+      q.type === 'checkboxes' ||
+      q.type === 'cascading_dropdown'
+    );
+  },
+
+  _extractWaveChoiceValues(raw) {
+    if (raw === undefined || raw === null || raw === '') return [];
+    if (Array.isArray(raw)) {
+      return raw
+        .map((item) => {
+          if (item && typeof item === 'object') {
+            return String(item.level1 || item.label || item.name || item.value || '').trim();
+          }
+          return String(item ?? '').trim();
+        })
+        .filter(Boolean);
+    }
+    if (typeof raw === 'object') {
+      const val = String(raw.level1 || raw.label || raw.name || raw.value || '').trim();
+      return val ? [val] : [];
+    }
+    const str = String(raw).trim();
+    return str ? [str] : [];
+  },
+
+  _formatWaveNumber(val) {
+    if (val === null || val === undefined || isNaN(val)) return '—';
+    const abs = Math.abs(val);
+    if (abs >= 100) return Math.round(val).toLocaleString();
+    if (abs >= 10) return Number(val.toFixed(1)).toLocaleString(undefined, { maximumFractionDigits: 1 });
+    return Number(val.toFixed(2)).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  },
+
+  _formatWavePValue(pVal) {
+    if (pVal === null || pVal === undefined || isNaN(pVal)) return '—';
+    if (pVal < 0.001) return 'p < 0.001';
+    return `p = ${Number(pVal).toFixed(4)}`;
+  },
+
+  _computeLongitudinalData(survey, responses) {
+    const mode = this.waveMode === 'cross_survey' ? 'cross_survey' : 'date_split';
+    const currentUser =
+      window.AESession && typeof window.AESession.getCurrentUser === 'function'
+        ? window.AESession.getCurrentUser()
+        : null;
+
+    const allSurveys =
+      window.aeStore && typeof window.aeStore.getSurveysForUser === 'function'
+        ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
+        : window.aeStore && Array.isArray(window.aeStore.surveys)
+        ? window.aeStore.surveys
+        : [];
+    const otherSurveys = allSurveys.filter((s) => s && s.id !== survey.id);
+
+    let wave1Responses = [];
+    let wave2Responses = [];
+    let wave1Label = 'Wave 1 (Baseline)';
+    let wave2Label = 'Wave 2 (Endline)';
+    let effectiveSplitDate = '';
+    let compareSurvey = null;
+
+    if (mode === 'cross_survey') {
+      compareSurvey =
+        otherSurveys.find((s) => s.id === this.waveCompareSurveyId) || otherSurveys[0] || null;
+      wave1Responses = Array.isArray(responses) ? responses : [];
+      wave2Responses =
+        compareSurvey && window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+          ? window.aeStore.getResponsesForSurvey(compareSurvey.id, currentUser) || []
+          : [];
+      wave1Label = survey.title || 'Baseline Survey';
+      wave2Label = compareSurvey ? compareSurvey.title || 'Endline Survey' : 'Select Comparison Survey';
+    } else {
+      const dated = (responses || []).map((r, idx) => {
+        const rawTs = r.submittedAt || r.startedAt || r.createdAt || '';
+        const ms = rawTs ? Date.parse(rawTs) : NaN;
+        return { r, idx, ms: isNaN(ms) ? null : ms };
+      });
+      const validDated = dated.filter((d) => d.ms !== null).sort((a, b) => a.ms - b.ms);
+
+      let splitMs = null;
+      let sameDaySplit = false;
+
+      if (this.waveSplitDate && /^\d{4}-\d{2}-\d{2}$/.test(this.waveSplitDate)) {
+        effectiveSplitDate = this.waveSplitDate;
+        const parsed = Date.parse(`${effectiveSplitDate}T00:00:00.000Z`);
+        splitMs = isNaN(parsed) ? null : parsed;
+      } else if (validDated.length >= 2) {
+        const minMs = validDated[0].ms;
+        const maxMs = validDated[validDated.length - 1].ms;
+        const minDay = Math.floor(minMs / 86400000);
+        const maxDay = Math.floor(maxMs / 86400000);
+        if (maxDay > minDay) {
+          const midDay = Math.ceil((minDay + maxDay) / 2);
+          splitMs = midDay * 86400000;
+          effectiveSplitDate = new Date(splitMs).toISOString().slice(0, 10);
+        } else {
+          sameDaySplit = true;
+          splitMs = Math.round((minMs + maxMs) / 2);
+          effectiveSplitDate = new Date(minMs).toISOString().slice(0, 10);
+        }
+      } else if (validDated.length === 1) {
+        effectiveSplitDate = new Date(validDated[0].ms).toISOString().slice(0, 10);
+        splitMs = validDated[0].ms + 1;
+      }
+
+      if (sameDaySplit && validDated.length >= 2) {
+        const half = Math.ceil(validDated.length / 2);
+        wave1Responses = validDated.slice(0, half).map((d) => d.r);
+        wave2Responses = validDated.slice(half).map((d) => d.r);
+        wave1Label = `Wave 1 (First ${wave1Responses.length})`;
+        wave2Label = `Wave 2 (Latest ${wave2Responses.length})`;
+      } else if (splitMs !== null) {
+        dated.forEach((d) => {
+          if (d.ms === null) return;
+          if (d.ms < splitMs) wave1Responses.push(d.r);
+          else wave2Responses.push(d.r);
+        });
+        wave1Label = effectiveSplitDate ? `Wave 1 (Before ${effectiveSplitDate})` : 'Wave 1 (Baseline)';
+        wave2Label = effectiveSplitDate ? `Wave 2 (From ${effectiveSplitDate})` : 'Wave 2 (Endline)';
+      } else {
+        wave1Responses = Array.isArray(responses) ? responses : [];
+        wave2Responses = [];
+      }
+    }
+
+    const q1List =
+      window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+        ? window.aeStore.getQuestionsForSurvey(survey) || []
+        : (survey.pages || []).flatMap((p) => p.questions || []);
+    const wave2Survey = mode === 'cross_survey' && compareSurvey ? compareSurvey : survey;
+    const q2List =
+      mode === 'cross_survey'
+        ? compareSurvey && window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+          ? window.aeStore.getQuestionsForSurvey(compareSurvey) || []
+          : (compareSurvey?.pages || []).flatMap((p) => p.questions || [])
+        : q1List;
+
+    const numMap = this.getQuestionDisplayMap(q1List);
+
+    // Match questions across waves (by q.id first, then normalized title in cross-survey mode)
+    const matchedPairs = [];
+    const usedQ2Ids = new Set();
+    const q2ById = new Map();
+    const q2ByNormTitle = new Map();
+
+    q2List.forEach((q2) => {
+      if (!q2) return;
+      q2ById.set(q2.id, q2);
+      const norm = this._normalizeWaveQuestionTitle(q2, wave2Survey);
+      if (norm && !q2ByNormTitle.has(norm)) q2ByNormTitle.set(norm, q2);
+    });
+
+    q1List.forEach((q1, idx) => {
+      if (!q1) return;
+      let q2 = null;
+      let matchType = 'id';
+      if (mode === 'date_split') {
+        q2 = q1;
+      } else {
+        const byId = q2ById.get(q1.id);
+        if (byId && !usedQ2Ids.has(byId.id)) {
+          q2 = byId;
+          matchType = 'id';
+        } else {
+          const norm1 = this._normalizeWaveQuestionTitle(q1, survey);
+          const byTitle = norm1 ? q2ByNormTitle.get(norm1) : null;
+          if (byTitle && !usedQ2Ids.has(byTitle.id)) {
+            q2 = byTitle;
+            matchType = 'title';
+          }
+        }
+      }
+      if (!q2) return;
+      usedQ2Ids.add(q2.id);
+
+      const cleanTitle = this.cleanQuestionTitle(q1, {}, survey) || q1.id;
+      const qLabel = numMap[q1.id]?.label || String(idx + 1);
+
+      if (this._isWaveNumericQuestion(q1) && this._isWaveNumericQuestion(q2)) {
+        const vals1 = wave1Responses
+          .map((r) => this.getContinuousValue(r, q1.id))
+          .filter((v) => v !== null && !isNaN(v));
+        const vals2 = wave2Responses
+          .map((r) => this.getContinuousValue(r, q2.id))
+          .filter((v) => v !== null && !isNaN(v));
+        if (vals1.length === 0 && vals2.length === 0) return;
+
+        const mean1 = vals1.length > 0 ? window.AEStats.mean(vals1) : null;
+        const mean2 = vals2.length > 0 ? window.AEStats.mean(vals2) : null;
+        const delta = mean1 !== null && mean2 !== null ? mean2 - mean1 : null;
+        const pctChange =
+          delta !== null && mean1 !== 0 ? (delta / Math.abs(mean1)) * 100 : null;
+        const welch =
+          vals1.length >= 2 && vals2.length >= 2
+            ? window.AEStats.welchTTest(vals2, vals1)
+            : { tStat: 0, df: 0, pValue: null, isSignificant: false };
+
+        matchedPairs.push({
+          kind: 'numeric',
+          q1,
+          q2,
+          qLabel,
+          title: cleanTitle,
+          unit: q1.unit || q2.unit || '',
+          matchType,
+          n1: vals1.length,
+          n2: vals2.length,
+          mean1,
+          mean2,
+          delta,
+          pctChange,
+          pValue: welch.pValue,
+          tStat: welch.tStat,
+          isSignificant: Boolean(welch.isSignificant)
+        });
+      } else if (this._isWaveChoiceQuestion(q1) && this._isWaveChoiceQuestion(q2)) {
+        const counts1 = {};
+        const counts2 = {};
+        let answered1 = 0;
+        let answered2 = 0;
+
+        wave1Responses.forEach((r) => {
+          const vals = this._extractWaveChoiceValues(r.answers?.[q1.id]);
+          if (vals.length > 0) {
+            answered1++;
+            vals.forEach((v) => {
+              counts1[v] = (counts1[v] || 0) + 1;
+            });
+          }
+        });
+        wave2Responses.forEach((r) => {
+          const vals = this._extractWaveChoiceValues(r.answers?.[q2.id]);
+          if (vals.length > 0) {
+            answered2++;
+            vals.forEach((v) => {
+              counts2[v] = (counts2[v] || 0) + 1;
+            });
+          }
+        });
+
+        const allOptions = Array.from(new Set([...Object.keys(counts1), ...Object.keys(counts2)]));
+        if (allOptions.length === 0) return;
+
+        allOptions.sort((a, b) => {
+          const totB = (counts1[b] || 0) + (counts2[b] || 0);
+          const totA = (counts1[a] || 0) + (counts2[a] || 0);
+          return totB - totA;
+        });
+
+        const topOption = allOptions[0];
+        const w1Count = counts1[topOption] || 0;
+        const w2Count = counts2[topOption] || 0;
+        const w1Pct = answered1 > 0 ? (w1Count / answered1) * 100 : null;
+        const w2Pct = answered2 > 0 ? (w2Count / answered2) * 100 : null;
+        const ppShift = w1Pct !== null && w2Pct !== null ? w2Pct - w1Pct : null;
+
+        matchedPairs.push({
+          kind: 'choice',
+          q1,
+          q2,
+          qLabel,
+          title: cleanTitle,
+          matchType,
+          topOption,
+          n1: answered1,
+          n2: answered2,
+          w1Count,
+          w2Count,
+          w1Pct,
+          w2Pct,
+          ppShift
+        });
+      }
+    });
+
+    const numericRows = matchedPairs.filter((row) => row.kind === 'numeric');
+    const primaryNumeric =
+      numericRows.find((r) => r.q1.id === 'q_yield_kg' && r.mean1 !== null && r.mean2 !== null) ||
+      numericRows.find((r) => r.mean1 !== null && r.mean2 !== null) ||
+      numericRows[0] ||
+      null;
+
+    // Qualitative Theme Evolution via AETeXtEngine
+    const w1Text = window.AETeXtEngine
+      ? window.AETeXtEngine.analyzeVerbatims(wave1Responses, survey, {
+          questionId: 'all',
+          translationsMap: this.verbatimTranslations
+        })
+      : { totalAnalyzed: 0, sentimentSummary: { positive: 0, negative: 0, neutral: 0 }, themes: [] };
+    const w2Text = window.AETeXtEngine
+      ? window.AETeXtEngine.analyzeVerbatims(wave2Responses, wave2Survey, {
+          questionId: 'all',
+          translationsMap: this.verbatimTranslations
+        })
+      : { totalAnalyzed: 0, sentimentSummary: { positive: 0, negative: 0, neutral: 0 }, themes: [] };
+
+    const w1NetSentiment =
+      w1Text.totalAnalyzed > 0
+        ? Math.round(
+            (((w1Text.sentimentSummary?.positive || 0) - (w1Text.sentimentSummary?.negative || 0)) /
+              w1Text.totalAnalyzed) *
+              100
+          )
+        : null;
+    const w2NetSentiment =
+      w2Text.totalAnalyzed > 0
+        ? Math.round(
+            (((w2Text.sentimentSummary?.positive || 0) - (w2Text.sentimentSummary?.negative || 0)) /
+              w2Text.totalAnalyzed) *
+              100
+          )
+        : null;
+    const netSentimentShift =
+      w1NetSentiment !== null && w2NetSentiment !== null ? w2NetSentiment - w1NetSentiment : null;
+
+    const themeMap = new Map();
+    const normThemeKey = (t) => String(t?.name || t?.id || '').toLowerCase().trim();
+
+    (w1Text.themes || []).forEach((t) => {
+      const key = normThemeKey(t);
+      if (!key) return;
+      themeMap.set(key, {
+        name: t.name || t.id,
+        color: t.color || '#247B50',
+        w1Count: Number(t.count || 0),
+        w1Pct: Number(t.pct || 0),
+        w1Net: Number(t.netSentiment || 0),
+        w2Count: 0,
+        w2Pct: 0,
+        w2Net: 0
+      });
+    });
+
+    (w2Text.themes || []).forEach((t) => {
+      const key = normThemeKey(t);
+      if (!key) return;
+      if (!themeMap.has(key)) {
+        themeMap.set(key, {
+          name: t.name || t.id,
+          color: t.color || '#247B50',
+          w1Count: 0,
+          w1Pct: 0,
+          w1Net: 0,
+          w2Count: Number(t.count || 0),
+          w2Pct: Number(t.pct || 0),
+          w2Net: Number(t.netSentiment || 0)
+        });
+      } else {
+        const entry = themeMap.get(key);
+        entry.w2Count = Number(t.count || 0);
+        entry.w2Pct = Number(t.pct || 0);
+        entry.w2Net = Number(t.netSentiment || 0);
+      }
+    });
+
+    const themeShifts = Array.from(themeMap.values())
+      .map((entry) => {
+        const ppDelta = entry.w2Pct - entry.w1Pct;
+        let status = 'Stable';
+        if (entry.w1Count === 0 && entry.w2Count > 0) status = 'New';
+        else if (entry.w1Count > 0 && entry.w2Count === 0) status = 'Resolved';
+        else if (ppDelta >= 5) status = 'Rising';
+        else if (ppDelta <= -5) status = 'Declining';
+        return { ...entry, ppDelta, status };
+      })
+      .sort((a, b) => {
+        const diffAbs = Math.abs(b.ppDelta) - Math.abs(a.ppDelta);
+        if (diffAbs !== 0) return diffAbs;
+        return b.w1Count + b.w2Count - (a.w1Count + a.w2Count);
+      });
+
+    return {
+      mode,
+      otherSurveys,
+      compareSurvey,
+      effectiveSplitDate,
+      wave1Label,
+      wave2Label,
+      wave1Responses,
+      wave2Responses,
+      matchedPairs,
+      primaryNumeric,
+      significantCount: numericRows.filter((r) => r.isSignificant).length,
+      w1Text,
+      w2Text,
+      w1NetSentiment,
+      w2NetSentiment,
+      netSentimentShift,
+      themeShifts
+    };
+  },
+
+  renderLongitudinalTab(survey, responses) {
+    if (!survey) {
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No survey selected for wave comparison.</div>';
+    }
+
+    const escHtml = (v) =>
+      window.AEApp && typeof window.AEApp.escapeHtml === 'function'
+        ? window.AEApp.escapeHtml(v)
+        : String(v ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    const escAttr = (v) =>
+      window.AEApp && typeof window.AEApp.escapeAttr === 'function'
+        ? window.AEApp.escapeAttr(v)
+        : escHtml(v);
+
+    const data = this._computeLongitudinalData(survey, responses || []);
+    const n1 = data.wave1Responses.length;
+    const n2 = data.wave2Responses.length;
+    const totalN = n1 + n2;
+    const w1BarPct = totalN > 0 ? Math.round((n1 / totalN) * 100) : 50;
+    const w2BarPct = totalN > 0 ? Math.max(0, 100 - w1BarPct) : 50;
+
+    // Primary numeric KPI helpers
+    const pm = data.primaryNumeric;
+    const pmDeltaSign = pm && pm.delta !== null && pm.delta > 0 ? '+' : '';
+    const pmPctSign = pm && pm.pctChange !== null && pm.pctChange > 0 ? '+' : '';
+    const pmShiftBadgeClass =
+      !pm || pm.delta === null
+        ? 'bg-[#F4F6F4] text-[#525B56]'
+        : pm.delta > 0
+        ? 'bg-[#DCFAE5] text-[#04250E]'
+        : pm.delta < 0
+        ? 'bg-[#FFEDEA] text-[#831C1E]'
+        : 'bg-[#F4F6F4] text-[#525B56]';
+
+    const sentDeltaSign =
+      data.netSentimentShift !== null && data.netSentimentShift > 0 ? '+' : '';
+    const sentBadgeClass =
+      data.netSentimentShift === null
+        ? 'bg-[#F4F6F4] text-[#525B56]'
+        : data.netSentimentShift > 0
+        ? 'bg-[#DCFAE5] text-[#04250E]'
+        : data.netSentimentShift < 0
+        ? 'bg-[#FFEDEA] text-[#831C1E]'
+        : 'bg-[#F4F6F4] text-[#525B56]';
+
+    const statusBadgeMap = {
+      Rising: 'bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A]',
+      Declining: 'bg-[#F4F6F4] text-[#525B56] border border-[#CFD5D0]',
+      New: 'bg-[#E0F2FE] text-[#075985] border border-[#BAE6FD]',
+      Resolved: 'bg-[#DCFAE5] text-[#04250E] border border-[#247B50]/25',
+      Stable: 'bg-[#F8F9F8] text-[#646E68] border border-[#E4E7E4]'
+    };
+
+    return `
+      <div class="space-y-5">
+        <!-- 1. Control Bar -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-4">
+          <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-[#EFEFEF] pb-4">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="font-display text-base sm:text-lg font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Longitudinal Wave Comparison</h2>
+                <span class="px-2 py-0.5 rounded-[4px] text-[11px] font-medium bg-[#F8FBF9] text-[#247B50] border border-[#247B50]/25">
+                  Baseline vs. Endline
+                </span>
+              </div>
+              <p class="text-xs text-[#525B56] mt-1 leading-relaxed" style="text-wrap: pretty;">
+                Measure score shifts, statistical significance, and open-ended theme evolution across two time periods or separate survey waves.
+              </p>
+            </div>
+
+            <!-- Mode Toggle -->
+            <div class="inline-flex rounded-[6px] border border-[#E4E7E4] p-0.5 bg-[#F8F9F8] text-xs font-medium shrink-0 self-start lg:self-auto">
+              <button type="button" onclick="AEAnalytics.setWaveMode('date_split')"
+                class="px-3 py-1.5 rounded-[4px] ae-press transition-colors ${
+                  data.mode === 'date_split'
+                    ? 'bg-[#141A17] text-white font-semibold'
+                    : 'text-[#525B56] hover:text-[#111613]'
+                }">
+                Date Split (Wave 1 vs. Wave 2)
+              </button>
+              <button type="button" onclick="AEAnalytics.setWaveMode('cross_survey')"
+                class="px-3 py-1.5 rounded-[4px] ae-press transition-colors ${
+                  data.mode === 'cross_survey'
+                    ? 'bg-[#141A17] text-white font-semibold'
+                    : 'text-[#525B56] hover:text-[#111613]'
+                }">
+                Cross-Survey (Baseline vs. Endline)
+              </button>
+            </div>
+          </div>
+
+          <!-- Active Mode Controls -->
+          ${
+            data.mode === 'date_split'
+              ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                  <div class="space-y-1.5">
+                    <label for="ae_wave_split_date" class="text-xs font-medium text-[#525B56] block">Split date (Wave 2 starts on)</label>
+                    <input id="ae_wave_split_date" type="date" value="${escAttr(data.effectiveSplitDate)}"
+                      onchange="AEAnalytics.setWaveSplitDate(this.value)"
+                      class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                  </div>
+                  <div class="md:col-span-2 flex flex-wrap items-center justify-between gap-2 bg-[#FAFBF9] border border-[#EFEFEF] rounded-[6px] px-3.5 py-2 text-xs text-[#525B56]">
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span><strong class="text-[#111613]">Wave 1:</strong> ${escHtml(data.wave1Label)}</span>
+                      <span class="text-[#CFD5D0]">&rarr;</span>
+                      <span><strong class="text-[#111613]">Wave 2:</strong> ${escHtml(data.wave2Label)}</span>
+                    </div>
+                    ${
+                      this.waveSplitDate
+                        ? `<button type="button" onclick="AEAnalytics.setWaveSplitDate('')"
+                            class="text-[11px] font-semibold text-[#247B50] hover:underline">
+                            Reset to midpoint
+                          </button>`
+                        : `<span class="text-[11px] text-[#646E68]">Auto-midpoint</span>`
+                    }
+                  </div>
+                </div>`
+              : `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                  <div class="space-y-1.5">
+                    <label class="text-xs font-medium text-[#525B56] block">Wave 1 — Baseline Survey (Active)</label>
+                    <div class="h-8 px-3 rounded-[6px] border border-[#E4E7E4] bg-[#F8F9F8] text-xs font-semibold text-[#111613] flex items-center truncate">
+                      ${escHtml(survey.title || survey.id)}
+                    </div>
+                  </div>
+                  <div class="space-y-1.5">
+                    <label for="ae_wave_compare_survey" class="text-xs font-medium text-[#525B56] block">Wave 2 — Endline / Follow-Up Survey</label>
+                    ${
+                      data.otherSurveys.length > 0
+                        ? `<select id="ae_wave_compare_survey" onchange="AEAnalytics.setWaveCompareSurvey(this.value)"
+                            class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
+                            ${data.otherSurveys
+                              .map(
+                                (s) =>
+                                  `<option value="${escAttr(s.id)}" ${
+                                    data.compareSurvey && data.compareSurvey.id === s.id ? 'selected' : ''
+                                  }>${escHtml(s.title || s.id)}${s.status === 'Archived' ? ' [Archived]' : ''}</option>`
+                              )
+                              .join('')}
+                          </select>`
+                        : `<div class="h-8 px-3 rounded-[6px] border border-[#FDE68A] bg-[#FFFBEB] text-xs text-[#92400E] flex items-center">
+                            No secondary survey available. Switch to Date Split mode or create an Endline survey.
+                          </div>`
+                    }
+                  </div>
+                </div>`
+          }
+        </div>
+
+        <!-- 2. Wave KPI Summary Strip -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] overflow-hidden">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-[#EFEFEF]">
+            <!-- KPI 1: Sample Sizes -->
+            <div class="p-5 bg-white">
+              <div class="flex items-center justify-between text-xs text-[#525B56]">
+                <span>Sample Sizes</span>
+                <span class="text-[11px] font-medium text-[#646E68] tabular-nums">N = ${totalN}</span>
+              </div>
+              <div class="mt-2.5 flex items-baseline gap-2 tabular-nums">
+                <strong class="text-[22px] font-semibold text-[#111613] leading-none">n&#8321; = ${n1}</strong>
+                <span class="text-xs text-[#646E68]">vs.</span>
+                <strong class="text-[22px] font-semibold text-[#247B50] leading-none">n&#8322; = ${n2}</strong>
+              </div>
+              <div class="w-full bg-[#EAECE9] h-1.5 rounded-full mt-3 overflow-hidden flex">
+                <div class="bg-[#141A17] h-full" style="width: ${w1BarPct}%;"></div>
+                <div class="bg-[#247B50] h-full" style="width: ${w2BarPct}%;"></div>
+              </div>
+              <div class="text-[11px] text-[#646E68] mt-1.5 flex items-center justify-between gap-2 truncate">
+                <span class="truncate">${escHtml(data.wave1Label)}</span>
+                <span class="truncate text-right">${escHtml(data.wave2Label)}</span>
+              </div>
+            </div>
+
+            <!-- KPI 2: Primary Numeric / Rating Mean Shift -->
+            <div class="p-5 bg-white">
+              <div class="flex items-center justify-between gap-2 text-xs text-[#525B56]">
+                <span class="truncate">${pm ? escHtml(pm.title) : 'Primary Numeric Shift'}</span>
+                ${
+                  pm && pm.pValue !== null
+                    ? `<span class="px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium shrink-0 ${
+                        pm.isSignificant
+                          ? 'bg-[#DCFAE5] text-[#04250E]'
+                          : 'bg-[#F4F6F4] text-[#646E68]'
+                      }">${pm.isSignificant ? 'Significant' : 'Not Sig.'}</span>`
+                    : ''
+                }
+              </div>
+              ${
+                pm && pm.mean1 !== null && pm.mean2 !== null
+                  ? `<div class="mt-2.5 flex items-baseline gap-2 flex-wrap tabular-nums">
+                      <strong class="text-[22px] font-semibold text-[#111613] leading-none">
+                        ${pmDeltaSign}${this._formatWaveNumber(pm.delta)}${pm.unit ? ` ${escHtml(pm.unit)}` : ''}
+                      </strong>
+                      ${
+                        pm.pctChange !== null
+                          ? `<span class="px-1.5 py-0.5 rounded-[4px] text-[11px] font-semibold ${pmShiftBadgeClass}">
+                              ${pmPctSign}${pm.pctChange.toFixed(1)}%
+                            </span>`
+                          : ''
+                      }
+                    </div>
+                    <div class="text-[11px] text-[#646E68] mt-3 flex items-center justify-between gap-2 tabular-nums">
+                      <span>${this._formatWaveNumber(pm.mean1)} &rarr; ${this._formatWaveNumber(pm.mean2)}</span>
+                      <span class="font-medium text-[#111613]">${this._formatWavePValue(pm.pValue)}</span>
+                    </div>`
+                  : `<div class="mt-2.5 text-sm font-medium text-[#646E68]">Insufficient wave data</div>
+                    <div class="text-[11px] text-[#8C9590] mt-3">Requires responses in both Wave 1 &amp; Wave 2</div>`
+              }
+            </div>
+
+            <!-- KPI 3: Verbatim Net-Sentiment Shift -->
+            <div class="p-5 bg-white">
+              <div class="flex items-center justify-between gap-2 text-xs text-[#525B56]">
+                <span>Verbatim Net Sentiment</span>
+                <span class="text-[11px] text-[#646E68] tabular-nums">${data.w1Text.totalAnalyzed} &rarr; ${data.w2Text.totalAnalyzed} notes</span>
+              </div>
+              ${
+                data.w1NetSentiment !== null && data.w2NetSentiment !== null
+                  ? `<div class="mt-2.5 flex items-baseline gap-2 tabular-nums">
+                      <strong class="text-[22px] font-semibold text-[#111613] leading-none">
+                        ${data.w2NetSentiment > 0 ? '+' : ''}${data.w2NetSentiment}%
+                      </strong>
+                      <span class="px-1.5 py-0.5 rounded-[4px] text-[11px] font-semibold ${sentBadgeClass}">
+                        ${sentDeltaSign}${data.netSentimentShift} pp
+                      </span>
+                    </div>
+                    <div class="text-[11px] text-[#646E68] mt-3 tabular-nums">
+                      Wave 1: ${data.w1NetSentiment > 0 ? '+' : ''}${data.w1NetSentiment}% &rarr; Wave 2: ${data.w2NetSentiment > 0 ? '+' : ''}${data.w2NetSentiment}%
+                    </div>`
+                  : `<div class="mt-2.5 text-sm font-medium text-[#646E68]">—</div>
+                    <div class="text-[11px] text-[#8C9590] mt-3">Open-ended text needed in both waves</div>`
+              }
+            </div>
+
+            <!-- KPI 4: Matched Questions & Significant Shifts -->
+            <div class="p-5 bg-white">
+              <div class="flex items-center justify-between gap-2 text-xs text-[#525B56]">
+                <span>Matched Questions</span>
+                <span class="px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium bg-[#F8FBF9] text-[#247B50] border border-[#247B50]/20">
+                  ${data.mode === 'cross_survey' ? 'ID / Title Match' : 'Same Instrument'}
+                </span>
+              </div>
+              <div class="mt-2.5 flex items-baseline gap-2 tabular-nums">
+                <strong class="text-[22px] font-semibold text-[#111613] leading-none">${data.matchedPairs.length}</strong>
+                <span class="text-xs text-[#646E68]">tracked metrics</span>
+              </div>
+              <div class="text-[11px] text-[#646E68] mt-3 tabular-nums">
+                <strong class="text-[#247B50]">${data.significantCount}</strong> statistically significant shift${data.significantCount === 1 ? '' : 's'} (p &lt; 0.05)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Question-by-Question Longitudinal Shift Table -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 border-b border-[#EFEFEF] pb-3.5">
+            <div>
+              <h3 class="font-display text-base font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Question-by-Question Longitudinal Shifts</h3>
+              <p class="text-xs text-[#525B56] mt-0.5">
+                Numeric, rating, NPS, and calculated fields report mean shifts (&Delta;) with Welch&rsquo;s t-test; choice questions report top-option share shifts (pp).
+              </p>
+            </div>
+            <span class="text-xs text-[#646E68] tabular-nums shrink-0">${data.matchedPairs.length} matched question${data.matchedPairs.length === 1 ? '' : 's'}</span>
+          </div>
+
+          ${
+            data.matchedPairs.length === 0
+              ? `<div class="p-8 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-[#EFEFEF] rounded-[6px]">
+                  No comparable numeric or choice questions with responses were found across the two selected waves.
+                </div>`
+              : `<div class="overflow-x-auto border border-[#E4E7E4] rounded-[6px]">
+                  <table class="w-full text-xs text-left">
+                    <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
+                      <tr>
+                        <th class="p-3 font-semibold">Question</th>
+                        <th class="p-3 font-semibold text-right">Wave 1 (Baseline)</th>
+                        <th class="p-3 font-semibold text-right">Wave 2 (Endline)</th>
+                        <th class="p-3 font-semibold text-right">Shift (&Delta; / pp)</th>
+                        <th class="p-3 font-semibold text-right">Significance</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#EFEFEF]">
+                      ${data.matchedPairs
+                        .map((row) => {
+                          if (row.kind === 'numeric') {
+                            const unitSuffix = row.unit ? ` ${escHtml(row.unit)}` : '';
+                            const dSign = row.delta !== null && row.delta > 0 ? '+' : '';
+                            const shiftClass =
+                              row.delta === null
+                                ? 'bg-[#F4F6F4] text-[#646E68]'
+                                : row.delta > 0
+                                ? 'bg-[#DCFAE5] text-[#04250E]'
+                                : row.delta < 0
+                                ? 'bg-[#FFEDEA] text-[#831C1E]'
+                                : 'bg-[#F4F6F4] text-[#525B56]';
+                            const pBadge =
+                              row.pValue === null
+                                ? '<span class="text-[11px] text-[#8C9590]">Insufficient n</span>'
+                                : `<div class="inline-flex items-center gap-1.5 justify-end tabular-nums">
+                                    <span class="font-mono text-[11px] text-[#525B56]">${this._formatWavePValue(row.pValue)}</span>
+                                    <span class="px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold ${
+                                      row.isSignificant
+                                        ? 'bg-[#DCFAE5] text-[#04250E]'
+                                        : 'bg-[#F4F6F4] text-[#646E68]'
+                                    }">${row.isSignificant ? 'Sig.' : 'NS'}</span>
+                                  </div>`;
+                            return `
+                              <tr class="hover:bg-[#FAFBF9]">
+                                <td class="p-3">
+                                  <div class="flex items-start gap-2">
+                                    <span class="px-1.5 py-0.5 rounded-[4px] bg-[#F4F6F4] border border-[#E4E7E4] text-[#247B50] text-[10.5px] font-semibold tabular-nums shrink-0">Q${escHtml(row.qLabel)}</span>
+                                    <div class="min-w-0">
+                                      <div class="font-medium text-[#111613] leading-snug">${escHtml(row.title)}</div>
+                                      <div class="text-[10.5px] text-[#646E68] mt-0.5">${escHtml(this.formatQuestionTypeLabel(row.q1.type))}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td class="p-3 text-right tabular-nums">
+                                  <div class="font-semibold text-[#111613]">${this._formatWaveNumber(row.mean1)}${row.mean1 !== null ? unitSuffix : ''}</div>
+                                  <div class="text-[10.5px] text-[#646E68]">n = ${row.n1}</div>
+                                </td>
+                                <td class="p-3 text-right tabular-nums">
+                                  <div class="font-semibold text-[#111613]">${this._formatWaveNumber(row.mean2)}${row.mean2 !== null ? unitSuffix : ''}</div>
+                                  <div class="text-[10.5px] text-[#646E68]">n = ${row.n2}</div>
+                                </td>
+                                <td class="p-3 text-right tabular-nums">
+                                  ${
+                                    row.delta !== null
+                                      ? `<span class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold ${shiftClass}">
+                                          ${dSign}${this._formatWaveNumber(row.delta)}${unitSuffix}
+                                        </span>`
+                                      : '<span class="text-[#8C9590]">—</span>'
+                                  }
+                                </td>
+                                <td class="p-3 text-right">${pBadge}</td>
+                              </tr>
+                            `;
+                          }
+
+                          // Choice question row
+                          const ppSign = row.ppShift !== null && row.ppShift > 0 ? '+' : '';
+                          const ppClass =
+                            row.ppShift === null
+                              ? 'bg-[#F4F6F4] text-[#646E68]'
+                              : row.ppShift > 0
+                              ? 'bg-[#DCFAE5] text-[#04250E]'
+                              : row.ppShift < 0
+                              ? 'bg-[#FFEDEA] text-[#831C1E]'
+                              : 'bg-[#F4F6F4] text-[#525B56]';
+
+                          return `
+                            <tr class="hover:bg-[#FAFBF9]">
+                              <td class="p-3">
+                                <div class="flex items-start gap-2">
+                                  <span class="px-1.5 py-0.5 rounded-[4px] bg-[#F4F6F4] border border-[#E4E7E4] text-[#247B50] text-[10.5px] font-semibold tabular-nums shrink-0">Q${escHtml(row.qLabel)}</span>
+                                  <div class="min-w-0">
+                                    <div class="font-medium text-[#111613] leading-snug">${escHtml(row.title)}</div>
+                                    <div class="text-[10.5px] text-[#646E68] mt-0.5">
+                                      Top option: <strong class="text-[#111613]">${escHtml(row.topOption)}</strong>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td class="p-3 text-right tabular-nums">
+                                <div class="font-semibold text-[#111613]">${row.w1Pct !== null ? `${row.w1Pct.toFixed(1)}%` : '—'}</div>
+                                <div class="text-[10.5px] text-[#646E68]">${row.w1Count} / ${row.n1}</div>
+                              </td>
+                              <td class="p-3 text-right tabular-nums">
+                                <div class="font-semibold text-[#111613]">${row.w2Pct !== null ? `${row.w2Pct.toFixed(1)}%` : '—'}</div>
+                                <div class="text-[10.5px] text-[#646E68]">${row.w2Count} / ${row.n2}</div>
+                              </td>
+                              <td class="p-3 text-right tabular-nums">
+                                ${
+                                  row.ppShift !== null
+                                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold ${ppClass}">
+                                        ${ppSign}${row.ppShift.toFixed(1)} pp
+                                      </span>`
+                                    : '<span class="text-[#8C9590]">—</span>'
+                                }
+                              </td>
+                              <td class="p-3 text-right text-[11px] text-[#646E68]">Top-option share</td>
+                            </tr>
+                          `;
+                        })
+                        .join('')}
+                    </tbody>
+                  </table>
+                </div>`
+          }
+        </div>
+
+        <!-- 4. Qualitative Theme Evolution Comparison -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 border-b border-[#EFEFEF] pb-3.5">
+            <div>
+              <h3 class="font-display text-base font-semibold text-[#111613]" style="font-family: 'Fraunces', Georgia, serif;">Qualitative Theme Evolution</h3>
+              <p class="text-xs text-[#525B56] mt-0.5">
+                How open-ended feedback topics shifted between Wave 1 (${data.w1Text.totalAnalyzed} verbatims) and Wave 2 (${data.w2Text.totalAnalyzed} verbatims).
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+              <span class="px-2 py-0.5 rounded-[4px] ${statusBadgeMap.Rising}">Rising</span>
+              <span class="px-2 py-0.5 rounded-[4px] ${statusBadgeMap.Declining}">Declining</span>
+              <span class="px-2 py-0.5 rounded-[4px] ${statusBadgeMap.New}">New</span>
+              <span class="px-2 py-0.5 rounded-[4px] ${statusBadgeMap.Resolved}">Resolved</span>
+            </div>
+          </div>
+
+          ${
+            data.themeShifts.length === 0
+              ? `<div class="p-8 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-[#EFEFEF] rounded-[6px]">
+                  No open-ended verbatims found in either wave to compare theme evolution.
+                </div>`
+              : `<div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  ${data.themeShifts
+                    .slice(0, 12)
+                    .map((t) => {
+                      const deltaSign = t.ppDelta > 0 ? '+' : '';
+                      const statusCls = statusBadgeMap[t.status] || statusBadgeMap.Stable;
+                      return `
+                        <div class="p-4 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2.5">
+                          <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                              <div class="text-xs font-semibold text-[#111613] truncate">${escHtml(t.name)}</div>
+                              <div class="text-[11px] text-[#646E68] tabular-nums mt-0.5">
+                                Wave 1: ${t.w1Pct}% (${t.w1Count}) &rarr; Wave 2: ${t.w2Pct}% (${t.w2Count})
+                              </div>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                              <span class="text-[11px] font-semibold tabular-nums ${
+                                t.ppDelta > 0 ? 'text-[#247B50]' : t.ppDelta < 0 ? 'text-[#831C1E]' : 'text-[#646E68]'
+                              }">${deltaSign}${t.ppDelta} pp</span>
+                              <span class="px-2 py-0.5 rounded-[4px] text-[10.5px] font-medium ${statusCls}">${escHtml(t.status)}</span>
+                            </div>
+                          </div>
+
+                          <div class="space-y-1.5">
+                            <div class="flex items-center gap-2 text-[10.5px] text-[#525B56] tabular-nums">
+                              <span class="w-12 shrink-0">Wave 1</span>
+                              <div class="flex-1 h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                                <div class="h-full rounded-full bg-[#141A17]" style="width: ${Math.min(100, Math.max(0, t.w1Pct))}%;"></div>
+                              </div>
+                              <span class="w-8 text-right shrink-0">${t.w1Pct}%</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-[10.5px] text-[#525B56] tabular-nums">
+                              <span class="w-12 shrink-0">Wave 2</span>
+                              <div class="flex-1 h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                                <div class="h-full rounded-full bg-[#247B50]" style="width: ${Math.min(100, Math.max(0, t.w2Pct))}%;"></div>
+                              </div>
+                              <span class="w-8 text-right shrink-0">${t.w2Pct}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join('')}
+                </div>`
+          }
+        </div>
+      </div>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
   // TAB: ONE-WAY FACTORIAL ANOVA & TREATMENT HYPOTHESIS TESTING
   // --------------------------------------------------------------------------
   renderAnovaTab(survey, responses) {
@@ -7887,7 +8804,7 @@ window.AEAnalytics = {
             }
           }
         };
-      } else if (q.type === 'number_yield' || q.type === 'number') {
+      } else if (q.type === 'number_yield' || q.type === 'number' || q.type === 'calculated') {
         const nums = rawVals.map((v) => Number(v)).filter((n) => !isNaN(n)).sort((a, b) => a - b);
         if (nums.length > 0) {
           const min = nums[0];

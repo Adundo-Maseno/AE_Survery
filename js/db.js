@@ -2219,6 +2219,310 @@ window.AEPiping = {
 };
 
 /**
+ * Safe Zero-Eval Formula & Cross-Question Consistency Engine
+ * Evaluates calculated numeric fields via a strict recursive-descent parser
+ * (NO eval, NO Function constructor) and validates numeric consistency rules.
+ */
+window.AEFormulaEngine = {
+  ALLOWED_FUNCTIONS: {
+    min: (args) => (args.length >= 1 ? Math.min(...args) : NaN),
+    max: (args) => (args.length >= 1 ? Math.max(...args) : NaN),
+    abs: (args) => (args.length === 1 ? Math.abs(args[0]) : NaN),
+    floor: (args) => (args.length === 1 ? Math.floor(args[0]) : NaN),
+    ceil: (args) => (args.length === 1 ? Math.ceil(args[0]) : NaN),
+    round: (args) => {
+      if (args.length === 1) return Math.round(args[0]);
+      if (args.length === 2) {
+        const digits = Math.max(0, Math.min(8, Math.trunc(args[1])));
+        const factor = Math.pow(10, digits);
+        return Math.round(args[0] * factor) / factor;
+      }
+      return NaN;
+    }
+  },
+
+  _toFiniteNumber(val) {
+    if (val === undefined || val === null || val === '') return null;
+    if (typeof val === 'boolean' || typeof val === 'object') return null;
+    const num = Number(val);
+    return Number.isFinite(num) ? num : null;
+  },
+
+  _tokenize(expr) {
+    const tokens = [];
+    let i = 0;
+    const len = expr.length;
+    while (i < len) {
+      const ch = expr[i];
+      if (/\s/.test(ch)) {
+        i++;
+        continue;
+      }
+      if ((ch >= '0' && ch <= '9') || ch === '.') {
+        let start = i;
+        let dotCount = 0;
+        while (i < len && ((expr[i] >= '0' && expr[i] <= '9') || expr[i] === '.')) {
+          if (expr[i] === '.') dotCount++;
+          if (dotCount > 1) return null;
+          i++;
+        }
+        const raw = expr.slice(start, i);
+        if (raw === '.') return null;
+        const num = Number(raw);
+        if (!Number.isFinite(num)) return null;
+        tokens.push({ type: 'number', value: num });
+        continue;
+      }
+      if (ch === '+' || ch === '-' || ch === '*' || ch === '/') {
+        tokens.push({ type: 'op', value: ch });
+        i++;
+        continue;
+      }
+      if (ch === '(' || ch === ')' || ch === ',') {
+        tokens.push({ type: 'punct', value: ch });
+        i++;
+        continue;
+      }
+      if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+        let start = i;
+        while (i < len && ((expr[i] >= 'a' && expr[i] <= 'z') || (expr[i] >= 'A' && expr[i] <= 'Z'))) {
+          i++;
+        }
+        const name = expr.slice(start, i).toLowerCase();
+        if (!Object.prototype.hasOwnProperty.call(this.ALLOWED_FUNCTIONS, name)) {
+          return null;
+        }
+        tokens.push({ type: 'func', value: name });
+        continue;
+      }
+      // Reject any other character (quotes, semicolons, brackets, $, _, etc.)
+      return null;
+    }
+    if (tokens.length === 0 || tokens.length > 200) return null;
+    return tokens;
+  },
+
+  evaluateExpression(expr, answers = {}, decimals = 2) {
+    if (typeof expr !== 'string' || !expr.trim()) return null;
+    const safeAnswers = answers && typeof answers === 'object' ? answers : {};
+    let missingVar = false;
+
+    const substituted = expr.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_match, qId) => {
+      const num = this._toFiniteNumber(safeAnswers[qId]);
+      if (num === null) {
+        missingVar = true;
+        return '';
+      }
+      return `(${num})`;
+    });
+
+    if (missingVar) return null;
+    if (substituted.includes('{{') || substituted.includes('}}')) return null;
+
+    const tokens = this._tokenize(substituted);
+    if (!tokens) return null;
+
+    let pos = 0;
+    let depth = 0;
+    const MAX_DEPTH = 32;
+    const fns = this.ALLOWED_FUNCTIONS;
+
+    const peek = () => tokens[pos] || null;
+    const consume = () => tokens[pos++] || null;
+
+    const parseExpression = () => {
+      if (++depth > MAX_DEPTH) return NaN;
+      let left = parseTerm();
+      while (peek() && peek().type === 'op' && (peek().value === '+' || peek().value === '-')) {
+        const op = consume().value;
+        const right = parseTerm();
+        left = op === '+' ? left + right : left - right;
+      }
+      depth--;
+      return left;
+    };
+
+    const parseTerm = () => {
+      if (++depth > MAX_DEPTH) return NaN;
+      let left = parseUnary();
+      while (peek() && peek().type === 'op' && (peek().value === '*' || peek().value === '/')) {
+        const op = consume().value;
+        const right = parseUnary();
+        if (op === '*') {
+          left = left * right;
+        } else {
+          if (right === 0) {
+            depth--;
+            return NaN;
+          }
+          left = left / right;
+        }
+      }
+      depth--;
+      return left;
+    };
+
+    const parseUnary = () => {
+      if (++depth > MAX_DEPTH) return NaN;
+      let res;
+      if (peek() && peek().type === 'op' && (peek().value === '+' || peek().value === '-')) {
+        const op = consume().value;
+        const val = parseUnary();
+        res = op === '-' ? -val : val;
+      } else {
+        res = parsePrimary();
+      }
+      depth--;
+      return res;
+    };
+
+    const parsePrimary = () => {
+      const tok = peek();
+      if (!tok) return NaN;
+
+      if (tok.type === 'number') {
+        consume();
+        return tok.value;
+      }
+
+      if (tok.type === 'func') {
+        const fnName = consume().value;
+        if (!peek() || peek().type !== 'punct' || peek().value !== '(') return NaN;
+        consume(); // '('
+        const args = [];
+        if (peek() && peek().type === 'punct' && peek().value === ')') {
+          consume();
+          return NaN;
+        }
+        while (true) {
+          args.push(parseExpression());
+          if (peek() && peek().type === 'punct' && peek().value === ',') {
+            consume();
+            continue;
+          }
+          break;
+        }
+        if (!peek() || peek().type !== 'punct' || peek().value !== ')') return NaN;
+        consume(); // ')'
+        if (args.some((a) => !Number.isFinite(a))) return NaN;
+        return fns[fnName](args);
+      }
+
+      if (tok.type === 'punct' && tok.value === '(') {
+        consume(); // '('
+        const val = parseExpression();
+        if (!peek() || peek().type !== 'punct' || peek().value !== ')') return NaN;
+        consume(); // ')'
+        return val;
+      }
+
+      return NaN;
+    };
+
+    const rawResult = parseExpression();
+    if (pos !== tokens.length || !Number.isFinite(rawResult)) return null;
+
+    const dec = Number.isInteger(decimals) && decimals >= 0 && decimals <= 8 ? decimals : 2;
+    const factor = Math.pow(10, dec);
+    const rounded = Math.round(rawResult * factor) / factor;
+    return Object.is(rounded, -0) ? 0 : rounded;
+  },
+
+  _collectSurveyQuestions(survey) {
+    if (!survey) return [];
+    if (Array.isArray(survey.pages)) {
+      return survey.pages.flatMap((p) => (p && Array.isArray(p.questions) ? p.questions : []));
+    }
+    if (Array.isArray(survey.questions)) {
+      return survey.questions;
+    }
+    return [];
+  },
+
+  evaluateCalculatedFields(survey, answers = {}) {
+    const questions = this._collectSurveyQuestions(survey);
+    const calcQuestions = questions.filter((q) => q && q.type === 'calculated' && typeof q.formula === 'string' && q.formula.trim());
+    const results = {};
+    if (calcQuestions.length === 0) return results;
+
+    const working = { ...(answers && typeof answers === 'object' ? answers : {}) };
+    // Run up to 2 passes so calculated fields referencing other calculated fields resolve cleanly
+    for (let pass = 0; pass < 2; pass++) {
+      let changed = false;
+      calcQuestions.forEach((q) => {
+        const dec = q.decimals !== undefined && q.decimals !== null && q.decimals !== ''
+          ? Number(q.decimals)
+          : 2;
+        const val = this.evaluateExpression(q.formula, working, Number.isInteger(dec) ? dec : 2);
+        if (results[q.id] !== val) {
+          results[q.id] = val;
+          changed = true;
+        }
+        if (val !== null) {
+          working[q.id] = val;
+        } else {
+          delete working[q.id];
+        }
+      });
+      if (!changed) break;
+    }
+    return results;
+  },
+
+  evaluateConsistencyRules(survey, answers = {}) {
+    const questions = this._collectSurveyQuestions(survey);
+    const qMap = {};
+    questions.forEach((q) => {
+      if (q && q.id) qMap[q.id] = q;
+    });
+
+    const safeAnswers = answers && typeof answers === 'object' ? answers : {};
+    const violations = [];
+
+    questions.forEach((q) => {
+      if (!q || !q.consistencyRule || !q.consistencyRule.enabled || !q.consistencyRule.compareQuestionId) return;
+      if (
+        typeof window !== 'undefined' &&
+        window.AEPiping &&
+        typeof window.AEPiping.isQuestionVisible === 'function' &&
+        !window.AEPiping.isQuestionVisible(q, safeAnswers, survey)
+      ) {
+        return;
+      }
+
+      const compareId = q.consistencyRule.compareQuestionId;
+      const leftNum = this._toFiniteNumber(safeAnswers[q.id]);
+      const rightNum = this._toFiniteNumber(safeAnswers[compareId]);
+      if (leftNum === null || rightNum === null) return;
+
+      const rawOp = String(q.consistencyRule.operator || q.consistencyRule.op || '<=').trim();
+      let passes = true;
+      if (rawOp === '<=') passes = leftNum <= rightNum;
+      else if (rawOp === '>=') passes = leftNum >= rightNum;
+      else if (rawOp === '<') passes = leftNum < rightNum;
+      else if (rawOp === '>') passes = leftNum > rightNum;
+      else if (rawOp === '==' || rawOp === '===') passes = leftNum === rightNum;
+      else if (rawOp === '!=' || rawOp === '!==') passes = leftNum !== rightNum;
+      else return;
+
+      if (!passes) {
+        const compareQ = qMap[compareId];
+        const compareLabel = (compareQ && compareQ.title) ? compareQ.title : compareId;
+        const defaultMsg = `Value (${leftNum}) must be ${rawOp} "${compareLabel}" (${rightNum}).`;
+        violations.push({
+          questionId: q.id,
+          compareQuestionId: compareId,
+          operator: rawOp,
+          message: (q.consistencyRule.message && String(q.consistencyRule.message).trim()) || defaultMsg
+        });
+      }
+    });
+
+    return violations;
+  }
+};
+
+/**
  * Curated Selectable Survey Theme Presets
  * Controls respondent canvas, card surface, border radius, typography pairing, and accent palette.
  */
@@ -3210,6 +3514,97 @@ class AESurveyStore {
 
   getResponsesForSurvey(surveyId) {
     return this.responses.filter((r) => r.surveyId === surveyId);
+  }
+
+  getSurveyAvailability(survey, responsesOverride = null) {
+    if (!survey || typeof survey !== 'object') {
+      return {
+        open: false,
+        status: 'not_found',
+        reason: 'Survey not found.',
+        count: 0,
+        maxResponses: null,
+        remaining: null
+      };
+    }
+
+    const list = Array.isArray(responsesOverride)
+      ? responsesOverride
+      : this.getResponsesForSurvey(survey.id);
+    const count = list.length;
+    const schedule = survey.schedule && typeof survey.schedule === 'object' ? survey.schedule : {};
+    const parsedMax =
+      schedule.maxResponses !== undefined &&
+      schedule.maxResponses !== null &&
+      schedule.maxResponses !== ''
+        ? Math.floor(Number(schedule.maxResponses))
+        : null;
+    const maxResponses = parsedMax !== null && Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : null;
+    const remaining = maxResponses !== null ? Math.max(0, maxResponses - count) : null;
+    const customClosedMsg =
+      schedule.closedMessage && String(schedule.closedMessage).trim()
+        ? String(schedule.closedMessage).trim()
+        : '';
+
+    if (survey.status === 'Archived') {
+      return {
+        open: false,
+        status: 'archived',
+        reason: customClosedMsg || 'This survey has been archived and is no longer accepting responses.',
+        count,
+        maxResponses,
+        remaining
+      };
+    }
+
+    const nowMs = Date.now();
+    if (schedule.openAt) {
+      const openMs = Date.parse(schedule.openAt);
+      if (Number.isFinite(openMs) && nowMs < openMs) {
+        return {
+          open: false,
+          status: 'not_yet_open',
+          reason: customClosedMsg || `This survey is scheduled to open on ${new Date(openMs).toLocaleString()}.`,
+          count,
+          maxResponses,
+          remaining
+        };
+      }
+    }
+
+    if (schedule.closeAt) {
+      const closeMs = Date.parse(schedule.closeAt);
+      if (Number.isFinite(closeMs) && nowMs > closeMs) {
+        return {
+          open: false,
+          status: 'closed_date',
+          reason: customClosedMsg || 'This survey has closed and is no longer accepting new responses.',
+          count,
+          maxResponses,
+          remaining
+        };
+      }
+    }
+
+    if (maxResponses !== null && count >= maxResponses) {
+      return {
+        open: false,
+        status: 'quota_reached',
+        reason: customClosedMsg || `Target response quota (${maxResponses}) has been reached. Thank you for your participation.`,
+        count,
+        maxResponses,
+        remaining: 0
+      };
+    }
+
+    return {
+      open: true,
+      status: 'open',
+      reason: '',
+      count,
+      maxResponses,
+      remaining
+    };
   }
 
   getCollectorsForSurvey(surveyId) {

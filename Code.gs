@@ -497,9 +497,50 @@ function doPost(e) {
       return jsonResponse_(analyzeVerbatimsWithGemini_(payload));
     }
 
+    // Daily Digest Email Endpoint (Admin-only) — runs outside ScriptLock
+    if (action === 'SEND_DAILY_DIGEST') {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+      }
+      ensureDatabaseInitialized_();
+      var ssDigest = SpreadsheetApp.getActiveSpreadsheet();
+      var digestSurveyMap = getSurveyMap_();
+      var digestAllResponses = readResponsesRows_(ssDigest, '');
+      var targetSurveyId = String(payload.surveyId || '').trim();
+      if (targetSurveyId) {
+        var digestSurvey = digestSurveyMap[targetSurveyId];
+        if (!digestSurvey) {
+          return jsonResponse_({ ok: false, error: 'Survey not found: ' + targetSurveyId });
+        }
+        var singleRes = sendSurveyDailyDigest_(digestSurvey, digestAllResponses, payload.recipients || '', payload.surveyUrl || '');
+        if (!singleRes.ok) {
+          return jsonResponse_({ ok: false, error: singleRes.error || 'Failed to send daily digest.' });
+        }
+        return jsonResponse_({
+          ok: true,
+          action: 'SEND_DAILY_DIGEST',
+          surveyId: targetSurveyId,
+          sent: singleRes.sent,
+          recipients: singleRes.recipients,
+          stats: singleRes.stats,
+          serverTime: new Date().toISOString()
+        });
+      }
+      var allDigestSummary = sendDailyDigestTrigger();
+      return jsonResponse_({
+        ok: true,
+        action: 'SEND_DAILY_DIGEST',
+        surveysProcessed: allDigestSummary.surveysProcessed,
+        emailsSent: allDigestSummary.emailsSent,
+        serverTime: new Date().toISOString()
+      });
+    }
+
     // Acquire ScriptLock ONLY for sheet-mutating operations
     var lock = LockService.getScriptLock();
     lock.waitLock(25000);
+    var postLockResponse = null;
+    var alertContext = null;
 
     try {
       ensureDatabaseInitialized_();
@@ -563,7 +604,11 @@ function doPost(e) {
         var resStats = appendResponsesIdempotent_([payload.response], surveyMap);
         var submitRespVersion = bumpDbVersion_();
         logSyncEvent_('SUBMIT_RESPONSE', deviceId, 0, resStats.inserted, resStats.skipped, 'OK');
-        return jsonResponse_({
+        alertContext = {
+          surveyMap: surveyMap,
+          insertedResponses: resStats.insertedResponses || []
+        };
+        postLockResponse = {
           ok: true,
           action: action,
           inserted: resStats.inserted,
@@ -571,10 +616,8 @@ function doPost(e) {
           syncedIds: resStats.syncedIds,
           version: submitRespVersion,
           serverTime: new Date().toISOString()
-        });
-      }
-
-      if (action === 'DELETE_SURVEY' && payload.surveyId) {
+        };
+      } else if (action === 'DELETE_SURVEY' && payload.surveyId) {
         if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
           return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
         }
@@ -608,76 +651,89 @@ function doPost(e) {
         });
       }
 
-      // Default: BATCH_SYNC (handles offline queue flush + full sync)
-      var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
-      var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-      var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-      var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-      var rawPersonnel = Array.isArray(payload.personnel)
-        ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
-        : (payload.personnel && typeof payload.personnel === 'object' ? [payload.personnel] : []);
-      var personnel = isCallerAdmin
-        ? rawPersonnel
-        : rawPersonnel.filter(function(p) {
-            return p && payload.callerId && String(p.id || '').trim() === String(payload.callerId).trim();
-          });
+      if (!postLockResponse) {
+        // Default: BATCH_SYNC (handles offline queue flush + full sync)
+        var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
+        var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+        var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+        var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+        var rawPersonnel = Array.isArray(payload.personnel)
+          ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
+          : (payload.personnel && typeof payload.personnel === 'object' ? [payload.personnel] : []);
+        var personnel = isCallerAdmin
+          ? rawPersonnel
+          : rawPersonnel.filter(function(p) {
+              return p && payload.callerId && String(p.id || '').trim() === String(payload.callerId).trim();
+            });
 
-      var surveysUpserted = 0;
-      for (var i = 0; i < surveys.length; i++) {
-        upsertSurveyRow_(surveys[i]);
-        syncSurveyDedicatedSheetHeader_(surveys[i]);
-        surveysUpserted++;
-      }
-
-      var deletedSurveyIds = (isCallerAdmin && Array.isArray(payload.deletedSurveyIds))
-        ? payload.deletedSurveyIds.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
-        : [];
-      for (var dIdx = 0; dIdx < deletedSurveyIds.length; dIdx++) {
-        if (deletedSurveyIds[dIdx]) {
-          deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(deletedSurveyIds[dIdx]));
+        var surveysUpserted = 0;
+        for (var i = 0; i < surveys.length; i++) {
+          upsertSurveyRow_(surveys[i]);
+          syncSurveyDedicatedSheetHeader_(surveys[i]);
+          surveysUpserted++;
         }
+
+        var deletedSurveyIds = (isCallerAdmin && Array.isArray(payload.deletedSurveyIds))
+          ? payload.deletedSurveyIds.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
+          : [];
+        for (var dIdx = 0; dIdx < deletedSurveyIds.length; dIdx++) {
+          if (deletedSurveyIds[dIdx]) {
+            deleteRowById_(DB_CONFIG.SHEETS.SURVEYS, 1, String(deletedSurveyIds[dIdx]));
+          }
+        }
+
+        for (var j = 0; j < collectors.length; j++) {
+          upsertCollectorRow_(collectors[j]);
+        }
+
+        var personnelUpserted = 0;
+        for (var k = 0; k < personnel.length; k++) {
+          upsertPersonnelRow_(personnel[k]);
+          personnelUpserted++;
+        }
+
+        var allSurveysMap = getSurveyMap_();
+        var batchStats = appendResponsesIdempotent_(responses, allSurveysMap);
+        var batchVersion = bumpDbVersion_();
+
+        logSyncEvent_(
+          'BATCH_SYNC',
+          deviceId,
+          surveysUpserted,
+          batchStats.inserted,
+          batchStats.skipped,
+          'OK'
+        );
+
+        alertContext = {
+          surveyMap: allSurveysMap,
+          insertedResponses: batchStats.insertedResponses || []
+        };
+        postLockResponse = {
+          ok: true,
+          action: 'BATCH_SYNC',
+          version: batchVersion,
+          surveysSynced: surveysUpserted,
+          collectorsSynced: collectors.length,
+          personnelSynced: personnelUpserted,
+          responsesInserted: batchStats.inserted,
+          duplicatesSkipped: batchStats.skipped,
+          syncedResponseIds: batchStats.syncedIds,
+          personnel: readPersonnelRows_(SpreadsheetApp.getActiveSpreadsheet()),
+          serverTime: new Date().toISOString(),
+          counts: getRowCounts_()
+        };
       }
-
-      for (var j = 0; j < collectors.length; j++) {
-        upsertCollectorRow_(collectors[j]);
-      }
-
-      var personnelUpserted = 0;
-      for (var k = 0; k < personnel.length; k++) {
-        upsertPersonnelRow_(personnel[k]);
-        personnelUpserted++;
-      }
-
-      var allSurveysMap = getSurveyMap_();
-      var batchStats = appendResponsesIdempotent_(responses, allSurveysMap);
-      var batchVersion = bumpDbVersion_();
-
-      logSyncEvent_(
-        'BATCH_SYNC',
-        deviceId,
-        surveysUpserted,
-        batchStats.inserted,
-        batchStats.skipped,
-        'OK'
-      );
-
-      return jsonResponse_({
-        ok: true,
-        action: 'BATCH_SYNC',
-        version: batchVersion,
-        surveysSynced: surveysUpserted,
-        collectorsSynced: collectors.length,
-        personnelSynced: personnelUpserted,
-        responsesInserted: batchStats.inserted,
-        duplicatesSkipped: batchStats.skipped,
-        syncedResponseIds: batchStats.syncedIds,
-        personnel: readPersonnelRows_(SpreadsheetApp.getActiveSpreadsheet()),
-        serverTime: new Date().toISOString(),
-        counts: getRowCounts_()
-      });
     } finally {
       lock.releaseLock();
     }
+
+    // Run real-time risk alerts AFTER releasing ScriptLock so MailApp never blocks concurrent syncs
+    if (alertContext && alertContext.insertedResponses && alertContext.insertedResponses.length > 0) {
+      maybeSendRealtimeAlerts_(alertContext.surveyMap, alertContext.insertedResponses);
+    }
+
+    return jsonResponse_(postLockResponse);
   } catch (err) {
     return jsonResponse_({
       ok: false,
@@ -1083,6 +1139,7 @@ function appendResponsesIdempotent_(responses, surveyMap) {
   var inserted = 0;
   var skipped = 0;
   var syncedIds = [];
+  var insertedResponses = [];
   var nowIso = new Date().toISOString();
   var newMasterRows = [];
   var pendingNewIndex = {};
@@ -1208,6 +1265,7 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     newMasterRows.push(masterRow);
     inserted++;
     syncedIds.push(clientRespId);
+    insertedResponses.push(r);
 
     // Queue for batched append to the human-readable Per-Survey sheet tab!
     if (survey) {
@@ -1233,7 +1291,8 @@ function appendResponsesIdempotent_(responses, surveyMap) {
   return {
     inserted: inserted,
     skipped: skipped,
-    syncedIds: syncedIds
+    syncedIds: syncedIds,
+    insertedResponses: insertedResponses
   };
 }
 
@@ -2156,6 +2215,324 @@ function analyzeVerbatimsWithGemini_(payload) {
       serverTime: new Date().toISOString()
     };
   }
+}
+
+/**
+ * Parses a comma-separated string (or array) of email recipients into clean, validated email addresses.
+ */
+function parseAlertRecipients_(raw) {
+  var list = Array.isArray(raw) ? raw : String(raw || '').split(/[,;\s]+/);
+  var clean = [];
+  var seen = {};
+  for (var i = 0; i < list.length; i++) {
+    var addr = String(list[i] || '').trim();
+    if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) continue;
+    var key = addr.toLowerCase();
+    if (!seen[key]) {
+      seen[key] = true;
+      clean.push(addr);
+    }
+  }
+  return clean;
+}
+
+/**
+ * HTML-escapes dynamic strings before embedding them in MailApp HTML email bodies.
+ */
+function escapeHtmlEmail_(str) {
+  return String(str === null || str === undefined ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Extracts all plain-text answer strings from a response's answers object (skipping base64 data URLs).
+ */
+function extractResponseTextValues_(answers) {
+  var texts = [];
+  if (!answers || typeof answers !== 'object') return texts;
+  function visit_(val) {
+    if (val === null || val === undefined) return;
+    if (typeof val === 'string') {
+      var trimmed = val.trim();
+      if (trimmed && trimmed.indexOf('data:image/') !== 0 && trimmed.indexOf('data:audio/') !== 0) {
+        texts.push(trimmed);
+      }
+      return;
+    }
+    if (Array.isArray(val)) {
+      for (var i = 0; i < val.length; i++) visit_(val[i]);
+      return;
+    }
+    if (typeof val === 'object') {
+      for (var k in val) {
+        if (Object.prototype.hasOwnProperty.call(val, k) && k !== 'dataUrl') {
+          visit_(val[k]);
+        }
+      }
+    }
+  }
+  visit_(answers);
+  return texts;
+}
+
+/**
+ * Real-time risk alert dispatcher called AFTER releasing ScriptLock on SUBMIT_RESPONSE / BATCH_SYNC.
+ * Checks each newly inserted response for:
+ *  - IMPOSSIBLE_TRAVEL_VELOCITY flag (when survey.alerts.alertOnVelocity is enabled)
+ *  - High-urgency keywords (fake|counterfeit|urgent|broken|failed|hasara|emergency) (when survey.alerts.alertOnUrgency is enabled)
+ * All MailApp calls are wrapped in try/catch so email errors never break sync.
+ */
+function maybeSendRealtimeAlerts_(surveyMap, insertedResponses) {
+  var sent = 0;
+  var details = [];
+  if (!Array.isArray(insertedResponses) || insertedResponses.length === 0) {
+    return { sent: 0, details: details };
+  }
+  var urgencyRegex = /\b(fake|counterfeit|urgent|broken|failed|hasara|emergency)\b/i;
+
+  for (var i = 0; i < insertedResponses.length; i++) {
+    try {
+      var r = insertedResponses[i];
+      if (!r || !r.surveyId) continue;
+      var survey = surveyMap && surveyMap[r.surveyId];
+      if (!survey || !survey.alerts || !survey.alerts.enabled) continue;
+      var recipients = parseAlertRecipients_(survey.alerts.recipients);
+      if (recipients.length === 0) continue;
+
+      var reasons = [];
+      var evidenceLines = [];
+
+      // 1. Impossible Travel Velocity check
+      if (survey.alerts.alertOnVelocity) {
+        var flags = Array.isArray(r.qaFlags)
+          ? r.qaFlags
+          : String(r.qaFlags || '').split(',').map(function(s) { return s.trim(); });
+        for (var fIdx = 0; fIdx < flags.length; fIdx++) {
+          if (String(flags[fIdx] || '').toUpperCase() === 'IMPOSSIBLE_TRAVEL_VELOCITY') {
+            reasons.push('Impossible Travel Velocity');
+            evidenceLines.push('QA Flag: IMPOSSIBLE_TRAVEL_VELOCITY');
+            break;
+          }
+        }
+      }
+
+      // 2. High-Urgency Keyword check
+      if (survey.alerts.alertOnUrgency) {
+        var textValues = extractResponseTextValues_(r.answers);
+        var matchedKeywords = [];
+        var matchedExcerpts = [];
+        for (var tIdx = 0; tIdx < textValues.length; tIdx++) {
+          var txt = textValues[tIdx];
+          var m = txt.match(urgencyRegex);
+          if (m) {
+            var kw = m[1].toLowerCase();
+            if (matchedKeywords.indexOf(kw) === -1) matchedKeywords.push(kw);
+            if (matchedExcerpts.length < 3) {
+              matchedExcerpts.push(txt.substring(0, 220));
+            }
+          }
+        }
+        if (matchedKeywords.length > 0) {
+          reasons.push('Urgent Keyword (' + matchedKeywords.join(', ') + ')');
+          for (var eIdx = 0; eIdx < matchedExcerpts.length; eIdx++) {
+            evidenceLines.push('Excerpt: "' + matchedExcerpts[eIdx] + '"');
+          }
+        }
+      }
+
+      if (reasons.length === 0) continue;
+
+      var respId = String(r.clientResponseId || r.id || 'unknown');
+      var surveyTitle = String(survey.title || r.surveyId);
+      var enumerator = String(r.enumerator || 'Anonymous');
+      var submittedAt = String(r.submittedAt || new Date().toISOString());
+      var subject = '[AE Survey Alert] ' + reasons.join(' + ') + ' — ' + surveyTitle.substring(0, 80);
+
+      var evidenceHtml = '';
+      for (var lIdx = 0; lIdx < evidenceLines.length; lIdx++) {
+        evidenceHtml += '<li style="margin:4px 0;color:#111613;">' + escapeHtmlEmail_(evidenceLines[lIdx]) + '</li>';
+      }
+
+      var htmlBody =
+        '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #E4E7E4;border-radius:8px;overflow:hidden;">' +
+        '<div style="background:#831C1E;color:#FFFFFF;padding:14px 20px;">' +
+        '<div style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;opacity:0.9;">AE Survey Real-Time Risk Alert</div>' +
+        '<div style="font-size:16px;font-weight:bold;margin-top:4px;">' + escapeHtmlEmail_(surveyTitle) + '</div>' +
+        '</div>' +
+        '<div style="padding:18px 20px;background:#FFFFFF;font-size:13px;color:#111613;line-height:1.5;">' +
+        '<p style="margin:0 0 12px 0;"><strong>Trigger:</strong> ' + escapeHtmlEmail_(reasons.join(' &middot; ')) + '</p>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;">' +
+        '<tr><td style="padding:5px 0;color:#525B56;width:130px;">Response ID</td><td style="padding:5px 0;font-family:monospace;">' + escapeHtmlEmail_(respId) + '</td></tr>' +
+        '<tr><td style="padding:5px 0;color:#525B56;">Enumerator</td><td style="padding:5px 0;">' + escapeHtmlEmail_(enumerator) + '</td></tr>' +
+        '<tr><td style="padding:5px 0;color:#525B56;">Submitted At</td><td style="padding:5px 0;">' + escapeHtmlEmail_(submittedAt) + '</td></tr>' +
+        '</table>' +
+        '<div style="background:#FAFBF9;border:1px solid #E4E7E4;border-radius:6px;padding:10px 14px;">' +
+        '<div style="font-size:11px;font-weight:bold;color:#525B56;margin-bottom:4px;">Detected Evidence</div>' +
+        '<ul style="margin:0;padding-left:18px;font-size:12px;">' + evidenceHtml + '</ul>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+
+      MailApp.sendEmail({
+        to: recipients.join(','),
+        subject: subject,
+        htmlBody: htmlBody
+      });
+      sent++;
+      details.push({ surveyId: survey.id, responseId: respId, reasons: reasons, recipients: recipients });
+    } catch (alertErr) {
+      // Never allow MailApp quota or network errors to interrupt sync
+    }
+  }
+  return { sent: sent, details: details };
+}
+
+/**
+ * Compiles and emails an HTML daily digest for a single survey via MailApp.sendEmail.
+ */
+function sendSurveyDailyDigest_(survey, allResponses, recipientsOverride, surveyUrlOverride) {
+  if (!survey || !survey.id) {
+    return { ok: false, sent: false, error: 'Invalid survey.' };
+  }
+  var rawRecipients = recipientsOverride || (survey.alerts && survey.alerts.recipients) || '';
+  var recipients = parseAlertRecipients_(rawRecipients);
+  if (recipients.length === 0) {
+    return { ok: false, sent: false, error: 'No valid recipient email addresses configured for this survey.' };
+  }
+
+  var nowMs = Date.now();
+  var cutoffMs = nowMs - 24 * 60 * 60 * 1000;
+  var totalResponses = 0;
+  var last24hResponses = 0;
+  var flaggedCount = 0;
+
+  var list = Array.isArray(allResponses) ? allResponses : [];
+  for (var i = 0; i < list.length; i++) {
+    var r = list[i];
+    if (!r || String(r.surveyId || '') !== String(survey.id)) continue;
+    totalResponses++;
+    var ts = Date.parse(String(r.submittedAt || r.syncedAt || ''));
+    if (!isNaN(ts) && ts >= cutoffMs) {
+      last24hResponses++;
+    }
+    var hasFlags = Array.isArray(r.qaFlags) && r.qaFlags.length > 0;
+    var revStatus = String(r.reviewStatus || '').toLowerCase();
+    if (hasFlags || revStatus === 'flagged' || revStatus === 'rejected') {
+      flaggedCount++;
+    }
+  }
+
+  var appUrl = String(surveyUrlOverride || '').trim();
+  if (!appUrl) {
+    try {
+      appUrl = String(PropertiesService.getScriptProperties().getProperty('AE_APP_URL') || '').trim();
+    } catch (e) {}
+  }
+  var surveyLink = '';
+  if (appUrl && /^https?:\/\//i.test(appUrl)) {
+    var sep = appUrl.indexOf('?') === -1 ? '?' : '&';
+    surveyLink = appUrl + sep + 'view=report&survey=' + encodeURIComponent(String(survey.id));
+  } else {
+    try {
+      surveyLink = SpreadsheetApp.getActiveSpreadsheet().getUrl();
+    } catch (e) {
+      surveyLink = '';
+    }
+  }
+
+  var surveyTitle = String(survey.title || survey.id);
+  var subject = '[AE Survey Digest] ' + surveyTitle.substring(0, 75) + ' — ' + last24hResponses + ' new (24h) / ' + totalResponses + ' total';
+
+  var linkBlock = surveyLink
+    ? '<div style="margin-top:18px;"><a href="' + escapeHtmlEmail_(surveyLink) + '" style="display:inline-block;background:#247B50;color:#FFFFFF;text-decoration:none;font-weight:bold;font-size:13px;padding:10px 18px;border-radius:6px;">Open Live Survey Report &rarr;</a></div>'
+    : '';
+
+  var htmlBody =
+    '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #E4E7E4;border-radius:8px;overflow:hidden;">' +
+    '<div style="background:#0B2B1E;color:#FFFFFF;padding:16px 20px;">' +
+    '<div style="font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:#9CE2B5;">AE Survey Daily Digest</div>' +
+    '<div style="font-size:17px;font-weight:bold;margin-top:4px;">' + escapeHtmlEmail_(surveyTitle) + '</div>' +
+    '</div>' +
+    '<div style="padding:20px;background:#FFFFFF;color:#111613;font-size:13px;line-height:1.5;">' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;">' +
+    '<tr>' +
+    '<td style="padding:12px;border:1px solid #E4E7E4;border-radius:6px;text-align:center;width:33%;">' +
+    '<div style="font-size:11px;color:#525B56;">Total Responses</div>' +
+    '<div style="font-size:22px;font-weight:bold;color:#111613;margin-top:4px;">' + totalResponses + '</div>' +
+    '</td>' +
+    '<td style="padding:12px;border:1px solid #E4E7E4;border-radius:6px;text-align:center;width:33%;">' +
+    '<div style="font-size:11px;color:#525B56;">Last 24 Hours</div>' +
+    '<div style="font-size:22px;font-weight:bold;color:#247B50;margin-top:4px;">' + last24hResponses + '</div>' +
+    '</td>' +
+    '<td style="padding:12px;border:1px solid #E4E7E4;border-radius:6px;text-align:center;width:33%;">' +
+    '<div style="font-size:11px;color:#525B56;">Flagged / QA</div>' +
+    '<div style="font-size:22px;font-weight:bold;color:' + (flaggedCount > 0 ? '#C4242A' : '#111613') + ';margin-top:4px;">' + flaggedCount + '</div>' +
+    '</td>' +
+    '</tr>' +
+    '</table>' +
+    '<p style="margin:0;color:#525B56;font-size:12px;">Generated at ' + escapeHtmlEmail_(new Date(nowMs).toISOString()) + ' &middot; Status: ' + escapeHtmlEmail_(survey.status || 'Active') + '</p>' +
+    linkBlock +
+    '</div>' +
+    '</div>';
+
+  try {
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: subject,
+      htmlBody: htmlBody
+    });
+    return {
+      ok: true,
+      sent: true,
+      recipients: recipients.join(', '),
+      stats: {
+        totalResponses: totalResponses,
+        last24hResponses: last24hResponses,
+        flaggedCount: flaggedCount,
+        surveyLink: surveyLink
+      }
+    };
+  } catch (mailErr) {
+    return {
+      ok: false,
+      sent: false,
+      error: (mailErr && mailErr.message) ? String(mailErr.message) : 'MailApp.sendEmail failed.'
+    };
+  }
+}
+
+/**
+ * Top-level Apps Script function for time-driven daily digest triggers.
+ * Configure via Apps Script -> Triggers -> Add Trigger -> sendDailyDigestTrigger (Time-driven, Day timer).
+ */
+function sendDailyDigestTrigger() {
+  ensureDatabaseInitialized_();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var surveys = readSurveysRows_(ss);
+  var responses = readResponsesRows_(ss, '');
+  var surveysProcessed = 0;
+  var emailsSent = 0;
+
+  for (var i = 0; i < surveys.length; i++) {
+    var s = surveys[i];
+    if (!s || !s.alerts || !s.alerts.enabled) continue;
+    if (parseAlertRecipients_(s.alerts.recipients).length === 0) continue;
+    surveysProcessed++;
+    var res = sendSurveyDailyDigest_(s, responses, '', '');
+    if (res && res.sent) {
+      emailsSent++;
+    }
+  }
+
+  return {
+    ok: true,
+    surveysProcessed: surveysProcessed,
+    emailsSent: emailsSent
+  };
 }
 
 function jsonResponse_(obj) {

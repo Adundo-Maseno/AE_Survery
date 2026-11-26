@@ -162,6 +162,136 @@ window.AECollector = {
     });
   },
 
+  getSafeBrandLogo(survey) {
+    const branding = survey && survey.branding && typeof survey.branding === 'object' ? survey.branding : null;
+    if (!branding) return '';
+    const dataUrl = typeof branding.logoDataUrl === 'string' ? branding.logoDataUrl.trim() : '';
+    if (dataUrl && /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(dataUrl)) {
+      return dataUrl;
+    }
+    if (dataUrl && /^data:image\//i.test(dataUrl) && !/^data:image\/svg/i.test(dataUrl)) {
+      return dataUrl;
+    }
+    const logoUrl = typeof branding.logoUrl === 'string' ? branding.logoUrl.trim() : '';
+    if (logoUrl && /^https:\/\/[^\s]+$/i.test(logoUrl)) {
+      return logoUrl;
+    }
+    return '';
+  },
+
+  getSafeRedirectUrl(survey) {
+    const branding = survey && survey.branding && typeof survey.branding === 'object' ? survey.branding : null;
+    if (!branding || typeof branding.redirectUrl !== 'string') return '';
+    const url = branding.redirectUrl.trim();
+    return /^https:\/\/[^\s]+$/i.test(url) ? url : '';
+  },
+
+  recomputeCalculatedFields(survey = null, updateDomInPlace = true) {
+    if (!window.AEFormulaEngine || typeof window.AEFormulaEngine.evaluateCalculatedFields !== 'function') return {};
+    const targetSurvey =
+      survey ||
+      (window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+        ? window.aeStore.getSurveyById(this.activeSurveyId)
+        : null);
+    if (!targetSurvey) return {};
+
+    const calculated = window.AEFormulaEngine.evaluateCalculatedFields(targetSurvey, this.draftAnswers);
+    Object.entries(calculated).forEach(([qId, val]) => {
+      if (val !== null && Number.isFinite(val)) {
+        this.draftAnswers[qId] = val;
+      } else {
+        delete this.draftAnswers[qId];
+      }
+    });
+
+    if (updateDomInPlace && typeof document !== 'undefined') {
+      document.querySelectorAll('[data-calculated-for]').forEach((cardEl) => {
+        const qId = cardEl.getAttribute('data-calculated-for');
+        if (!Object.prototype.hasOwnProperty.call(calculated, qId)) return;
+        const val = calculated[qId];
+        const valueNode = cardEl.querySelector('[data-calculated-value]') || cardEl;
+        valueNode.textContent = val !== null && Number.isFinite(val) ? val.toLocaleString() : '—';
+      });
+    }
+    return calculated;
+  },
+
+  setRunnerAnswer(questionId, value) {
+    this.draftAnswers[questionId] = value;
+    delete this.validationErrors[questionId];
+    this.recomputeCalculatedFields(null, false);
+    this.persistDraft();
+    if (window.AEApp && typeof window.AEApp.render === 'function') {
+      window.AEApp.render();
+    }
+  },
+
+  setRunnerAnswerSilent(questionId, value) {
+    this.draftAnswers[questionId] = value;
+    delete this.validationErrors[questionId];
+    this.recomputeCalculatedFields(null, true);
+    this.persistDraft();
+  },
+
+  renderUnavailableCard(survey, avail) {
+    const brandLogo = this.getSafeBrandLogo(survey);
+    const resolvedTheme = window.AEThemePresets ? window.AEThemePresets.resolve(survey && survey.theme) : null;
+    const accent = (resolvedTheme && resolvedTheme.accentColor) || (survey && survey.theme && survey.theme.accentColor) || '#247B50';
+    const headingFont = (resolvedTheme && resolvedTheme.headingFont) || '"Fraunces", Georgia, serif';
+    const statusMap = {
+      not_yet_open: { badge: 'Not Yet Open', icon: 'fa-clock', tone: 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]' },
+      closed_date: { badge: 'Survey Closed', icon: 'fa-calendar-xmark', tone: 'bg-[#FFEDEA] text-[#831C1E] border-[#F5C2C0]' },
+      quota_reached: { badge: 'Target Reached', icon: 'fa-users-check', tone: 'bg-[#DCFAE5] text-[#04250E] border-[#A7F3D0]' },
+      archived: { badge: 'Survey Archived', icon: 'fa-box-archive', tone: 'bg-[#F4F6F4] text-[#525B56] border-[#CFD5D0]' }
+    };
+    const meta = statusMap[avail && avail.status] || {
+      badge: 'Survey Unavailable',
+      icon: 'fa-circle-info',
+      tone: 'bg-[#F4F6F4] text-[#525B56] border-[#CFD5D0]'
+    };
+    const msg =
+      (survey && survey.schedule && survey.schedule.closedMessage && String(survey.schedule.closedMessage).trim()) ||
+      (avail && avail.reason) ||
+      'This survey is currently unavailable.';
+
+    return `
+      <div class="max-w-lg mx-auto my-6 bg-white border border-[#E4E7E4] border-t-4 rounded-[12px] p-8 text-center space-y-5 shadow-sm"
+        style="border-top-color:${accent};">
+        <div class="flex flex-col items-center gap-3">
+          ${
+            brandLogo
+              ? `<img src="${AEApp.escapeAttr(brandLogo)}" alt="${AEApp.escapeAttr((survey && survey.title) || 'Survey')} Logo" class="h-10 w-auto max-w-[180px] object-contain" />`
+              : `<div class="w-12 h-12 rounded-full bg-[#F4F6F4] text-[#247B50] flex items-center justify-center text-xl">
+                  <i class="fa-solid ${meta.icon}"></i>
+                </div>`
+          }
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tone}">
+            <i class="fa-solid ${meta.icon} text-[11px]"></i>
+            <span>${AEApp.escapeHtml(meta.badge)}</span>
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <h2 class="text-xl font-semibold text-[#111613] tracking-tight ae-break-words" style="font-family:${headingFont};">
+            ${AEApp.escapeHtml((survey && survey.title) || 'Survey Unavailable')}
+          </h2>
+          <p class="text-sm text-[#525B56] leading-relaxed ae-break-words max-w-md mx-auto">
+            ${AEApp.escapeHtml(msg)}
+          </p>
+        </div>
+
+        ${
+          avail && avail.maxResponses
+            ? `<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-[#F8F9F8] border border-[#E4E7E4] text-xs text-[#525B56] tabular-nums">
+                <span>Responses collected:</span>
+                <strong class="text-[#111613]">${avail.count} / ${avail.maxResponses}</strong>
+              </div>`
+            : ''
+        }
+      </div>
+    `;
+  },
+
   renderCollectStage(survey) {
     if (!survey) return '<div class="p-8 text-center">No survey selected.</div>';
 
@@ -383,6 +513,13 @@ window.AECollector = {
   },
 
   renderSurveyRunner(rawSurvey, collectors) {
+    if (!this.justSubmittedBanner && window.aeStore && typeof window.aeStore.getSurveyAvailability === 'function') {
+      const avail = window.aeStore.getSurveyAvailability(rawSurvey);
+      if (avail && !avail.open) {
+        return this.renderUnavailableCard(rawSurvey, avail);
+      }
+    }
+
     const lang = (window.AEApp && window.AEApp.runnerLang) || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
     const survey = window.AEI18n ? window.AEI18n.localizeSurvey(rawSurvey, lang) : rawSurvey;
     const pages = survey.pages || [];
@@ -393,6 +530,16 @@ window.AECollector = {
     const accent = (resolvedTheme && resolvedTheme.accentColor) || (survey.theme && survey.theme.accentColor) || '#247B50';
     const headingFont = (resolvedTheme && resolvedTheme.headingFont) || '"Fraunces", Georgia, serif';
     const headerBg = accent === '#007A4B' || accent === '#247B50' ? '#1F6A45' : accent;
+    const brandLogo = this.getSafeBrandLogo(rawSurvey);
+    const safeRedirectUrl = this.getSafeRedirectUrl(rawSurvey);
+    const customThankYouTitle =
+      rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouTitle && String(rawSurvey.branding.thankYouTitle).trim()
+        ? String(rawSurvey.branding.thankYouTitle).trim()
+        : '';
+    const customThankYouMsg =
+      rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouMessage && String(rawSurvey.branding.thankYouMessage).trim()
+        ? String(rawSurvey.branding.thankYouMessage).trim()
+        : '';
 
     const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
       !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
@@ -416,11 +563,19 @@ window.AECollector = {
                   <div class="flex items-start gap-3 min-w-0">
                     <i class="fa-solid fa-circle-check text-[#247B50] text-base mt-0.5"></i>
                     <div class="min-w-0">
-                      <div class="text-sm font-semibold text-[#04250E] ae-break-words">${AEApp.escapeHtml(this.justSubmittedBanner.title)}</div>
-                      <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">${AEApp.escapeHtml(this.justSubmittedBanner.subtitle)}</div>
+                      <div class="text-sm font-semibold text-[#04250E] ae-break-words">${AEApp.escapeHtml(customThankYouTitle || this.justSubmittedBanner.title)}</div>
+                      <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">${AEApp.escapeHtml(customThankYouMsg || this.justSubmittedBanner.subtitle)}</div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2 shrink-0">
+                  <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    ${
+                      safeRedirectUrl
+                        ? `<a href="${AEApp.escapeAttr(safeRedirectUrl)}" target="_blank" rel="noopener noreferrer"
+                            class="h-8 px-3 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white hover:bg-[#1F6A45] inline-flex items-center gap-1.5 ae-press">
+                            Continue &rarr;
+                          </a>`
+                        : ''
+                    }
                     ${
                       this.justSubmittedBanner.receiptText
                         ? `<button onclick="AEApp.copyText('${AEApp.escapeJs(this.justSubmittedBanner.receiptText)}', 'Field receipt copied to clipboard.')"
@@ -489,10 +644,17 @@ window.AECollector = {
           <div class="p-7 sm:p-8 text-white" style="background-color: ${headerBg}">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div class="flex items-center gap-2.5">
-                <img src="./icons/agri_experience_logo.png"
-                  alt="Agri Experience Logo"
-                  class="h-7 w-auto max-w-[120px] object-contain rounded bg-white/10 px-1 py-0.5 shrink-0"
-                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+                ${
+                  brandLogo
+                    ? `<img src="${AEApp.escapeAttr(brandLogo)}"
+                        alt="${AEApp.escapeAttr(survey.title)} Logo"
+                        class="h-8 w-auto max-w-[150px] object-contain rounded bg-white/95 px-1.5 py-0.5 shrink-0"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />`
+                    : `<img src="./icons/agri_experience_logo.png"
+                        alt="Agri Experience Logo"
+                        class="h-7 w-auto max-w-[120px] object-contain rounded bg-white/10 px-1 py-0.5 shrink-0"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />`
+                }
                 <span class="hidden w-6 h-6 rounded-[4px] bg-white/20 items-center justify-center text-xs font-bold shrink-0">
                   <i class="fa-solid fa-seedling"></i>
                 </span>
@@ -1070,6 +1232,31 @@ window.AECollector = {
             oninput="AEApp.setRunnerAnswerSilent('${q.id}', [{ variety_name: this.value }])"
             placeholder="Enter primary roster item (e.g., DH04 Hybrid — 40 packs @ KES 650)…"
             class="w-full h-9 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-3 text-[#111613] focus:border-[#247B50] focus:outline-none" />
+        </div>
+      `;
+    }
+
+    if (q.type === 'calculated') {
+      const dec = q.decimals !== undefined && q.decimals !== null && q.decimals !== '' ? Number(q.decimals) : 2;
+      const computed =
+        val !== undefined && val !== null && val !== '' && Number.isFinite(Number(val))
+          ? Number(val)
+          : (window.AEFormulaEngine && typeof window.AEFormulaEngine.evaluateExpression === 'function'
+              ? window.AEFormulaEngine.evaluateExpression(q.formula || '', this.draftAnswers, Number.isInteger(dec) ? dec : 2)
+              : null);
+      const displayVal = computed !== null && Number.isFinite(computed) ? computed.toLocaleString() : '—';
+      const unitStr = q.unit ? String(q.unit).trim() : '';
+      return `
+        <div data-calculated-for="${AEApp.escapeAttr(q.id)}"
+          class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-baseline gap-2 min-w-0">
+            <span data-calculated-value class="text-2xl font-bold text-[#111613] tabular-nums leading-none">${AEApp.escapeHtml(displayVal)}</span>
+            ${unitStr ? `<span class="text-xs font-semibold text-[#247B50] bg-[#DCFAE5] px-2 py-0.5 rounded-[4px]">${AEApp.escapeHtml(unitStr)}</span>` : ''}
+          </div>
+          <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#525B56] shrink-0">
+            <i class="fa-solid fa-equals text-[#247B50] text-[10px]"></i>
+            <span>Auto-calculated</span>
+          </span>
         </div>
       `;
     }

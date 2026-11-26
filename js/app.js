@@ -4441,6 +4441,167 @@ window.AEApp = {
     this.render();
   },
 
+  updateSurveyBranding(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.branding = s.branding || {};
+    if (field === 'redirectUrl') {
+      const trimmed = String(value || '').trim();
+      if (trimmed && !/^https:\/\//i.test(trimmed)) {
+        this.showToast('Redirect URL must start with https://', 'warning');
+        this.render();
+        return;
+      }
+      s.branding.redirectUrl = trimmed;
+    } else if (field === 'logoDataUrl') {
+      const strVal = String(value || '').trim();
+      s.branding.logoDataUrl = strVal;
+      if (!strVal) {
+        s.branding.logoUrl = '';
+      }
+    } else {
+      s.branding[field] = String(value ?? '').trim();
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  uploadSurveyLogo(inputEl) {
+    const file = inputEl && inputEl.files && inputEl.files[0];
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) {
+      this.showToast('Please select a valid image file (PNG, JPG, WebP, SVG).', 'error');
+      if (inputEl) inputEl.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxW = 240;
+          const maxH = 80;
+          const scale = Math.min(maxW / (img.width || maxW), maxH / (img.height || maxH), 1);
+          const targetW = Math.max(1, Math.round((img.width || maxW) * scale));
+          const targetH = Math.max(1, Math.round((img.height || maxH) * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, targetW, targetH);
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          let dataUrl = '';
+          try {
+            const webp = canvas.toDataURL('image/webp', 0.85);
+            if (webp && webp.startsWith('data:image/webp')) {
+              dataUrl = webp;
+            }
+          } catch (_) {}
+          if (!dataUrl) {
+            dataUrl = canvas.toDataURL('image/png');
+          }
+          this.updateSurveyBranding('logoDataUrl', dataUrl);
+          this.showToast('Custom survey logo uploaded and optimized.', 'success');
+        } catch (err) {
+          this.showToast('Failed to process logo image.', 'error');
+        } finally {
+          if (inputEl) inputEl.value = '';
+        }
+      };
+      img.onerror = () => {
+        this.showToast('Could not read the selected image.', 'error');
+        if (inputEl) inputEl.value = '';
+      };
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => {
+      this.showToast('Could not read logo file.', 'error');
+      if (inputEl) inputEl.value = '';
+    };
+    reader.readAsDataURL(file);
+  },
+
+  updateSurveySchedule(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.schedule = s.schedule || {};
+    if (field === 'maxResponses') {
+      const raw = String(value ?? '').trim();
+      const parsed = raw === '' ? null : parseInt(raw, 10);
+      s.schedule.maxResponses = parsed && !Number.isNaN(parsed) && parsed > 0 ? parsed : null;
+    } else if (field === 'openAt' || field === 'closeAt') {
+      s.schedule[field] = String(value || '').trim();
+    } else {
+      s.schedule[field] = String(value ?? '').trim();
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateSurveyAlerts(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.alerts = s.alerts || { enabled: false, recipients: '', alertOnUrgency: true, alertOnVelocity: true };
+    if (field === 'recipients') {
+      s.alerts.recipients = String(value || '').trim();
+    } else {
+      s.alerts[field] = Boolean(value);
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  async triggerDailyDigest(surveyId) {
+    const s = window.aeStore.getSurveyById(surveyId || this.activeSurveyId);
+    if (!s) {
+      this.showToast('Survey not found.', 'error');
+      return;
+    }
+    const gasUrl = window.aeStore && window.aeStore.settings ? String(window.aeStore.settings.gasWebAppUrl || '').trim() : '';
+    if (!gasUrl) {
+      this.showToast('Configure your Google Sheets Web App URL in Sync Settings to send email digests.', 'warning');
+      return;
+    }
+    const recipients = (s.alerts && s.alerts.recipients) ? String(s.alerts.recipients).trim() : '';
+    if (!recipients) {
+      this.showToast('Enter at least one recipient email in Email Alerts & Digest first.', 'warning');
+      return;
+    }
+    const user = this.getCurrentUser();
+    const callerId = user ? user.id : '';
+    const syncToken = (window.aeStore.settings && window.aeStore.settings.syncToken) || '';
+    const surveyUrl = (typeof window !== 'undefined' && window.location)
+      ? `${window.location.origin}${window.location.pathname}`
+      : '';
+
+    this.showToast('Sending daily digest email…', 'info');
+    try {
+      const resp = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'SEND_DAILY_DIGEST',
+          surveyId: s.id,
+          syncToken,
+          callerId,
+          recipients,
+          surveyUrl
+        })
+      });
+      const data = await resp.json();
+      if (data && data.ok) {
+        this.showToast(`Daily digest sent to ${data.recipients || recipients}.`, 'success');
+      } else {
+        this.showToast((data && data.error) || 'Failed to send daily digest.', 'error');
+      }
+    } catch (err) {
+      this.showToast(err && err.message ? `Digest failed: ${err.message}` : 'Network error sending daily digest.', 'error');
+    }
+  },
+
   toggleSurveySupportedLanguage(lang) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
@@ -4835,6 +4996,23 @@ window.AEApp = {
     this.render();
   },
 
+  updateQuestionConsistencyRule(questionId, field, value) {
+    const ctx = this.findQuestionContext(questionId);
+    if (!ctx) return;
+    const q = ctx.question;
+    if (!q.consistencyRule || typeof q.consistencyRule !== 'object') {
+      q.consistencyRule = {
+        enabled: false,
+        operator: '<=',
+        compareQuestionId: '',
+        message: ''
+      };
+    }
+    q.consistencyRule[field] = value;
+    window.aeStore.upsertSurvey(ctx.survey);
+    this.render();
+  },
+
   moveQuestion(questionId, delta) {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx) return;
@@ -5089,15 +5267,53 @@ window.AEApp = {
     window.AECollector.persistDraft(this.activeSurveyId);
   },
 
+  recalculateRunnerCalculatedFields(updateDomOnly = false) {
+    if (!window.AEFormulaEngine || typeof window.AEFormulaEngine.evaluateCalculatedFields !== 'function') return;
+    const survey = window.aeStore && window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!survey || !window.AECollector) return;
+    const answers = window.AECollector.draftAnswers || {};
+    const computed = window.AEFormulaEngine.evaluateCalculatedFields(survey, answers) || {};
+    const allQs = window.aeStore.getQuestionsForSurvey ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const qMap = {};
+    allQs.forEach((q) => { qMap[q.id] = q; });
+
+    Object.keys(computed).forEach((qId) => {
+      const val = computed[qId];
+      if (val !== null && val !== undefined && Number.isFinite(Number(val))) {
+        answers[qId] = val;
+      } else {
+        delete answers[qId];
+      }
+    });
+
+    if (updateDomOnly && typeof document !== 'undefined') {
+      document.querySelectorAll('[data-calculated-for]').forEach((el) => {
+        const qId = el.getAttribute('data-calculated-for');
+        const val = computed[qId];
+        const q = qMap[qId];
+        const unit = q && q.unit ? ` ${q.unit}` : '';
+        if (val !== null && val !== undefined && Number.isFinite(Number(val))) {
+          const decimals = q && q.decimals !== undefined ? Number(q.decimals) : 2;
+          const formatted = Number.isInteger(Number(val)) ? String(val) : Number(val).toFixed(decimals);
+          el.textContent = `${formatted}${unit}`;
+        } else {
+          el.textContent = `—${unit}`;
+        }
+      });
+    }
+  },
+
   setRunnerAnswer(questionId, value) {
     window.AECollector.draftAnswers[questionId] = value;
     delete window.AECollector.validationErrors[questionId];
+    this.recalculateRunnerCalculatedFields(false);
     window.AECollector.persistDraft(this.activeSurveyId);
     this.render();
   },
 
   setRunnerAnswerSilent(questionId, value) {
     window.AECollector.draftAnswers[questionId] = value;
+    this.recalculateRunnerCalculatedFields(true);
     window.AECollector.persistDraft(this.activeSurveyId);
     if (window.AECollector.validationErrors[questionId]) {
       delete window.AECollector.validationErrors[questionId];
@@ -5303,6 +5519,19 @@ window.AEApp = {
         }
       }
     });
+
+    // Cross-question consistency rules (Feature #5)
+    if (rawSurvey && window.AEFormulaEngine && typeof window.AEFormulaEngine.evaluateConsistencyRules === 'function') {
+      const draftAnswers = window.AECollector ? window.AECollector.draftAnswers : {};
+      const pageQIds = new Set((page.questions || []).map((q) => q.id));
+      const violations = window.AEFormulaEngine.evaluateConsistencyRules(rawSurvey, draftAnswers) || [];
+      violations.forEach((v) => {
+        if (v && v.questionId && pageQIds.has(v.questionId) && !errors[v.questionId]) {
+          errors[v.questionId] = v.message || 'Value does not meet consistency rule.';
+        }
+      });
+    }
+
     window.AECollector.validationErrors = errors;
     return Object.keys(errors).length === 0;
   },

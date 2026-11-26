@@ -22,6 +22,7 @@ const QUESTION_TYPES_CATALOG = [
   { type: 'short_text', label: 'Single-Line Text', icon: 'fa-font', group: 'Text & Numeric' },
   { type: 'long_text', label: 'Multi-Line Notes / Verbatim', icon: 'fa-align-left', group: 'Text & Numeric' },
   { type: 'number_yield', label: 'Continuous Numeric / Metric', icon: 'fa-calculator', group: 'Text & Numeric' },
+  { type: 'calculated', label: 'Calculated Field (Formula)', icon: 'fa-equals', group: 'Text & Numeric' },
   { type: 'date_time', label: 'Date / Time Picker', icon: 'fa-calendar-day', group: 'Text & Numeric' },
 
   // 4. Media, Verification & Advanced Telemetry
@@ -118,6 +119,16 @@ window.AEBuilder = {
           unit: 'units',
           min: 0,
           max: 100000
+        };
+      case 'calculated':
+        return {
+          ...base,
+          title: 'Calculated Metric (Auto-Computed)',
+          helpText: 'Automatically computed from earlier numeric responses.',
+          required: false,
+          formula: '',
+          unit: 'units',
+          decimals: 2
         };
       case 'gps_location':
         return {
@@ -678,6 +689,17 @@ window.AEBuilder = {
         </div>
       `;
     }
+    if (q.type === 'calculated') {
+      return `
+        <div class="flex items-center justify-between gap-2 p-2.5 rounded-[6px] bg-white border border-[#CFD5D0] text-xs">
+          <span class="inline-flex items-center gap-1.5 text-[#525B56]">
+            <i class="fa-solid fa-equals text-[#247B50]"></i>
+            <code class="font-mono text-[11px] text-[#111613]">${AEApp.escapeHtml(q.formula || 'No formula set')}</code>
+          </span>
+          <span class="font-mono font-semibold text-[#247B50]">— ${AEApp.escapeHtml(q.unit || '')}</span>
+        </div>
+      `;
+    }
     if (q.type === 'gps' || q.type === 'gps_location') {
       return `
         <div class="flex items-center gap-2 p-2 rounded-[4px] bg-white border border-[#CFD5D0] text-xs">
@@ -752,6 +774,19 @@ window.AEBuilder = {
 
   renderThemeSidebar(survey) {
     const theme = survey.theme || { accentColor: '#247B50', showProgressBar: true, showQuestionNumbers: true };
+    const branding = survey.branding || {};
+    const schedule = survey.schedule || {};
+    const alerts = survey.alerts || { enabled: false, recipients: '', alertOnUrgency: true, alertOnVelocity: true };
+    const logoSrc = branding.logoDataUrl || branding.logoUrl || '';
+    const formatDatetimeLocal = (val) => {
+      if (!val) return '';
+      const str = String(val).trim();
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) return str.slice(0, 16);
+      const d = new Date(str);
+      if (Number.isNaN(d.getTime())) return '';
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
     const swatches = [
       { name: 'Agri Emerald', hex: '#247B50' },
       { name: 'Canopy Forest Ink', hex: '#141A17' },
@@ -860,6 +895,148 @@ window.AEBuilder = {
               onchange="AEApp.updateSurveyTheme('showQuestionNumbers', this.checked)"
               class="accent-[#247B50] w-4 h-4 rounded" />
           </label>
+        </div>
+
+        <!-- Branding & Thank-You Screen -->
+        <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+              <i class="fa-solid fa-palette text-[#247B50] text-[11px]"></i> Branding &amp; Thank-You Screen
+            </span>
+          </div>
+
+          <div class="space-y-1.5">
+            <label for="ae_builder_logo_upload" class="block text-[11px] font-medium text-[#525B56]">Custom Organization Logo</label>
+            ${
+              logoSrc
+                ? `<div class="p-2 rounded-[6px] border border-[#E4E7E4] bg-[#F8F9F8] flex items-center justify-between gap-2">
+                    <img src="${AEApp.escapeAttr(logoSrc)}" alt="Survey logo preview" class="max-h-10 max-w-[140px] object-contain" />
+                    <button type="button" onclick="AEApp.updateSurveyBranding('logoDataUrl', '')"
+                      class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] hover:text-[#C4242A] hover:border-[#F5C2C0] text-[11px] font-medium text-[#525B56] shrink-0">
+                      Remove
+                    </button>
+                  </div>`
+                : ''
+            }
+            <input id="ae_builder_logo_upload" type="file" accept="image/*"
+              onchange="AEApp.uploadSurveyLogo(this)"
+              class="block w-full text-[11px] text-[#525B56] file:mr-2 file:py-1 file:px-2.5 file:rounded-[5px] file:border file:border-[#CFD5D0] file:text-[11px] file:font-medium file:bg-white file:text-[#111613] hover:file:bg-[#F4F6F4] cursor-pointer" />
+            <p class="text-[10px] text-[#646E68]">Auto-resized to max 240×80px for offline &amp; Google Sheets sync.</p>
+          </div>
+
+          <div>
+            <label for="ae_builder_ty_title" class="block text-[11px] font-medium text-[#525B56] mb-1">Thank-You Title</label>
+            <input id="ae_builder_ty_title" type="text" maxlength="120"
+              value="${AEApp.escapeAttr(branding.thankYouTitle || '')}"
+              onchange="AEApp.updateSurveyBranding('thankYouTitle', this.value)"
+              placeholder="e.g. Asante! Response Recorded"
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+
+          <div>
+            <label for="ae_builder_ty_msg" class="block text-[11px] font-medium text-[#525B56] mb-1">Thank-You Message</label>
+            <textarea id="ae_builder_ty_msg" rows="2" maxlength="400"
+              onchange="AEApp.updateSurveyBranding('thankYouMessage', this.value)"
+              placeholder="Custom closing message shown after submission…"
+              class="w-full text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 py-1.5 text-[#111613] focus:outline-none focus:border-[#247B50] resize-none">${AEApp.escapeHtml(branding.thankYouMessage || '')}</textarea>
+          </div>
+
+          <div>
+            <label for="ae_builder_ty_redirect" class="block text-[11px] font-medium text-[#525B56] mb-1">Optional Redirect URL (https://)</label>
+            <input id="ae_builder_ty_redirect" type="url" maxlength="300"
+              value="${AEApp.escapeAttr(branding.redirectUrl || '')}"
+              onchange="AEApp.updateSurveyBranding('redirectUrl', this.value)"
+              placeholder="https://example.org/thank-you"
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+        </div>
+
+        <!-- Schedule & Response Quota -->
+        <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+              <i class="fa-solid fa-calendar-check text-[#247B50] text-[11px]"></i> Schedule &amp; Response Quota
+            </span>
+          </div>
+
+          <div>
+            <label for="ae_builder_open_at" class="block text-[11px] font-medium text-[#525B56] mb-1">Open Date &amp; Time</label>
+            <input id="ae_builder_open_at" type="datetime-local"
+              value="${AEApp.escapeAttr(formatDatetimeLocal(schedule.openAt))}"
+              onchange="AEApp.updateSurveySchedule('openAt', this.value)"
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+
+          <div>
+            <label for="ae_builder_close_at" class="block text-[11px] font-medium text-[#525B56] mb-1">Close Date &amp; Time</label>
+            <input id="ae_builder_close_at" type="datetime-local"
+              value="${AEApp.escapeAttr(formatDatetimeLocal(schedule.closeAt))}"
+              onchange="AEApp.updateSurveySchedule('closeAt', this.value)"
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+
+          <div>
+            <label for="ae_builder_max_responses" class="block text-[11px] font-medium text-[#525B56] mb-1">Max Response Quota</label>
+            <input id="ae_builder_max_responses" type="number" min="0" step="1"
+              value="${schedule.maxResponses ? Number(schedule.maxResponses) : ''}"
+              onchange="AEApp.updateSurveySchedule('maxResponses', this.value)"
+              placeholder="Leave blank for unlimited"
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 tabular-nums text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+
+          <div>
+            <label for="ae_builder_closed_msg" class="block text-[11px] font-medium text-[#525B56] mb-1">Closed / Quota Reached Message</label>
+            <input id="ae_builder_closed_msg" type="text" maxlength="240"
+              value="${AEApp.escapeAttr(schedule.closedMessage || '')}"
+              onchange="AEApp.updateSurveySchedule('closedMessage', this.value)"
+              placeholder="e.g. This survey has reached its target responses."
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+        </div>
+
+        <!-- Email Alerts & Digest -->
+        <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+              <i class="fa-solid fa-bell text-[#247B50] text-[11px]"></i> Email Alerts &amp; Digest
+            </span>
+          </div>
+
+          <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer">
+            <span>Enable real-time alerts &amp; digest</span>
+            <input type="checkbox" ${alerts.enabled ? 'checked' : ''}
+              onchange="AEApp.updateSurveyAlerts('enabled', this.checked)"
+              class="accent-[#247B50] w-4 h-4 rounded" />
+          </label>
+
+          <div>
+            <label for="ae_builder_alert_recipients" class="block text-[11px] font-medium text-[#525B56] mb-1">Recipient Emails (comma-separated)</label>
+            <input id="ae_builder_alert_recipients" type="text" maxlength="300"
+              value="${AEApp.escapeAttr(alerts.recipients || '')}"
+              onchange="AEApp.updateSurveyAlerts('recipients', this.value)"
+              placeholder="lead@agriexperience.org, qa@agriexperience.org"
+              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          </div>
+
+          <div class="space-y-1.5">
+            <label class="flex items-center justify-between text-[11px] font-medium text-[#525B56] cursor-pointer">
+              <span>Alert on urgent / risk keywords</span>
+              <input type="checkbox" ${alerts.alertOnUrgency !== false ? 'checked' : ''}
+                onchange="AEApp.updateSurveyAlerts('alertOnUrgency', this.checked)"
+                class="accent-[#247B50] w-3.5 h-3.5 rounded" />
+            </label>
+            <label class="flex items-center justify-between text-[11px] font-medium text-[#525B56] cursor-pointer">
+              <span>Alert on GPS travel velocity flags</span>
+              <input type="checkbox" ${alerts.alertOnVelocity !== false ? 'checked' : ''}
+                onchange="AEApp.updateSurveyAlerts('alertOnVelocity', this.checked)"
+                class="accent-[#247B50] w-3.5 h-3.5 rounded" />
+            </label>
+          </div>
+
+          <button type="button" onclick="AEApp.triggerDailyDigest('${survey.id}')"
+            class="w-full h-8 px-3 rounded-[6px] border border-[#247B50] bg-[#DCFAE5]/60 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] flex items-center justify-center gap-1.5 ae-press">
+            <i class="fa-solid fa-envelope-open-text text-[#247B50] text-[11px]"></i> Send Daily Digest Now
+          </button>
         </div>
 
         <div class="pt-3 border-t border-[#EFEFEF]">
@@ -1216,7 +1393,7 @@ window.AEBuilder = {
 
         <!-- Type-Specific Options / Settings Editor -->
         <div class="bg-[#F8F9F8]/80 border border-[#EAECE9] rounded-[8px] p-4 min-w-0">
-          ${this.renderQuestionTypeConfig(q)}
+          ${this.renderQuestionTypeConfig(q, survey)}
         </div>
 
         <!-- Quiet Secondary Controls: Piping, Visibility, Skip Logic & Append -->
@@ -1402,7 +1579,17 @@ window.AEBuilder = {
     `;
   },
 
-  renderQuestionTypeConfig(q) {
+  renderQuestionTypeConfig(q, survey = null) {
+    const allSurveyQuestions = survey && Array.isArray(survey.pages)
+      ? survey.pages.flatMap((p) => p.questions || [])
+      : [];
+    const numericPeerQuestions = allSurveyQuestions.filter(
+      (item) =>
+        item &&
+        item.id !== q.id &&
+        (item.type === 'number_yield' || item.type === 'calculated' || item.type === 'star_rating' || item.type === 'nps')
+    );
+
     if (q.type === 'multiple_choice' || q.type === 'checkboxes' || q.type === 'dropdown') {
       const options = Array.isArray(q.options) ? q.options : [];
       return `
@@ -1471,34 +1658,139 @@ window.AEBuilder = {
     }
 
     if (q.type === 'number_yield') {
+      const rule = q.consistencyRule || { enabled: false, operator: '<=', compareQuestionId: '', message: '' };
       return `
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div>
-            <label for="ae_q_unit_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Measurement Unit</label>
-            <input id="ae_q_unit_${q.id}" type="text" maxlength="32" value="${AEApp.escapeAttr(q.unit || 'units')}"
-              onchange="AEApp.updateQuestionField('${q.id}', 'unit', this.value)"
-              placeholder="e.g. units, USD, KES, kg, %, hours"
-              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613]" />
-            <div class="flex flex-wrap gap-1 mt-1.5">
-              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'units')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">units</button>
-              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'USD ($)')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">USD</button>
-              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'KES')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">KES</button>
-              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', '%')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">%</button>
-              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'hours')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">hours</button>
-              <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'kg/acre')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">kg/acre</button>
+        <div class="space-y-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="ae_q_unit_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Measurement Unit</label>
+              <input id="ae_q_unit_${q.id}" type="text" maxlength="32" value="${AEApp.escapeAttr(q.unit || 'units')}"
+                onchange="AEApp.updateQuestionField('${q.id}', 'unit', this.value)"
+                placeholder="e.g. units, USD, KES, kg, %, hours"
+                class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613]" />
+              <div class="flex flex-wrap gap-1 mt-1.5">
+                <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'units')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">units</button>
+                <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'USD ($)')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">USD</button>
+                <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'KES')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">KES</button>
+                <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', '%')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">%</button>
+                <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'hours')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">hours</button>
+                <button type="button" onclick="AEApp.updateQuestionField('${q.id}', 'unit', 'kg/acre')" class="px-1.5 py-0.5 rounded text-[10px] bg-white border border-[#CFD5D0] text-[#525B56] hover:text-[#111613] hover:border-[#247B50]">kg/acre</button>
+              </div>
+            </div>
+            <div>
+              <label for="ae_q_min_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Minimum Value</label>
+              <input id="ae_q_min_${q.id}" type="number" value="${q.min ?? 0}"
+                onchange="AEApp.updateQuestionField('${q.id}', 'min', Number(this.value))"
+                class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 tabular-nums text-[#111613]" />
+            </div>
+            <div>
+              <label for="ae_q_max_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Maximum Value</label>
+              <input id="ae_q_max_${q.id}" type="number" value="${q.max ?? 10000}"
+                onchange="AEApp.updateQuestionField('${q.id}', 'max', Number(this.value))"
+                class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 tabular-nums text-[#111613]" />
             </div>
           </div>
-          <div>
-            <label for="ae_q_min_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Minimum Value</label>
-            <input id="ae_q_min_${q.id}" type="number" value="${q.min ?? 0}"
-              onchange="AEApp.updateQuestionField('${q.id}', 'min', Number(this.value))"
-              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 tabular-nums text-[#111613]" />
+
+          <!-- Consistency Rule Strip -->
+          <div class="pt-2.5 border-t border-[#E4E7E4] space-y-2 text-xs">
+            <label class="inline-flex items-center gap-2 font-medium text-[#111613] cursor-pointer">
+              <input type="checkbox" ${rule.enabled ? 'checked' : ''}
+                onchange="AEApp.updateQuestionConsistencyRule('${q.id}', 'enabled', this.checked)"
+                class="accent-[#247B50] w-3.5 h-3.5" />
+              <span>Consistency Rule <span class="text-[11px] font-normal text-[#525B56]">(cross-check against another numeric question)</span></span>
+            </label>
+            ${
+              rule.enabled
+                ? `<div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                    <select aria-label="Consistency operator"
+                      onchange="AEApp.updateQuestionConsistencyRule('${q.id}', 'operator', this.value)"
+                      class="sm:col-span-3 h-7 px-2 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[5px] text-[#111613] focus:outline-none focus:border-[#247B50]">
+                      <option value="<=" ${(rule.operator || '<=') === '<=' ? 'selected' : ''}>Must be &lt;=</option>
+                      <option value=">=" ${rule.operator === '>=' ? 'selected' : ''}>Must be &gt;=</option>
+                      <option value="<" ${rule.operator === '<' ? 'selected' : ''}>Must be &lt;</option>
+                      <option value=">" ${rule.operator === '>' ? 'selected' : ''}>Must be &gt;</option>
+                      <option value="==" ${rule.operator === '==' ? 'selected' : ''}>Must equal</option>
+                      <option value="!=" ${rule.operator === '!=' ? 'selected' : ''}>Must not equal</option>
+                    </select>
+                    <select aria-label="Comparison numeric question"
+                      onchange="AEApp.updateQuestionConsistencyRule('${q.id}', 'compareQuestionId', this.value)"
+                      class="sm:col-span-4 h-7 px-2 text-xs font-medium bg-white border border-[#CFD5D0] rounded-[5px] text-[#111613] truncate focus:outline-none focus:border-[#247B50]">
+                      <option value="">Select numeric question…</option>
+                      ${numericPeerQuestions
+                        .map(
+                          (nq) =>
+                            `<option value="${nq.id}" ${rule.compareQuestionId === nq.id ? 'selected' : ''}>${AEApp.escapeHtml(
+                              (nq.title || nq.id).substring(0, 36)
+                            )}</option>`
+                        )
+                        .join('')}
+                    </select>
+                    <input type="text" maxlength="160"
+                      aria-label="Consistency validation message"
+                      value="${AEApp.escapeAttr(rule.message || '')}"
+                      onchange="AEApp.updateQuestionConsistencyRule('${q.id}', 'message', this.value)"
+                      placeholder="Custom error message…"
+                      class="sm:col-span-5 h-7 px-2 text-xs bg-white border border-[#CFD5D0] rounded-[5px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                  </div>`
+                : ''
+            }
           </div>
-          <div>
-            <label for="ae_q_max_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Maximum Value</label>
-            <input id="ae_q_max_${q.id}" type="number" value="${q.max ?? 10000}"
-              onchange="AEApp.updateQuestionField('${q.id}', 'max', Number(this.value))"
-              class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 tabular-nums text-[#111613]" />
+        </div>
+      `;
+    }
+
+    if (q.type === 'calculated') {
+      return `
+        <div class="space-y-3 text-xs">
+          <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div class="sm:col-span-6">
+              <label for="ae_q_formula_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">
+                Formula Expression <span class="text-[10px] text-[#646E68]">(+ - * / ( ) min max round abs floor ceil)</span>
+              </label>
+              <input id="ae_q_formula_${q.id}" type="text" maxlength="240"
+                value="${AEApp.escapeAttr(q.formula || '')}"
+                onchange="AEApp.updateQuestionField('${q.id}', 'formula', this.value)"
+                placeholder="e.g. {{q_harvest_kg}} / {{q_acres}}"
+                class="w-full h-8 text-xs font-mono bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+            </div>
+            <div class="sm:col-span-4">
+              <label for="ae_q_calc_unit_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Display Unit</label>
+              <input id="ae_q_calc_unit_${q.id}" type="text" maxlength="32"
+                value="${AEApp.escapeAttr(q.unit || '')}"
+                onchange="AEApp.updateQuestionField('${q.id}', 'unit', this.value)"
+                placeholder="e.g. kg/acre, %, KES"
+                class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+            </div>
+            <div class="sm:col-span-2">
+              <label for="ae_q_calc_dec_${q.id}" class="block text-xs font-medium text-[#525B56] mb-1">Decimals</label>
+              <input id="ae_q_calc_dec_${q.id}" type="number" min="0" max="6"
+                value="${q.decimals !== undefined ? Number(q.decimals) : 2}"
+                onchange="AEApp.updateQuestionField('${q.id}', 'decimals', Math.max(0, Math.min(6, Number(this.value) || 0)))"
+                class="w-full h-8 text-xs font-mono bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+            </div>
+          </div>
+
+          <div class="space-y-1.5">
+            <span class="block text-[11px] font-medium text-[#525B56]">Insert numeric question token:</span>
+            ${
+              numericPeerQuestions.length > 0
+                ? `<div class="flex flex-wrap gap-1.5">
+                    ${numericPeerQuestions
+                      .map(
+                        (nq) => `
+                      <button type="button"
+                        onclick="AEBuilder.insertFormulaToken('${q.id}', '{{${nq.id}}}')"
+                        title="${AEApp.escapeAttr(nq.title || nq.id)}"
+                        class="px-2 py-1 rounded-[5px] bg-white border border-[#CFD5D0] hover:border-[#247B50] hover:bg-[#DCFAE5]/40 text-[11px] font-mono text-[#111613] inline-flex items-center gap-1 ae-press">
+                        <span class="text-[#247B50] font-semibold">{{${AEApp.escapeHtml(nq.id)}}}</span>
+                        <span class="font-sans text-[#525B56] max-w-[140px] truncate">${AEApp.escapeHtml((nq.title || '').substring(0, 24))}</span>
+                      </button>
+                    `
+                      )
+                      .join('')}
+                  </div>`
+                : `<p class="text-[11px] text-[#646E68]">Add numeric, rating, or NPS questions to this survey to reference them in formulas.</p>`
+            }
           </div>
         </div>
       `;
@@ -1664,6 +1956,16 @@ window.AEBuilder = {
     if (input) {
       input.value = (input.value ? input.value + ' ' : '') + token;
       window.AEApp.updateQuestionField(qId, 'title', input.value);
+    }
+  },
+
+  insertFormulaToken(qId, token) {
+    const input = document.getElementById(`ae_q_formula_${qId}`);
+    if (input) {
+      const current = input.value || '';
+      const sep = current && !/\s$/.test(current) ? ' ' : '';
+      input.value = current + sep + token;
+      window.AEApp.updateQuestionField(qId, 'formula', input.value);
     }
   }
 };

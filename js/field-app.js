@@ -829,6 +829,100 @@ window.AEFieldApp = {
     }
   },
 
+  getSafeBrandLogo(survey) {
+    const branding = survey && survey.branding && typeof survey.branding === 'object' ? survey.branding : null;
+    if (!branding) return '';
+    const dataUrl = typeof branding.logoDataUrl === 'string' ? branding.logoDataUrl.trim() : '';
+    if (dataUrl && /^data:image\/(png|jpeg|jpg|webp|gif);base64,[A-Za-z0-9+/=]+$/i.test(dataUrl)) {
+      return dataUrl;
+    }
+    if (dataUrl && /^data:image\//i.test(dataUrl) && !/^data:image\/svg/i.test(dataUrl)) {
+      return dataUrl;
+    }
+    const logoUrl = typeof branding.logoUrl === 'string' ? branding.logoUrl.trim() : '';
+    if (logoUrl && /^https:\/\/[^\s]+$/i.test(logoUrl)) {
+      return logoUrl;
+    }
+    return '';
+  },
+
+  getSafeRedirectUrl(survey) {
+    const branding = survey && survey.branding && typeof survey.branding === 'object' ? survey.branding : null;
+    if (!branding || typeof branding.redirectUrl !== 'string') return '';
+    const url = branding.redirectUrl.trim();
+    return /^https:\/\/[^\s]+$/i.test(url) ? url : '';
+  },
+
+  renderUnavailableCard(survey, avail) {
+    const resolvedTheme = window.AEThemePresets
+      ? window.AEThemePresets.resolve(survey && survey.theme)
+      : { cardBg: '#FFFFFF', cardBorder: '#E4E7E4', cardRadius: '12px', ink: '#111613', mutedInk: '#525B56', accentColor: '#247B50', headingFont: '"Fraunces", Georgia, serif' };
+    const brandLogo = this.getSafeBrandLogo(survey);
+    const statusMap = {
+      not_yet_open: { badge: 'Not Yet Open', icon: 'fa-clock', tone: 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]' },
+      closed_date: { badge: 'Survey Closed', icon: 'fa-calendar-xmark', tone: 'bg-[#FFEDEA] text-[#831C1E] border-[#F5C2C0]' },
+      quota_reached: { badge: 'Target Reached', icon: 'fa-users-check', tone: 'bg-[#DCFAE5] text-[#04250E] border-[#A7F3D0]' },
+      archived: { badge: 'Survey Archived', icon: 'fa-box-archive', tone: 'bg-[#F4F6F4] text-[#525B56] border-[#CFD5D0]' }
+    };
+    const meta = statusMap[avail && avail.status] || {
+      badge: 'Survey Unavailable',
+      icon: 'fa-circle-info',
+      tone: 'bg-[#F4F6F4] text-[#525B56] border-[#CFD5D0]'
+    };
+    const msg =
+      (survey && survey.schedule && survey.schedule.closedMessage && String(survey.schedule.closedMessage).trim()) ||
+      (avail && avail.reason) ||
+      'This survey is currently unavailable.';
+
+    return `
+      <div class="border border-t-4 p-7 sm:p-9 text-center space-y-5 max-w-lg mx-auto my-8 shadow-sm"
+        style="background:${resolvedTheme.cardBg}; border-color:${resolvedTheme.cardBorder}; border-top-color:${resolvedTheme.accentColor}; border-radius:${resolvedTheme.cardRadius};">
+        <div class="flex flex-col items-center gap-3">
+          ${
+            brandLogo
+              ? `<img src="${this.escapeAttr(brandLogo)}" alt="${this.escapeAttr((survey && survey.title) || 'Survey')} Logo" class="h-10 w-auto max-w-[180px] object-contain" />`
+              : `<div class="w-12 h-12 rounded-full bg-[#F4F6F4] text-[#247B50] flex items-center justify-center text-xl">
+                  <i class="fa-solid ${meta.icon}"></i>
+                </div>`
+          }
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.tone}">
+            <i class="fa-solid ${meta.icon} text-[11px]"></i>
+            <span>${this.escapeHtml(meta.badge)}</span>
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <h1 class="text-xl sm:text-2xl font-semibold tracking-tight ae-break-words" style="font-family:${resolvedTheme.headingFont}; color:${resolvedTheme.ink};">
+            ${this.escapeHtml((survey && survey.title) || 'Survey Unavailable')}
+          </h1>
+          <p class="text-sm leading-relaxed ae-break-words max-w-md mx-auto" style="color:${resolvedTheme.mutedInk};">
+            ${this.escapeHtml(msg)}
+          </p>
+        </div>
+
+        ${
+          avail && avail.maxResponses
+            ? `<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-[6px] bg-[#F8F9F8] border border-[#E4E7E4] text-xs text-[#525B56] tabular-nums">
+                <span>Responses collected:</span>
+                <strong class="text-[#111613]">${avail.count} / ${avail.maxResponses}</strong>
+              </div>`
+            : ''
+        }
+
+        ${
+          this.isRespondentMode
+            ? ''
+            : `<div class="pt-2 flex flex-wrap items-center justify-center gap-2">
+                <button type="button" onclick="AEFieldApp.openSurveyPicker()"
+                  class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
+                  Switch Survey
+                </button>
+              </div>`
+        }
+      </div>
+    `;
+  },
+
   render() {
     this.renderHeader();
     const viewport = document.getElementById('ae_field_viewport');
@@ -901,6 +995,16 @@ window.AEFieldApp = {
       }
     }
 
+    if (!this.justSubmittedReceipt && window.aeStore && typeof window.aeStore.getSurveyAvailability === 'function') {
+      const avail = window.aeStore.getSurveyAvailability(survey);
+      if (avail && !avail.open) {
+        viewport.innerHTML = this.renderUnavailableCard(survey, avail);
+        this.renderModals();
+        this.renderBottomNav();
+        return;
+      }
+    }
+
     if (this.runnerMode === 'focus') {
       viewport.innerHTML = this.renderConversationalRunner(survey);
     } else {
@@ -938,6 +1042,17 @@ window.AEFieldApp = {
       return true;
     }).length;
 
+    const brandLogo = this.getSafeBrandLogo(rawSurvey);
+    const safeRedirectUrl = this.getSafeRedirectUrl(rawSurvey);
+    const customThankYouTitle =
+      rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouTitle && String(rawSurvey.branding.thankYouTitle).trim()
+        ? String(rawSurvey.branding.thankYouTitle).trim()
+        : '';
+    const customThankYouMsg =
+      rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouMessage && String(rawSurvey.branding.thankYouMessage).trim()
+        ? String(rawSurvey.branding.thankYouMessage).trim()
+        : '';
+
     return `
       <div class="space-y-4">
         <!-- CommCare Shift Pacing Bar (Hidden for Self-Administered Public Respondents) -->
@@ -952,7 +1067,7 @@ window.AEFieldApp = {
                     <div class="min-w-0">
                       <div class="flex flex-wrap items-center gap-2">
                         <div class="text-sm font-semibold text-[#04250E] ae-break-words">
-                          ${this.escapeHtml(this.justSubmittedReceipt.title)}
+                          ${this.escapeHtml(customThankYouTitle || this.justSubmittedReceipt.title)}
                         </div>
                         ${
                           this.justSubmittedReceipt.syncBadge
@@ -965,11 +1080,19 @@ window.AEFieldApp = {
                         }
                       </div>
                       <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">
-                        ${this.escapeHtml(this.justSubmittedReceipt.subtitle)}
+                        ${this.escapeHtml(customThankYouMsg || this.justSubmittedReceipt.subtitle)}
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2 shrink-0">
+                  <div class="flex flex-wrap items-center gap-2 shrink-0">
+                    ${
+                      safeRedirectUrl
+                        ? `<a href="${this.escapeAttr(safeRedirectUrl)}" target="_blank" rel="noopener noreferrer"
+                            class="h-8 px-3.5 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white hover:bg-[#1F6A45] inline-flex items-center gap-1.5 ae-press">
+                            Continue &rarr;
+                          </a>`
+                        : ''
+                    }
                     ${!this.isAppInstalled && !this.isRespondentMode ? `
                       <button type="button" onclick="AEFieldApp.promptInstall()"
                         class="h-8 px-3 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white hover:bg-[#1F6A45] inline-flex items-center gap-1.5 ae-press">
@@ -999,15 +1122,22 @@ window.AEFieldApp = {
         <div class="border p-6 sm:p-8 space-y-4 border-t-4" style="background:${resolvedTheme.cardBg}; border-color:${resolvedTheme.cardBorder}; border-top-color:${accent}; border-radius:${resolvedTheme.cardRadius};">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2.5 min-w-0">
-              <picture>
-                <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
-                <img src="./icons/agri_experience_logo.png"
-                  alt="Agri Experience Logo"
-                  width="76" height="32"
-                  fetchpriority="high"
-                  class="h-7 w-auto max-w-[124px] object-contain shrink-0"
-                  onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-              </picture>
+              ${
+                brandLogo
+                  ? `<img src="${this.escapeAttr(brandLogo)}"
+                      alt="${this.escapeAttr(survey.title)} Logo"
+                      class="h-8 w-auto max-w-[160px] object-contain shrink-0"
+                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+                  : `<picture>
+                      <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+                      <img src="./icons/agri_experience_logo.png"
+                        alt="Agri Experience Logo"
+                        width="76" height="32"
+                        fetchpriority="high"
+                        class="h-7 w-auto max-w-[124px] object-contain shrink-0"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                    </picture>`
+              }
               <div class="w-7 h-7 rounded-[6px] bg-[#247B50] text-white hidden items-center justify-center font-bold text-xs shrink-0">
                 <i class="fa-solid fa-seedling text-xs"></i>
               </div>
@@ -1618,6 +1748,31 @@ window.AEFieldApp = {
       `;
     }
 
+    if (q.type === 'calculated') {
+      const dec = q.decimals !== undefined && q.decimals !== null && q.decimals !== '' ? Number(q.decimals) : 2;
+      const computed =
+        val !== undefined && val !== null && val !== '' && Number.isFinite(Number(val))
+          ? Number(val)
+          : (window.AEFormulaEngine && typeof window.AEFormulaEngine.evaluateExpression === 'function'
+              ? window.AEFormulaEngine.evaluateExpression(q.formula || '', this.draftAnswers, Number.isInteger(dec) ? dec : 2)
+              : null);
+      const displayVal = computed !== null && Number.isFinite(computed) ? computed.toLocaleString() : '—';
+      const unitStr = q.unit ? String(q.unit).trim() : '';
+      return `
+        <div data-calculated-for="${this.escapeAttr(q.id)}"
+          class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] px-4 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-baseline gap-2 min-w-0">
+            <span data-calculated-value class="text-2xl font-bold text-[#111613] tabular-nums leading-none">${this.escapeHtml(displayVal)}</span>
+            ${unitStr ? `<span class="text-xs font-semibold text-[#247B50] bg-[#DCFAE5] px-2 py-0.5 rounded-[4px]">${this.escapeHtml(unitStr)}</span>` : ''}
+          </div>
+          <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#525B56] shrink-0">
+            <i class="fa-solid fa-equals text-[#247B50] text-[10px]"></i>
+            <span>Auto-calculated</span>
+          </span>
+        </div>
+      `;
+    }
+
     return `
       <input type="text"
         value="${this.escapeAttr(val || '')}"
@@ -1627,15 +1782,47 @@ window.AEFieldApp = {
     `;
   },
 
+  recomputeCalculatedFields(updateDomInPlace = true) {
+    if (!window.AEFormulaEngine || typeof window.AEFormulaEngine.evaluateCalculatedFields !== 'function') return {};
+    const rawSurvey =
+      this.activeSurvey ||
+      (window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+        ? window.aeStore.getSurveyById(this.activeSurveyId)
+        : null);
+    if (!rawSurvey) return {};
+
+    const calculated = window.AEFormulaEngine.evaluateCalculatedFields(rawSurvey, this.draftAnswers);
+    Object.entries(calculated).forEach(([qId, val]) => {
+      if (val !== null && Number.isFinite(val)) {
+        this.draftAnswers[qId] = val;
+      } else {
+        delete this.draftAnswers[qId];
+      }
+    });
+
+    if (updateDomInPlace && typeof document !== 'undefined') {
+      document.querySelectorAll('[data-calculated-for]').forEach((cardEl) => {
+        const qId = cardEl.getAttribute('data-calculated-for');
+        if (!Object.prototype.hasOwnProperty.call(calculated, qId)) return;
+        const val = calculated[qId];
+        const valueNode = cardEl.querySelector('[data-calculated-value]') || cardEl;
+        valueNode.textContent = val !== null && Number.isFinite(val) ? val.toLocaleString() : '—';
+      });
+    }
+    return calculated;
+  },
+
   setAnswer(questionId, value) {
     this.draftAnswers[questionId] = value;
     delete this.validationErrors[questionId];
+    this.recomputeCalculatedFields(false);
     this.persistDraft();
     this.render();
   },
 
   setAnswerSilent(questionId, value) {
     this.draftAnswers[questionId] = value;
+    this.recomputeCalculatedFields(true);
     this.persistDraft();
     if (this.validationErrors[questionId]) {
       delete this.validationErrors[questionId];
@@ -1808,7 +1995,7 @@ window.AEFieldApp = {
       }
       const val = this.draftAnswers[q.id];
 
-      if (q.required) {
+      if (q.required && q.type !== 'calculated') {
         if (val === undefined || val === null || val === '') {
           errors[q.id] = 'This question is required before continuing.';
           return;
@@ -1878,6 +2065,20 @@ window.AEFieldApp = {
         }
       }
     });
+
+    // Cross-question numeric consistency rules
+    if (window.AEFormulaEngine && typeof window.AEFormulaEngine.evaluateConsistencyRules === 'function') {
+      const pageQIds = new Set((page.questions || []).map((q) => q.id));
+      const consistencyViolations = window.AEFormulaEngine.evaluateConsistencyRules(
+        rawSurvey || { pages: [page] },
+        this.draftAnswers
+      );
+      consistencyViolations.forEach((v) => {
+        if (v && v.questionId && pageQIds.has(v.questionId) && !errors[v.questionId]) {
+          errors[v.questionId] = v.message;
+        }
+      });
+    }
 
     this.validationErrors = errors;
     return Object.keys(errors).length === 0;
@@ -2021,6 +2222,17 @@ window.AEFieldApp = {
       }
     }
 
+    if (window.aeStore && typeof window.aeStore.getSurveyAvailability === 'function') {
+      const avail = window.aeStore.getSurveyAvailability(survey);
+      if (avail && !avail.open) {
+        this.showToast(avail.reason || 'This survey is no longer accepting responses.', 'warning');
+        this.render();
+        return;
+      }
+    }
+
+    this.recomputeCalculatedFields(false);
+
     this.isSubmitting = true;
     try {
       let gpsMeta = null;
@@ -2086,13 +2298,23 @@ window.AEFieldApp = {
         ? 'Saved & synced'
         : (window.aeStore.isEffectivelyOnline() ? 'Saved — syncing now…' : this.t('storedLocallyPending'));
 
+      const customThankYouTitle =
+        survey.branding && survey.branding.thankYouTitle && String(survey.branding.thankYouTitle).trim()
+          ? String(survey.branding.thankYouTitle).trim()
+          : '';
+      const customThankYouMsg =
+        survey.branding && survey.branding.thankYouMessage && String(survey.branding.thankYouMessage).trim()
+          ? String(survey.branding.thankYouMessage).trim()
+          : '';
+
       this.justSubmittedReceipt = {
-        title: this.isRespondentMode
+        title: customThankYouTitle || (this.isRespondentMode
           ? 'Thank you — your answers are saved.'
-          : `${this.t('interviewLogged')} (${initialSyncBadge})`,
-        subtitle: this.isRespondentMode
+          : `${this.t('interviewLogged')} (${initialSyncBadge})`),
+        subtitle: customThankYouMsg || (this.isRespondentMode
           ? 'Your response has been recorded safely. You can close this page or submit another response below.'
-          : `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`,
+          : `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`),
+        redirectUrl: this.getSafeRedirectUrl(survey),
         receiptId: saved.id,
         syncStatus: saved.syncStatus || 'pending',
         syncBadge: initialSyncBadge,
