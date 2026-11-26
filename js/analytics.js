@@ -1333,9 +1333,74 @@ window.AEAnalytics = {
   waveCompareSurveyId: '',
   questionSubTabs: {}, // qId -> 'chart' | 'table' | 'stats' | 'verbatim'
   questionChartTypes: {}, // qId -> 'horizontalBar' | 'bar' | 'doughnut'
+  questionAiSummaries: null, // lazy-loaded cache from localStorage ('ae_q_ai_summary_v1') keyed by `${surveyId}::${qId}::n=${count}`
+  questionAiBusy: {}, // qId -> boolean
+  questionVerbatimExpanded: {}, // qId -> boolean (collapsed by default)
+  questionVerbatimPage: {}, // qId -> 1-based page number (10 per page)
+  questionVerbatimSearch: {}, // qId -> search query string
+  _qSearchTimers: {},
   chartInstances: {}, // qId -> Chart.js instance
   mapInstances: {}, // qId -> Leaflet map instance
   _mapFocusBounds: {}, // mapKey -> { countryName, countryBounds, plotBounds, center, zoom }
+
+  isOpenEndedTextQuestion(q, survey = null) {
+    if (!q) return false;
+    if (q.type !== 'short_text' && q.type !== 'long_text' && q.type !== 'audio_note') return false;
+    if (survey) {
+      const numericIds = new Set(this.getNumericQuestions(survey).map((nq) => nq.id));
+      if (numericIds.has(q.id)) return false;
+    } else if (q.type === 'short_text' && /yield|cost|price|income|acres|hectares|amount|quantity|size|score|rating|age|tenure|duration|temp|members|kg/i.test(q.title || '')) {
+      return false;
+    }
+    return true;
+  },
+
+  _getQuestionAiCacheKey(surveyId, qId, count) {
+    return `${String(surveyId || 'survey')}::${String(qId || 'q')}::n=${Number(count) || 0}`;
+  },
+
+  _loadQuestionAiSummaryCache() {
+    if (this.questionAiSummaries && typeof this.questionAiSummaries === 'object') {
+      return this.questionAiSummaries;
+    }
+    this.questionAiSummaries = {};
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('ae_q_ai_summary_v1');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            this.questionAiSummaries = parsed;
+          }
+        }
+      }
+    } catch (e) {
+      this.questionAiSummaries = {};
+    }
+    return this.questionAiSummaries;
+  },
+
+  _saveQuestionAiSummaryCache() {
+    try {
+      const cache = this._loadQuestionAiSummaryCache();
+      const keys = Object.keys(cache);
+      if (keys.length > 50) {
+        keys
+          .sort((a, b) => String(cache[a]?.generatedAt || '').localeCompare(String(cache[b]?.generatedAt || '')))
+          .slice(0, keys.length - 50)
+          .forEach((k) => delete cache[k]);
+      }
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ae_q_ai_summary_v1', JSON.stringify(cache));
+      }
+    } catch (e) {}
+  },
+
+  getCachedQuestionAiSummary(surveyId, qId, count) {
+    const cache = this._loadQuestionAiSummaryCache();
+    const key = this._getQuestionAiCacheKey(surveyId, qId, count);
+    return cache[key] || null;
+  },
 
   getNumericQuestions(survey) {
     if (!survey || !window.aeStore) return [];
@@ -1795,6 +1860,137 @@ window.AEAnalytics = {
   setQuestionChartType(qId, type) {
     this.questionChartTypes[qId] = type;
     window.AEApp.render();
+  },
+
+  toggleQuestionVerbatimDrawer(qId) {
+    if (!qId) return;
+    this.questionVerbatimExpanded[qId] = !this.questionVerbatimExpanded[qId];
+    this.questionVerbatimPage[qId] = 1;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setQuestionVerbatimPage(qId, page) {
+    if (!qId) return;
+    this.questionVerbatimPage[qId] = Math.max(1, Number(page) || 1);
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setQuestionVerbatimSearch(qId, query, immediate = false) {
+    if (!qId) return;
+    this.questionVerbatimSearch[qId] = String(query || '');
+    this.questionVerbatimPage[qId] = 1;
+    const doRender = () => {
+      if (window.AEApp && typeof window.AEApp.render === 'function') {
+        window.AEApp.render();
+        if (typeof document !== 'undefined') {
+          const input = document.getElementById(`ae_q_vsearch_${qId}`);
+          if (input) {
+            input.focus();
+            try {
+              const len = input.value.length;
+              input.setSelectionRange(len, len);
+            } catch (e) {}
+          }
+        }
+      }
+    };
+    if (this._qSearchTimers[qId]) clearTimeout(this._qSearchTimers[qId]);
+    if (immediate) {
+      doRender();
+    } else {
+      this._qSearchTimers[qId] = setTimeout(doRender, 180);
+    }
+  },
+
+  openQuestionInVerbatimTab(qId, themeId = 'all') {
+    this.activeTab = 'text';
+    this.verbatimQuestionId = qId || 'all';
+    this.verbatimThemeFilter = themeId || 'all';
+    this.verbatimSentimentFilter = 'all';
+    this.verbatimActionableOnly = false;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  async runQuestionAiSummary(surveyId, qId, forceRefresh = false) {
+    if (!surveyId || !qId) return null;
+    if (this.questionAiBusy[qId]) return null;
+    const survey = window.aeStore && typeof window.aeStore.getSurvey === 'function'
+      ? window.aeStore.getSurvey(surveyId)
+      : null;
+    if (!survey) return null;
+
+    const allResponses = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+      ? window.aeStore.getResponsesForSurvey(surveyId)
+      : [];
+    const responses = typeof this.getFilteredResponses === 'function'
+      ? this.getFilteredResponses(allResponses, survey)
+      : allResponses;
+
+    let answeredCount = 0;
+    responses.forEach((r) => {
+      const val = r.answers ? r.answers[qId] : undefined;
+      if (val !== undefined && val !== null && val !== '' && (!Array.isArray(val) || val.length > 0)) {
+        answeredCount++;
+      }
+    });
+
+    if (answeredCount === 0) {
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('No responses to summarize for this question yet.', 'info');
+      }
+      return null;
+    }
+
+    const cacheKey = this._getQuestionAiCacheKey(surveyId, qId, answeredCount);
+    const cache = this._loadQuestionAiSummaryCache();
+    if (!forceRefresh && cache[cacheKey]) {
+      if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+      return cache[cacheKey];
+    }
+
+    this.questionAiBusy[qId] = true;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+
+    try {
+      const engine = window.AETeXtEngine;
+      if (!engine || typeof engine.analyzeVerbatims !== 'function') {
+        throw new Error('Text intelligence engine unavailable.');
+      }
+      const analysis = engine.analyzeVerbatims(responses, survey, { questionId: qId });
+      const res = typeof engine.synthesizeVerbatimsViaGAS === 'function'
+        ? await engine.synthesizeVerbatimsViaGAS(analysis, survey)
+        : { ok: true, provider: 'offline_fallback', briefing: engine.generateExecutiveBriefing(analysis, survey) };
+
+      const entry = {
+        provider: res?.provider || 'offline_fallback',
+        model: res?.model || '',
+        configured: Boolean(res?.configured),
+        briefing: res?.briefing || engine.generateExecutiveBriefing(analysis, survey),
+        message: res?.message || '',
+        count: answeredCount,
+        generatedAt: new Date().toISOString()
+      };
+
+      cache[cacheKey] = entry;
+      this._saveQuestionAiSummaryCache();
+
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        if (entry.provider === 'gemini') {
+          window.AEApp.showToast('Gemini AI summary ready.', 'success');
+        } else {
+          window.AEApp.showToast(entry.message || 'Offline summary refreshed. Set GEMINI_API_KEY in GAS for Gemini AI.', 'info');
+        }
+      }
+      return entry;
+    } catch (err) {
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast((err && err.message) || 'Could not generate AI summary.', 'error');
+      }
+      return null;
+    } finally {
+      this.questionAiBusy[qId] = false;
+      if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    }
   },
 
   setCrossTabRow(qId) {
@@ -3044,6 +3240,7 @@ window.AEAnalytics = {
 
     const skippedCount = responses.length - answeredCount;
     const answeredPct = responses.length > 0 ? Math.round((answeredCount / responses.length) * 100) : 0;
+    const isOpenEndedText = this.isOpenEndedTextQuestion(q, survey);
     const currentSubTab = this.questionSubTabs[q.id] || 'chart';
     const chartType = this.questionChartTypes[q.id] || (q.type === 'multiple_choice' || q.type === 'checkboxes' || q.type === 'dropdown' ? 'horizontalBar' : 'bar');
     const displayLabel = numInfo?.label || String(idx + 1);
@@ -3085,38 +3282,42 @@ window.AEAnalytics = {
           <div class="flex flex-wrap items-center gap-2 shrink-0">
             <!-- 4-Tab Switcher -->
             <div class="inline-flex rounded-[6px] border border-[#E4E7E4] p-0.5 bg-[#F8F9F8] text-xs font-medium">
-              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'chart')"
-                title="Visual Distribution Chart"
+              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${safeQIdJs}', 'chart')"
+                title="${isOpenEndedText ? 'Theme & Sentiment Summary' : 'Visual Distribution Chart'}"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'chart' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
-                Chart
+                ${isOpenEndedText ? 'Summary' : 'Chart'}
               </button>
-              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'table')"
+              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${safeQIdJs}', 'table')"
                 title="Frequency Tabulation Table"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'table' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
                 Table
               </button>
-              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'stats')"
+              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${safeQIdJs}', 'stats')"
                 title="Statistical Measures"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'stats' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
                 Stats
               </button>
-              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${q.id}', 'verbatim')"
+              <button type="button" onclick="AEAnalytics.setQuestionSubTab('${safeQIdJs}', 'verbatim')"
                 title="Open Text & Notes"
                 class="px-2.5 py-1 rounded-[4px] ae-press ${currentSubTab === 'verbatim' ? 'bg-[#141A17] text-white font-semibold' : 'text-[#525B56] hover:text-[#111613]'}">
                 Notes
               </button>
             </div>
 
-            <!-- Download PNG Chart -->
+            ${
+              !isOpenEndedText
+                ? `<!-- Download PNG Chart -->
             <button type="button" onclick="AEAnalytics.downloadChartPNG('ae_chart_${safeQIdJs}', '${safeTitleSlugJs}')"
               title="Download PNG"
               aria-label="Download PNG"
               class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
               <i class="fa-solid fa-image text-[11px]"></i>
-            </button>
+            </button>`
+                : ''
+            }
 
             <!-- Export Question CSV -->
-            <button type="button" onclick="AEAnalytics.exportQuestionCsv('${q.id}')"
+            <button type="button" onclick="AEAnalytics.exportQuestionCsv('${safeQIdJs}')"
               title="Export Question Tabulation CSV"
               aria-label="Export Question Tabulation CSV"
               class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
@@ -3133,6 +3334,8 @@ window.AEAnalytics = {
             ? this.renderQuestionStatsPanel(q, values, answeredCount)
             : currentSubTab === 'verbatim'
             ? this.renderQuestionVerbatimPanel(q, values)
+            : isOpenEndedText
+            ? this.renderOpenEndedQuestionSummary(q, values, responses, survey)
             : this.renderQuestionChartCanvas(q, values, chartType)
         }
       </div>
@@ -3893,47 +4096,352 @@ window.AEAnalytics = {
     `;
   },
 
-  renderQuestionVerbatimPanel(q, values) {
-    if (values.length === 0) {
-      return '<div class="p-8 text-center text-xs text-[#646E68] bg-[#F8F9F8] rounded-[6px]">No responses have been recorded for this question yet.</div>';
+  renderOpenEndedQuestionSummary(q, values, responses, survey) {
+    if (!values || values.length === 0) {
+      return '<div class="p-6 text-center text-xs text-[#646E68] bg-[#F8F9F8] rounded-[6px]">No responses recorded for this question yet.</div>';
     }
 
+    const engine = window.AETeXtEngine;
+    const analysis = engine && typeof engine.analyzeVerbatims === 'function'
+      ? engine.analyzeVerbatims(responses || [], survey, { questionId: q.id })
+      : null;
+    const offlineBriefing = analysis && typeof engine.generateExecutiveBriefing === 'function'
+      ? engine.generateExecutiveBriefing(analysis, survey)
+      : null;
+
+    const surveyId = (survey && survey.id) || '';
+    const cachedAi = this.getCachedQuestionAiSummary(surveyId, q.id, values.length);
+    const isGemini = Boolean(cachedAi && cachedAi.provider === 'gemini' && cachedAi.briefing);
+    const isBusy = Boolean(this.questionAiBusy[q.id]);
+    const isExpanded = Boolean(this.questionVerbatimExpanded[q.id]);
+
+    const safeQIdJs = AEApp.escapeJs(q.id);
+    const safeSurveyIdJs = AEApp.escapeJs(surveyId);
+
+    const sentiment = analysis?.sentimentSummary || { positivePct: 0, neutralPct: 100, negativePct: 0, positive: 0, neutral: values.length, negative: 0 };
+    const posPct = Math.max(0, Math.min(100, Math.round(Number(sentiment.positivePct) || 0)));
+    const negPct = Math.max(0, Math.min(100, Math.round(Number(sentiment.negativePct) || 0)));
+    const neuPct = Math.max(0, 100 - posPct - negPct);
+
+    const themes = (analysis?.themes || []).filter((t) => (t.count || 0) > 0).slice(0, 5);
+    const records = analysis?.records || [];
+    const actionableCount = records.filter((r) => r && r.isActionable).length;
+
+    // Build concise 2-3 sentence overall takeaway
+    let takeawayHeadline = '';
+    let takeawayBullets = [];
+    if (isGemini) {
+      takeawayHeadline = String(cachedAi.briefing.headline || '').trim();
+      takeawayBullets = Array.isArray(cachedAi.briefing.summaryBullets)
+        ? cachedAi.briefing.summaryBullets.slice(0, 2)
+        : [];
+    } else if (offlineBriefing) {
+      takeawayHeadline = String(offlineBriefing.headline || '').trim();
+      const topThemeLead = themes.length > 0
+        ? `Leading topics: ${themes.slice(0, 3).map((t) => `${t.name} (${t.pct}%)`).join(', ')}.`
+        : '';
+      const sentimentLead = `Overall tone is ${posPct}% positive, ${neuPct}% neutral, and ${negPct}% negative${actionableCount > 0 ? `, with ${actionableCount} actionable ${actionableCount === 1 ? 'suggestion' : 'suggestions'}` : ''}.`;
+      takeawayBullets = [topThemeLead, sentimentLead].filter(Boolean);
+    } else {
+      takeawayHeadline = `${values.length} open-ended ${values.length === 1 ? 'response' : 'responses'} recorded for this question.`;
+    }
+
+    const aiBtnLabel = isBusy
+      ? 'Summarizing…'
+      : cachedAi
+      ? 'Refresh AI Summary'
+      : 'AI Summarize';
+
+    const cachedTimeLabel = cachedAi && cachedAi.generatedAt
+      ? new Date(cachedAi.generatedAt).toISOString().replace('T', ' ').slice(0, 16)
+      : '';
+
     return `
-      <div class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-        ${values
-          .slice(0, 25)
-          .map((item) => {
-            const formatted = this.formatAnswerDisplay(item.val, q.type);
-            const copyStr = typeof item.val === 'string' ? item.val : formatted;
-            return `
-              <div class="p-3.5 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-start justify-between gap-3 text-xs">
-                <div class="min-w-0">
-                  <div class="text-[#111613] font-medium ae-break-words leading-relaxed">
-                    ${AEApp.escapeHtml(formatted)}
-                  </div>
-                  <div class="text-[11px] text-[#646E68] mt-1.5 flex flex-wrap items-center gap-2">
-                    <span class="font-medium text-[#525B56]">${AEApp.escapeHtml(item.enumerator || 'Enumerator')}</span>
-                    <span>&middot;</span>
-                    <span class="tabular-nums">${new Date(item.submittedAt || Date.now()).toISOString().replace('T', ' ').slice(0, 16)}</span>
-                    ${
-                      item.syncStatus
-                        ? `<span>&middot;</span><span class="text-[10.5px] px-1.5 py-0.5 rounded-[4px] ${
-                            item.syncStatus === 'synced' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'
-                          }">${item.syncStatus === 'synced' ? 'Synced' : 'Queued'}</span>`
-                        : ''
-                    }
-                  </div>
-                </div>
-                <button type="button" onclick="AEApp.copyText('${AEApp.escapeJs(copyStr)}', 'Response copied.')"
-                  title="Copy response" class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center shrink-0 ae-press">
-                  <i class="fa-regular fa-copy text-[10px]"></i>
-                </button>
+      <div class="space-y-4">
+        <!-- Top Action Strip -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-1">
+          <div class="flex flex-wrap items-center gap-2 text-[11px]">
+            ${
+              isGemini
+                ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] font-semibold">
+                    <i class="fa-solid fa-sparkles text-[10px]"></i> Gemini AI Summary
+                  </span>`
+                : `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#F4F6F4] text-[#525B56] font-medium">
+                    <i class="fa-solid fa-bolt text-[10px] text-[#247B50]"></i> Instant Analysis
+                  </span>`
+            }
+            <span class="text-[#646E68] tabular-nums">Based on ${values.length} ${values.length === 1 ? 'response' : 'responses'}</span>
+            ${cachedTimeLabel ? `<span class="text-[#CFD5D0]">&middot;</span><span class="text-[#646E68] tabular-nums">Updated ${AEApp.escapeHtml(cachedTimeLabel)}</span>` : ''}
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button"
+              ${isBusy ? 'disabled' : ''}
+              onclick="AEAnalytics.runQuestionAiSummary('${safeSurveyIdJs}', '${safeQIdJs}', ${cachedAi ? 'true' : 'false'})"
+              class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-xs font-medium border border-[#247B50]/35 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] disabled:opacity-60 ae-press">
+              <i class="fa-solid ${isBusy ? 'fa-spinner fa-spin' : (cachedAi ? 'fa-rotate' : 'fa-wand-magic-sparkles')} text-[10px] text-[#247B50]"></i>
+              <span>${aiBtnLabel}</span>
+            </button>
+            <button type="button"
+              onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
+              class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-xs font-medium border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613] ae-press">
+              <span>Deep Dive in Verbatim Tab</span>
+              <i class="fa-solid fa-arrow-right text-[10px] text-[#525B56]"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Overall Takeaway Box -->
+        <div class="p-4 rounded-[6px] border ${isGemini ? 'border-[#247B50]/30 bg-[#F3FBF6]/70' : 'border-[#E4E7E4] bg-[#FAFBF9]'} space-y-2">
+          ${takeawayHeadline ? `<p class="text-[13px] font-medium text-[#111613] leading-relaxed">${AEApp.escapeHtml(takeawayHeadline)}</p>` : ''}
+          ${
+            takeawayBullets.length > 0
+              ? `<div class="space-y-1 text-xs text-[#525B56] leading-relaxed">
+                  ${takeawayBullets.map((b) => `<p>${AEApp.escapeHtml(b)}</p>`).join('')}
+                </div>`
+              : ''
+          }
+        </div>
+
+        <!-- Themes & Sentiment Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <!-- Top Themes Horizontal Share Bars -->
+          <div class="lg:col-span-7 space-y-2.5">
+            <div class="flex items-center justify-between text-[11px] font-medium text-[#525B56]">
+              <span>Top Themes</span>
+              <span class="text-[#646E68]">Click any theme to filter</span>
+            </div>
+            ${
+              themes.length > 0
+                ? `<div class="space-y-2">
+                    ${themes
+                      .map((t) => {
+                        const pct = Math.max(0, Math.min(100, Math.round(Number(t.pct) || 0)));
+                        const safeThemeJs = AEApp.escapeJs(t.id || t.name || 'all');
+                        return `
+                          <button type="button"
+                            onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', '${safeThemeJs}')"
+                            class="w-full text-left group p-2 rounded-[5px] border border-transparent hover:border-[#E4E7E4] hover:bg-[#FAFBF9] transition-colors">
+                            <div class="flex items-center justify-between gap-2 text-xs mb-1">
+                              <span class="font-medium text-[#111613] group-hover:text-[#247B50] truncate">${AEApp.escapeHtml(t.name)}</span>
+                              <span class="text-[11px] text-[#525B56] tabular-nums shrink-0">
+                                <strong class="text-[#111613]">${t.count}</strong> (${pct}%)
+                              </span>
+                            </div>
+                            <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                              <div class="h-full rounded-full bg-[#247B50]" style="width: ${Math.max(pct, 3)}%;"></div>
+                            </div>
+                          </button>
+                        `;
+                      })
+                      .join('')}
+                  </div>`
+                : `<div class="p-3 rounded-[5px] bg-[#FAFBF9] border border-[#EFEFEF] text-xs text-[#646E68]">
+                    Not enough repeated keywords yet to cluster themes automatically.
+                  </div>`
+            }
+          </div>
+
+          <!-- Compact Sentiment Split & Actionable Pill -->
+          <div class="lg:col-span-5 flex flex-col justify-between gap-3 p-3.5 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9]">
+            <div class="space-y-2.5">
+              <div class="flex items-center justify-between text-[11px] font-medium text-[#525B56]">
+                <span>Sentiment Split</span>
+                ${
+                  actionableCount > 0
+                    ? `<button type="button" onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
+                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[10.5px] font-semibold hover:bg-[#FEF3C7] tabular-nums">
+                        <i class="fa-solid fa-lightbulb text-[9px]"></i> ${actionableCount} actionable
+                      </button>`
+                    : `<span class="text-[10.5px] text-[#646E68] tabular-nums">0 actionable flagged</span>`
+                }
               </div>
-            `;
-          })
-          .join('')}
+              <div class="w-full h-2.5 rounded-full bg-[#EAECE9] overflow-hidden flex" role="img" aria-label="Sentiment split: ${posPct}% positive, ${neuPct}% neutral, ${negPct}% negative">
+                ${posPct > 0 ? `<div style="width: ${posPct}%;" class="bg-[#247B50] h-full" title="Positive: ${posPct}%"></div>` : ''}
+                ${neuPct > 0 ? `<div style="width: ${neuPct}%;" class="bg-[#94A3B8] h-full" title="Neutral: ${neuPct}%"></div>` : ''}
+                ${negPct > 0 ? `<div style="width: ${negPct}%;" class="bg-[#C4242A] h-full" title="Negative: ${negPct}%"></div>` : ''}
+              </div>
+              <div class="grid grid-cols-3 gap-2 pt-1 text-[11px] tabular-nums">
+                <div>
+                  <span class="inline-block w-2 h-2 rounded-full bg-[#247B50] mr-1"></span>
+                  <span class="text-[#525B56]">Positive</span>
+                  <div class="font-semibold text-[#111613] mt-0.5">${posPct}%</div>
+                </div>
+                <div>
+                  <span class="inline-block w-2 h-2 rounded-full bg-[#94A3B8] mr-1"></span>
+                  <span class="text-[#525B56]">Neutral</span>
+                  <div class="font-semibold text-[#111613] mt-0.5">${neuPct}%</div>
+                </div>
+                <div>
+                  <span class="inline-block w-2 h-2 rounded-full bg-[#C4242A] mr-1"></span>
+                  <span class="text-[#525B56]">Negative</span>
+                  <div class="font-semibold text-[#111613] mt-0.5">${negPct}%</div>
+                </div>
+              </div>
+            </div>
+
+            ${
+              Array.isArray(analysis?.topTerms) && analysis.topTerms.length > 0
+                ? `<div class="pt-2.5 border-t border-[#E4E7E4]">
+                    <div class="text-[10.5px] text-[#646E68] mb-1.5">Frequent Terms</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      ${analysis.topTerms
+                        .slice(0, 6)
+                        .map((termObj) => {
+                          const label = typeof termObj === 'string' ? termObj : (termObj.term || termObj.word || '');
+                          const cnt = typeof termObj === 'object' && termObj ? (termObj.count || termObj.freq || '') : '';
+                          if (!label) return '';
+                          return `<span class="px-2 py-0.5 rounded-[4px] bg-white border border-[#E4E7E4] text-[10.5px] text-[#111613] tabular-nums">${AEApp.escapeHtml(label)}${cnt ? ` <span class="text-[#646E68]">(${cnt})</span>` : ''}</span>`;
+                        })
+                        .join('')}
+                    </div>
+                  </div>`
+                : ''
+            }
+          </div>
+        </div>
+
+        <!-- Collapsed Raw Responses Toggle & Paginated Drawer -->
+        <div class="border-t border-[#EFEFEF] pt-3">
+          <button type="button"
+            onclick="AEAnalytics.toggleQuestionVerbatimDrawer('${safeQIdJs}')"
+            aria-expanded="${isExpanded ? 'true' : 'false'}"
+            class="inline-flex items-center gap-2 text-xs font-medium text-[#525B56] hover:text-[#111613] ae-press">
+            <i class="fa-solid ${isExpanded ? 'fa-chevron-up' : 'fa-chevron-down'} text-[10px] text-[#247B50]"></i>
+            <span>${isExpanded ? 'Hide individual responses' : `Browse all ${values.length} ${values.length === 1 ? 'response' : 'responses'}`}</span>
+          </button>
+
+          ${
+            isExpanded
+              ? `<div class="mt-3">${this.renderPaginatedVerbatimList(q, values)}</div>`
+              : ''
+          }
+        </div>
       </div>
     `;
+  },
+
+  renderPaginatedVerbatimList(q, values) {
+    if (!values || values.length === 0) {
+      return '<div class="p-6 text-center text-xs text-[#646E68] bg-[#F8F9F8] rounded-[6px]">No responses have been recorded for this question yet.</div>';
+    }
+
+    const qId = q.id;
+    const safeQIdJs = AEApp.escapeJs(qId);
+    const searchQuery = String(this.questionVerbatimSearch[qId] || '').trim();
+    const searchLower = searchQuery.toLowerCase();
+
+    const filtered = searchLower
+      ? values.filter((item) => {
+          const formatted = String(this.formatAnswerDisplay(item.val, q.type) || '').toLowerCase();
+          const enumerator = String(item.enumerator || '').toLowerCase();
+          return formatted.includes(searchLower) || enumerator.includes(searchLower);
+        })
+      : values;
+
+    const pageSize = 10;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const currentPage = Math.min(Math.max(1, Number(this.questionVerbatimPage[qId]) || 1), totalPages);
+    const startIdx = (currentPage - 1) * pageSize;
+    const pageItems = filtered.slice(startIdx, startIdx + pageSize);
+    const showFrom = filtered.length === 0 ? 0 : startIdx + 1;
+    const showTo = Math.min(filtered.length, startIdx + pageItems.length);
+
+    return `
+      <div class="space-y-3">
+        <!-- Live Search Bar -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="relative flex-1 max-w-sm">
+            <i class="fa-solid fa-magnifying-glass text-[11px] text-[#646E68] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+            <input type="text"
+              id="ae_q_vsearch_${AEApp.escapeAttr(qId)}"
+              value="${AEApp.escapeAttr(searchQuery)}"
+              oninput="AEAnalytics.setQuestionVerbatimSearch('${safeQIdJs}', this.value)"
+              placeholder="Search responses or enumerator…"
+              class="w-full h-8 pl-8 pr-7 text-xs bg-white border border-[#CFD5D0] rounded-[5px] text-[#111613] placeholder:text-[#8E9690] focus:outline-none focus:border-[#247B50]" />
+            ${
+              searchQuery
+                ? `<button type="button"
+                    onclick="AEAnalytics.setQuestionVerbatimSearch('${safeQIdJs}', '', true)"
+                    aria-label="Clear search"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-[#646E68] hover:text-[#111613]">
+                    <i class="fa-solid fa-xmark text-[11px]"></i>
+                  </button>`
+                : ''
+            }
+          </div>
+          <div class="text-[11px] text-[#646E68] tabular-nums">
+            Showing <strong class="text-[#111613]">${showFrom}–${showTo}</strong> of <strong class="text-[#111613]">${filtered.length}</strong>${searchQuery ? ` matching "${AEApp.escapeHtml(searchQuery)}"` : ''}
+          </div>
+        </div>
+
+        <!-- Paginated Items -->
+        ${
+          pageItems.length === 0
+            ? `<div class="p-6 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-[#EFEFEF] rounded-[6px]">No responses match "${AEApp.escapeHtml(searchQuery)}".</div>`
+            : `<div class="space-y-2">
+                ${pageItems
+                  .map((item) => {
+                    const formatted = this.formatAnswerDisplay(item.val, q.type);
+                    const copyStr = typeof item.val === 'string' ? item.val : formatted;
+                    return `
+                      <div class="p-3 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-start justify-between gap-3 text-xs">
+                        <div class="min-w-0">
+                          <div class="text-[#111613] font-medium ae-break-words leading-relaxed">
+                            ${AEApp.escapeHtml(formatted)}
+                          </div>
+                          <div class="text-[11px] text-[#646E68] mt-1.5 flex flex-wrap items-center gap-2">
+                            <span class="font-medium text-[#525B56]">${AEApp.escapeHtml(item.enumerator || 'Enumerator')}</span>
+                            <span>&middot;</span>
+                            <span class="tabular-nums">${new Date(item.submittedAt || Date.now()).toISOString().replace('T', ' ').slice(0, 16)}</span>
+                            ${
+                              item.syncStatus
+                                ? `<span>&middot;</span><span class="text-[10.5px] px-1.5 py-0.5 rounded-[4px] ${
+                                    item.syncStatus === 'synced' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'
+                                  }">${item.syncStatus === 'synced' ? 'Synced' : 'Queued'}</span>`
+                                : ''
+                            }
+                          </div>
+                        </div>
+                        <button type="button" onclick="AEApp.copyText('${AEApp.escapeAttr(AEApp.escapeJs(copyStr))}', 'Response copied.')"
+                          title="Copy response" class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center shrink-0 ae-press">
+                          <i class="fa-regular fa-copy text-[10px]"></i>
+                        </button>
+                      </div>
+                    `;
+                  })
+                  .join('')}
+              </div>`
+        }
+
+        <!-- Pagination Controls -->
+        ${
+          totalPages > 1
+            ? `<div class="flex items-center justify-between pt-1 text-xs">
+                <button type="button"
+                  ${currentPage <= 1 ? 'disabled' : ''}
+                  onclick="AEAnalytics.setQuestionVerbatimPage('${safeQIdJs}', ${currentPage - 1})"
+                  class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613] disabled:opacity-40 disabled:pointer-events-none ae-press">
+                  <i class="fa-solid fa-chevron-left text-[10px] mr-1"></i> Prev
+                </button>
+                <span class="text-[11px] text-[#525B56] tabular-nums">
+                  Page <strong class="text-[#111613]">${currentPage}</strong> of <strong class="text-[#111613]">${totalPages}</strong>
+                </span>
+                <button type="button"
+                  ${currentPage >= totalPages ? 'disabled' : ''}
+                  onclick="AEAnalytics.setQuestionVerbatimPage('${safeQIdJs}', ${currentPage + 1})"
+                  class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613] disabled:opacity-40 disabled:pointer-events-none ae-press">
+                  Next <i class="fa-solid fa-chevron-right text-[10px] ml-1"></i>
+                </button>
+              </div>`
+            : ''
+        }
+      </div>
+    `;
+  },
+
+  renderQuestionVerbatimPanel(q, values) {
+    return this.renderPaginatedVerbatimList(q, values);
   },
 
   // --------------------------------------------------------------------------
