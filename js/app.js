@@ -2190,6 +2190,16 @@ window.AEApp = {
                                           <i class="fa-solid fa-box-archive w-3.5"></i>
                                           <span>Archive</span>
                                         </button>`
+                                  }
+                                  ${
+                                    window.aeStore.surveys.length > 1
+                                      ? `<div class="my-1 border-t border-[#EFEFEF]"></div>
+                                         <button onclick="AEApp.deleteSurveyConfirm('${s.id}'); this.closest('details').removeAttribute('open');"
+                                           class="w-full text-left px-3 py-2 hover:bg-[#FFEDEA] text-[#C4242A] flex items-center gap-2">
+                                           <i class="fa-regular fa-trash-can w-3.5"></i>
+                                           <span>Delete</span>
+                                         </button>`
+                                      : ''
                                   }`
                                 : ''
                             }
@@ -2203,11 +2213,47 @@ window.AEApp = {
               .join('')}
           </div>
 
+          ${
+            isAdmin && Array.isArray(this.selectedSurveyIds) && this.selectedSurveyIds.length > 0
+              ? `<div class="bg-[#141A17] text-white rounded-[8px] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-sm">
+                  <div class="text-xs font-medium flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded-full bg-[#247B50] text-white font-semibold tabular-nums">${this.selectedSurveyIds.length}</span>
+                    <span>${this.selectedSurveyIds.length === 1 ? 'survey' : 'surveys'} selected</span>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" onclick="AEApp.bulkArchiveSelectedSurveys()"
+                      class="h-7 px-2.5 rounded-[5px] bg-white/10 hover:bg-white/20 text-white text-xs font-medium inline-flex items-center gap-1.5 ae-press">
+                      <i class="fa-solid fa-box-archive text-[11px]"></i> Archive
+                    </button>
+                    <button type="button" onclick="AEApp.bulkDeleteSelectedSurveys()"
+                      class="h-7 px-2.5 rounded-[5px] bg-[#C4242A] hover:bg-[#A61C22] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                      <i class="fa-regular fa-trash-can text-[11px]"></i> Delete Selected
+                    </button>
+                    <button type="button" onclick="AEApp.clearSurveySelection()"
+                      class="h-7 px-2 rounded-[5px] text-white/75 hover:text-white text-xs">
+                      Clear
+                    </button>
+                  </div>
+                </div>`
+              : ''
+          }
+
           <div class="hidden sm:block ae-card rounded-[8px] overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="border-b border-[#E4E7E4] h-10 text-xs font-normal text-[#525B56]">
-                  <th class="py-2 pl-4 pr-3 font-normal">Survey</th>
+                  ${
+                    isAdmin
+                      ? `<th class="py-2 pl-4 pr-1 w-8">
+                          <input type="checkbox"
+                            aria-label="Select all visible surveys"
+                            ${filteredSurveys.length > 0 && filteredSurveys.every((s) => (this.selectedSurveyIds || []).includes(s.id)) ? 'checked' : ''}
+                            onchange="AEApp.toggleSelectAllSurveys(this.checked)"
+                            class="accent-[#247B50] w-3.5 h-3.5 rounded cursor-pointer" />
+                        </th>`
+                      : ''
+                  }
+                  <th class="py-2 ${isAdmin ? 'pl-2' : 'pl-4'} pr-3 font-normal">Survey</th>
                   <th class="py-2 px-3 font-normal">Status</th>
                   <th class="py-2 px-3 font-normal text-right">Questions</th>
                   <th class="py-2 px-3 font-normal text-right">Responses</th>
@@ -2268,9 +2314,22 @@ window.AEApp = {
       : null;
     const isAdmin = currentUser && currentUser.role === 'admin';
 
+    const isSelected = Array.isArray(this.selectedSurveyIds) && this.selectedSurveyIds.includes(s.id);
+
     return `
-      <tr class="ae-row-hover">
-        <td class="py-3.5 pl-4 pr-3 max-w-md">
+      <tr class="ae-row-hover ${isSelected ? 'bg-[#DCFAE5]/25' : ''}">
+        ${
+          isAdmin
+            ? `<td class="py-3.5 pl-4 pr-1 w-8 align-middle">
+                <input type="checkbox"
+                  aria-label="Select ${this.escapeAttr(s.title)}"
+                  ${isSelected ? 'checked' : ''}
+                  onchange="AEApp.toggleSurveySelection('${this.escapeJs(s.id)}')"
+                  class="accent-[#247B50] w-3.5 h-3.5 rounded cursor-pointer" />
+              </td>`
+            : ''
+        }
+        <td class="py-3.5 ${isAdmin ? 'pl-2' : 'pl-4'} pr-3 max-w-md">
           <button onclick="${isAdmin ? `AEApp.switchStage('design', '${s.id}')` : `AEApp.switchStage('collect', '${s.id}')`}"
             class="text-left font-semibold text-sm text-[#111613] hover:text-[#247B50] block truncate">
             ${this.escapeHtml(s.title)}
@@ -4483,6 +4542,76 @@ window.AEApp = {
     this.render();
   },
 
+  toggleSurveySelection(surveyId) {
+    if (!Array.isArray(this.selectedSurveyIds)) this.selectedSurveyIds = [];
+    const idx = this.selectedSurveyIds.indexOf(surveyId);
+    if (idx >= 0) this.selectedSurveyIds.splice(idx, 1);
+    else this.selectedSurveyIds.push(surveyId);
+    this.render();
+  },
+
+  toggleSelectAllSurveys(checked) {
+    if (!checked) {
+      this.selectedSurveyIds = [];
+      this.render();
+      return;
+    }
+    const currentUser = this.getCurrentUser();
+    const visible = window.aeStore.getSurveysForUser
+      ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: Boolean(this.showArchivedSurveys) })
+      : window.aeStore.surveys;
+    this.selectedSurveyIds = visible.map((s) => s.id);
+    this.render();
+  },
+
+  clearSurveySelection() {
+    this.selectedSurveyIds = [];
+    this.render();
+  },
+
+  bulkArchiveSelectedSurveys() {
+    if (window.AESession && !window.AESession.isAdmin()) {
+      this.showToast('Access Denied: Only HQ Administrators can archive surveys.', 'error');
+      return;
+    }
+    const ids = Array.isArray(this.selectedSurveyIds) ? [...this.selectedSurveyIds] : [];
+    if (ids.length === 0) return;
+    ids.forEach((id) => window.aeStore.archiveSurvey(id));
+    this.selectedSurveyIds = [];
+    this.showToast(`Archived ${ids.length} survey(s).`, 'success');
+    this.render();
+  },
+
+  bulkDeleteSelectedSurveys() {
+    if (window.AESession && !window.AESession.hasPermission('DELETE_SURVEY')) {
+      this.showToast('Access Denied: Only HQ Administrators can delete surveys.', 'error');
+      return;
+    }
+    const ids = Array.isArray(this.selectedSurveyIds) ? [...this.selectedSurveyIds] : [];
+    if (ids.length === 0) return;
+    if (ids.length >= window.aeStore.surveys.length) {
+      this.showToast('At least 1 survey must remain in the workspace. Deselect one survey to proceed.', 'warning');
+      return;
+    }
+    const totalResps = ids.reduce((sum, id) => sum + window.aeStore.getResponsesForSurvey(id).length, 0);
+    const confirmation = window.prompt(
+      `PERMANENTLY DELETE ${ids.length} SURVEY(S)?\n\n` +
+      `This will delete the selected survey(s), ${totalResps} response(s), and their dedicated Google Sheets tabs.\n\n` +
+      `Type DELETE to confirm:`
+    );
+    if (!confirmation || confirmation.trim().toUpperCase() !== 'DELETE') {
+      this.showToast('Bulk delete cancelled.', 'info');
+      return;
+    }
+    ids.forEach((id) => window.aeStore.deleteSurvey(id));
+    this.selectedSurveyIds = [];
+    if (!window.aeStore.getSurveyById(this.activeSurveyId) && window.aeStore.surveys.length > 0) {
+      this.activeSurveyId = window.aeStore.surveys[0].id;
+    }
+    this.showToast(`Deleted ${ids.length} survey(s) and queued cloud cleanup.`, 'success');
+    this.render();
+  },
+
   deleteSurveyConfirm(surveyId) {
     if (window.AESession && !window.AESession.hasPermission('DELETE_SURVEY')) {
       this.showToast('Access Denied: Only HQ Administrators can delete surveys.', 'error');
@@ -4493,16 +4622,19 @@ window.AEApp = {
     const respCount = window.aeStore.getResponsesForSurvey(surveyId).length;
     if (
       !window.confirm(
-        `Delete survey "${target.title}" and its ${respCount} local responses? This action cannot be undone.`
+        `Delete survey "${target.title}", its ${respCount} response(s), and its Google Sheets tab? This action cannot be undone.`
       )
     ) {
       return;
     }
     window.aeStore.deleteSurvey(surveyId);
+    if (Array.isArray(this.selectedSurveyIds)) {
+      this.selectedSurveyIds = this.selectedSurveyIds.filter((id) => id !== surveyId);
+    }
     if (this.activeSurveyId === surveyId && window.aeStore.surveys.length > 0) {
       this.activeSurveyId = window.aeStore.surveys[0].id;
     }
-    this.showToast('Survey removed.', 'success');
+    this.showToast('Survey deleted and queued for Google Sheets cleanup.', 'success');
     this.render();
   },
 
