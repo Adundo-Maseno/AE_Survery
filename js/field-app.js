@@ -747,10 +747,10 @@ window.AEFieldApp = {
     const focusLabel = document.getElementById('ae_hdr_focus_label');
     if (focusBtn && focusLabel) {
       if (this.runnerMode === 'focus') {
-        focusBtn.className = 'hidden 2xl:inline-flex h-8 px-2 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white items-center gap-1.5 ae-press';
+        focusBtn.className = 'inline-flex h-8 px-2.5 rounded-[6px] bg-[#247B50] text-xs font-semibold text-white items-center gap-1.5 ae-press shrink-0';
         focusLabel.textContent = this.t('focusOn');
       } else {
-        focusBtn.className = 'hidden 2xl:inline-flex h-8 px-2 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 ae-press';
+        focusBtn.className = 'inline-flex h-8 px-2.5 rounded-[6px] bg-white/10 hover:bg-white/15 text-xs text-white items-center gap-1.5 ae-press shrink-0';
         focusLabel.textContent = this.t('focus');
       }
     }
@@ -1163,6 +1163,12 @@ window.AEFieldApp = {
                     )
                   : ''
               }
+              <button type="button" onclick="AEFieldApp.toggleFocusMode()"
+                title="Switch to one-question-at-a-time Focus Mode"
+                class="h-7 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-[#FAFBF9] hover:bg-[#DCFAE5]/50 hover:border-[#247B50] text-[11px] font-medium text-[#111613] inline-flex items-center gap-1.5 shrink-0 ae-press">
+                <i class="fa-solid fa-layer-group text-[10px] text-[#247B50]"></i>
+                <span>${this.t('focus')}</span>
+              </button>
               <span class="text-xs text-[#525B56] tabular-nums shrink-0">
                 ${this.t('section')} <strong class="text-[#111613]">${this.currentPageIndex + 1}</strong> ${this.t('of')} ${pages.length}
               </span>
