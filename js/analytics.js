@@ -924,107 +924,209 @@ window.AEStats = {
 };
 
 // ============================================================================
-// SECTION 2: Qualitative Field Notes Intelligence Engine (AETeXtEngine)
+// SECTION 2: Qualitative Field Notes Intelligence Engine (AETeXtEngine Fallback)
+// Primary engine lives in js/text-intelligence.js; keep a lightweight guard here
+// so standalone tests loading js/analytics.js alone remain functional.
 // ============================================================================
-window.AETeXtEngine = {
-  // English + East African Agronomic Swahili Stop-Words
-  stopWords: new Set([
-    'the', 'and', 'to', 'of', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it',
-    'not', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'all', 'have', 'new', 'was', 'we', 'will', 'my',
-    'farmer', 'plot', 'survey', 'acres', 'kg', 'bags', 'maize', 'seed', 'shamba', 'mahindi', 'mbegu',
-    'na', 'ya', 'wa', 'kwa', 'ni', 'katika', 'la', 'za', 'cha', 'vya', 'ili', 'kama', 'hadi', 'yake', 'sana',
-    'yangu', 'hawa', 'hiyo', 'hii', 'wale', 'wote', 'pia', 'lakini', 'ingawa', 'bila', 'ndani', 'very', 'good'
-  ]),
+if (!window.AETeXtEngine) {
+  window.AETeXtEngine = {
+    stopWords: new Set([
+      'the', 'and', 'to', 'of', 'a', 'in', 'for', 'is', 'on', 'that', 'by', 'this', 'with', 'i', 'you', 'it',
+      'not', 'or', 'be', 'are', 'from', 'at', 'as', 'your', 'all', 'have', 'new', 'was', 'we', 'will', 'my',
+      'na', 'ya', 'wa', 'kwa', 'ni', 'katika', 'la', 'za', 'cha', 'vya', 'ili', 'kama', 'hadi', 'yake', 'sana',
+      'yangu', 'hawa', 'hiyo', 'hii', 'wale', 'wote', 'pia', 'lakini', 'ingawa', 'bila', 'ndani', 'very', 'good'
+    ]),
 
-  // Agronomic Valence & Risk Lexicon
-  lexicon: {
-    positive: [
-      'uniform', 'germinated', 'vigor', 'vigorous', 'tolerant', 'drought-tolerant', 'heavy',
-      'sweet', 'high-yielding', 'best', 'clean', 'satisfied', 'certified', 'pure', 'recommended',
-      'resistant', 'excellent', 'bumper', 'mzuri', 'bora', 'faida', 'kuvuna', 'haraka', 'mvua', 'kinga'
-    ],
-    negative: [
-      'fake', 'counterfeit', 'stockout', 'late', 'delayed', 'rot', 'pest', 'armyworm',
-      'borer', 'expensive', 'costly', 'poor', 'stunted', 'yellowing', 'wilting', 'dry',
-      'loss', 'failed', 'gumu', 'hasara', 'bei', 'dawa', 'wadudu', 'kuchelewa', 'ghali', 'complaint'
-    ]
-  },
+    lexicon: {
+      positive: [
+        'uniform', 'germinated', 'vigor', 'vigorous', 'tolerant', 'heavy', 'sweet', 'best', 'clean', 'satisfied',
+        'certified', 'pure', 'recommended', 'resistant', 'excellent', 'bumper', 'great', 'helpful', 'clear',
+        'engaging', 'insightful', 'mzuri', 'nzuri', 'bora', 'faida', 'kuvuna', 'haraka', 'mvua', 'kinga'
+      ],
+      negative: [
+        'fake', 'counterfeit', 'stockout', 'late', 'delayed', 'rot', 'pest', 'armyworm', 'borer', 'expensive',
+        'costly', 'poor', 'stunted', 'yellowing', 'wilting', 'dry', 'loss', 'failed', 'rushed', 'confusing',
+        'disorganized', 'gumu', 'hasara', 'bei', 'dawa', 'wadudu', 'kuchelewa', 'ghali', 'complaint'
+      ]
+    },
 
-  analyzeVerbatims(responses, textQId = 'q_field_notes') {
-    const termFreq = {};
-    const analyzedRows = [];
-    let totalPos = 0;
-    let totalNeg = 0;
-    let totalNeu = 0;
+    getTextQuestions(survey) {
+      if (!survey) return [];
+      const qs = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+        ? window.aeStore.getQuestionsForSurvey(survey)
+        : (survey.pages || []).flatMap((p) => p.questions || []);
+      return qs.filter((q) => q && (q.type === 'long_text' || q.type === 'short_text' || q.type === 'audio_note'));
+    },
 
-    responses.forEach((r) => {
-      let text = String(r.answers?.[textQId] || r.answers?.q_field_notes || r.answers?.q_verbatim || r.answers?.qe_takeaway || r.answers?.qd_notes || '').trim();
-      if ((!text || text.length < 3) && r.answers && typeof r.answers === 'object') {
-        for (const [k, v] of Object.entries(r.answers)) {
-          if (typeof v === 'string' && v.trim().length >= 15 && !/^\d{4}-\d{2}-\d{2}/.test(v.trim()) && !v.startsWith('data:')) {
-            text = v.trim();
-            break;
-          }
+    analyzeVerbatims(responses, surveyOrQId = 'q_field_notes', options = {}) {
+      const isSurvey = surveyOrQId && typeof surveyOrQId === 'object';
+      const survey = isSurvey ? surveyOrQId : null;
+      const textQId = isSurvey ? (options.questionId || 'all') : (surveyOrQId || 'q_field_notes');
+      const translationsMap = options.translationsMap || {};
+      const textQs = survey ? this.getTextQuestions(survey) : [];
+      const targetQs = textQId && textQId !== 'all'
+        ? (textQs.length ? textQs.filter((q) => q.id === textQId) : [{ id: textQId, title: textQId }])
+        : textQs;
+
+      const termFreq = {};
+      const analyzedRows = [];
+      let totalPos = 0;
+      let totalNeg = 0;
+      let totalNeu = 0;
+
+      (responses || []).forEach((r) => {
+        const respId = r.clientResponseId || r.id || 'resp';
+        const items = [];
+        if (targetQs.length > 0) {
+          targetQs.forEach((q) => {
+            const raw = r.answers?.[q.id];
+            const txt = typeof raw === 'object' && raw !== null ? String(raw.transcript || raw.text || '').trim() : String(raw || '').trim();
+            if (txt.length >= 3) items.push({ qId: q.id, qTitle: q.title || q.id, text: txt });
+          });
+        } else {
+          let txt = String(r.answers?.[textQId] || r.answers?.q_field_notes || r.answers?.q_verbatim || r.answers?.qe_takeaway || r.answers?.qd_notes || '').trim();
+          if (txt.length >= 3) items.push({ qId: textQId, qTitle: 'Field Note', text: txt });
         }
-      }
-      if (!text || text.length < 3) return;
 
-      const words = text
-        .toLowerCase()
-        .replace(/[^a-z0-9áéíóúñü\s-]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length > 2 && !this.stopWords.has(w));
+        items.forEach((item) => {
+          const recordKey = `${respId}::${item.qId}`;
+          const translatedText = translationsMap[recordKey] || translationsMap[item.text] || '';
+          const analysisText = translatedText || item.text;
+          const words = analysisText
+            .toLowerCase()
+            .replace(/[^a-z0-9áéíóúñü\s-]/g, ' ')
+            .split(/\s+/)
+            .filter((w) => w.length > 2 && !this.stopWords.has(w));
 
-      let posScore = 0;
-      let negScore = 0;
+          let posScore = 0;
+          let negScore = 0;
+          words.forEach((w) => {
+            termFreq[w] = (termFreq[w] || 0) + 1;
+            if (this.lexicon.positive.includes(w)) posScore++;
+            if (this.lexicon.negative.includes(w)) negScore++;
+          });
+          for (let i = 0; i < words.length - 1; i++) {
+            const bigram = `${words[i]} ${words[i + 1]}`;
+            termFreq[bigram] = (termFreq[bigram] || 0) + 1;
+          }
 
-      words.forEach((w) => {
-        termFreq[w] = (termFreq[w] || 0) + 1;
-        if (this.lexicon.positive.includes(w)) posScore++;
-        if (this.lexicon.negative.includes(w)) negScore++;
+          let sentiment = 'neutral';
+          if (posScore > negScore) {
+            sentiment = 'positive';
+            totalPos++;
+          } else if (negScore > posScore) {
+            sentiment = 'negative';
+            totalNeg++;
+          } else {
+            totalNeu++;
+          }
+          const scoreDenom = Math.max(1, posScore + negScore);
+          const sentimentScore = parseFloat(((posScore - negScore) / scoreDenom).toFixed(2));
+          const isActionable = /\b(should|recommend|suggest|improve|need to|more time|better|napendekeza|tafadhali|boresha)\b/i.test(analysisText);
+          const urgency = /\b(fake|counterfeit|broken|excluded|failed|hasara|urgent)\b/i.test(analysisText) ? 'high' : sentiment === 'negative' ? 'medium' : 'normal';
+
+          analyzedRows.push({
+            id: respId,
+            recordKey,
+            questionId: item.qId,
+            questionTitle: item.qTitle,
+            enumerator: r.enumerator || 'Field Officer',
+            submittedAt: r.submittedAt,
+            county: r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || 'Kenya',
+            segment: r.answers?.q_county || r.enumerator || 'All',
+            text: item.text,
+            translatedText,
+            sentiment,
+            sentimentScore,
+            themes: [{ id: 'general', name: 'Other / General', color: '#646E68' }],
+            isActionable,
+            urgency,
+            matchedKeywords: words.filter((w) => this.lexicon.positive.includes(w) || this.lexicon.negative.includes(w))
+          });
+        });
       });
 
-      // Bigram extraction (e.g. "fake seed", "pack size", "late rains")
-      for (let i = 0; i < words.length - 1; i++) {
-        const bigram = `${words[i]} ${words[i + 1]}`;
-        termFreq[bigram] = (termFreq[bigram] || 0) + 1;
+      const sortedTerms = Object.entries(termFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 30)
+        .map(([term, count]) => ({ term, count }));
+
+      const total = analyzedRows.length;
+      const themes = total > 0 ? [{
+        id: 'general',
+        name: 'Other / General',
+        color: '#646E68',
+        count: total,
+        pct: 100,
+        positive: totalPos,
+        neutral: totalNeu,
+        negative: totalNeg,
+        netSentiment: Math.round(((totalPos - totalNeg) / total) * 100),
+        topQuote: analyzedRows[0]?.text || ''
+      }] : [];
+
+      return {
+        totalAnalyzed: total,
+        sentimentSummary: { positive: totalPos, negative: totalNeg, neutral: totalNeu },
+        themes,
+        themeBySegment: { segmentLabel: 'Segment', segments: [], rows: [] },
+        topTerms: sortedTerms,
+        records: analyzedRows
+      };
+    },
+
+    generateExecutiveBriefing(analysis, survey) {
+      const total = analysis?.totalAnalyzed || 0;
+      const pos = analysis?.sentimentSummary?.positive || 0;
+      const neg = analysis?.sentimentSummary?.negative || 0;
+      const headline = total > 0
+        ? `Analyzed ${total} open-ended responses (${pos} positive, ${neg} alerts).`
+        : 'No open-ended verbatims available in the active slice.';
+      const actionableRecommendations = (analysis?.records || []).filter((r) => r.isActionable).slice(0, 5).map((r) => r.translatedText || r.text);
+      const urgentAlerts = (analysis?.records || []).filter((r) => r.urgency === 'high').slice(0, 5).map((r) => r.translatedText || r.text);
+      const topThemesSummary = (analysis?.themes || []).slice(0, 5).map((t) => ({ name: t.name, pct: t.pct, count: t.count, netSentiment: t.netSentiment }));
+      return {
+        headline,
+        summaryBullets: [headline],
+        topThemesSummary,
+        actionableRecommendations,
+        urgentAlerts,
+        plainTextReport: `${survey?.title || 'Survey'} — Verbatim Executive Briefing\n${headline}`
+      };
+    },
+
+    getPinnedQuotes(surveyId) {
+      try {
+        if (typeof localStorage === 'undefined') return [];
+        const raw = localStorage.getItem(`ae_pinned_quotes_${surveyId}`);
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
       }
+    },
 
-      let sentiment = 'neutral';
-      if (posScore > negScore) {
-        sentiment = 'positive';
-        totalPos++;
-      } else if (negScore > posScore) {
-        sentiment = 'negative';
-        totalNeg++;
-      } else {
-        totalNeu++;
-      }
+    togglePinQuote(surveyId, recordKey) {
+      const list = new Set(this.getPinnedQuotes(surveyId));
+      if (list.has(recordKey)) list.delete(recordKey);
+      else list.add(recordKey);
+      const arr = Array.from(list);
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(`ae_pinned_quotes_${surveyId}`, JSON.stringify(arr));
+        }
+      } catch (e) {}
+      return arr;
+    },
 
-      analyzedRows.push({
-        id: r.clientResponseId || r.id,
-        enumerator: r.enumerator,
-        submittedAt: r.submittedAt,
-        county: r.answers?.q_county || r.answers?.cascading_county?.level1 || r.gps?.label || 'Kenya',
-        text,
-        sentiment,
-        matchedKeywords: words.filter((w) => this.lexicon.positive.includes(w) || this.lexicon.negative.includes(w))
-      });
-    });
+    async translateVerbatimsViaGAS() {
+      return { ok: false, translations: {}, message: 'Cloud translation requires js/text-intelligence.js' };
+    },
 
-    const sortedTerms = Object.entries(termFreq)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30)
-      .map(([term, count]) => ({ term, count }));
-
-    return {
-      totalAnalyzed: analyzedRows.length,
-      sentimentSummary: { positive: totalPos, negative: totalNeg, neutral: totalNeu },
-      topTerms: sortedTerms,
-      records: analyzedRows
-    };
-  }
-};
+    async synthesizeVerbatimsViaGAS(analysis, survey) {
+      return { ok: true, provider: 'offline_fallback', briefing: this.generateExecutiveBriefing(analysis, survey) };
+    }
+  };
+}
 
 // ============================================================================
 // SECTION 3: AEAnalytics Main Module
@@ -1064,6 +1166,15 @@ window.AEAnalytics = {
   crossTabColQId: null,
   crossTabMetric: 'count', // 'count' | 'rowPct' | 'colPct' | 'residuals'
   verbatimSearchQuery: '',
+  verbatimQuestionId: 'all',
+  verbatimThemeFilter: 'all',
+  verbatimSentimentFilter: 'all',
+  verbatimActionableOnly: false,
+  verbatimPinnedOnly: false,
+  verbatimSegmentQId: 'auto',
+  verbatimTranslations: {},
+  verbatimAiBriefing: null,
+  verbatimBusy: false,
   selectedRegressionTarget: null,
   selectedAnovaOutcome: null,
   selectedAnovaGroup: null,
@@ -1322,6 +1433,12 @@ window.AEAnalytics = {
     };
     this.individualIndex = 0;
     this.verbatimSearchQuery = '';
+    this.verbatimQuestionId = 'all';
+    this.verbatimThemeFilter = 'all';
+    this.verbatimSentimentFilter = 'all';
+    this.verbatimActionableOnly = false;
+    this.verbatimPinnedOnly = false;
+    this.verbatimSegmentQId = 'auto';
     window.AEApp.render();
   },
 
@@ -1453,7 +1570,315 @@ window.AEAnalytics = {
 
   setVerbatimSearch(query) {
     this.verbatimSearchQuery = query;
-    window.AEApp.render();
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setVerbatimQuestion(qId) {
+    this.verbatimQuestionId = qId || 'all';
+    this.verbatimThemeFilter = 'all';
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setVerbatimTheme(themeId) {
+    const next = themeId || 'all';
+    this.verbatimThemeFilter = this.verbatimThemeFilter === next && next !== 'all' ? 'all' : next;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setVerbatimSentiment(s) {
+    this.verbatimSentimentFilter = s || 'all';
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  toggleVerbatimActionable() {
+    this.verbatimActionableOnly = !this.verbatimActionableOnly;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  toggleVerbatimPinnedOnly() {
+    this.verbatimPinnedOnly = !this.verbatimPinnedOnly;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setVerbatimSegment(segId) {
+    this.verbatimSegmentQId = segId || 'auto';
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  togglePinVerbatim(surveyId, key) {
+    if (!surveyId || !key || !window.AETeXtEngine || typeof window.AETeXtEngine.togglePinQuote !== 'function') return;
+    window.AETeXtEngine.togglePinQuote(surveyId, key);
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  _getRecordKey(rec) {
+    return rec?.recordKey || rec?.key || `${rec?.id || 'resp'}::${rec?.questionId || 'note'}`;
+  },
+
+  _getPinnedSet(surveyId) {
+    if (!surveyId || !window.AETeXtEngine || typeof window.AETeXtEngine.getPinnedQuotes !== 'function') {
+      return new Set();
+    }
+    const raw = window.AETeXtEngine.getPinnedQuotes(surveyId);
+    if (raw instanceof Set) return raw;
+    if (Array.isArray(raw)) return new Set(raw);
+    if (raw && typeof raw === 'object') return new Set(Object.keys(raw).filter((k) => raw[k]));
+    return new Set();
+  },
+
+  _formatVerbatimDate(submittedAt) {
+    if (!submittedAt) return '—';
+    const d = new Date(submittedAt);
+    return isNaN(d.getTime()) ? String(submittedAt) : d.toISOString().slice(0, 10);
+  },
+
+  _buildBriefingPlainText(briefing, survey) {
+    if (briefing && briefing.plainTextReport) return briefing.plainTextReport;
+    const lines = [];
+    lines.push(`${survey?.title || 'Survey'} — Executive Verbatim Intelligence Briefing`);
+    if (briefing?.headline) lines.push('', briefing.headline);
+    const bullets = briefing?.summaryBullets || [];
+    if (bullets.length) {
+      lines.push('', 'KEY FINDINGS:');
+      bullets.forEach((b) => lines.push(`• ${b}`));
+    }
+    const themes = briefing?.topThemesSummary || briefing?.topThemes || [];
+    if (themes.length) {
+      lines.push('', 'TOP THEMES:');
+      themes.forEach((t) => {
+        if (typeof t === 'string') lines.push(`• ${t}`);
+        else lines.push(`• ${t.name || t.theme}: ${t.pct ?? 0}% (${t.count ?? 0} mentions, net sentiment ${t.netSentiment > 0 ? '+' : ''}${t.netSentiment ?? 0}%)`);
+      });
+    }
+    const recs = briefing?.actionableRecommendations || briefing?.recommendations || [];
+    if (recs.length) {
+      lines.push('', 'ACTIONABLE RECOMMENDATIONS:');
+      recs.forEach((r) => lines.push(`• ${typeof r === 'string' ? r : (r.text || r.recommendation || JSON.stringify(r))}`));
+    }
+    const risks = briefing?.urgentAlerts || briefing?.urgentRisks || [];
+    if (risks.length) {
+      lines.push('', 'URGENT RISK ALERTS:');
+      risks.forEach((u) => lines.push(`• ${typeof u === 'string' ? u : (u.text || u.alert || JSON.stringify(u))}`));
+    }
+    return lines.join('\n');
+  },
+
+  copyVerbatimBriefing(surveyId) {
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
+    if (!survey) return '';
+    const filtered = this.getFilteredResponses(survey.id);
+    const analysis = window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+      questionId: this.verbatimQuestionId || 'all',
+      segmentQId: this.verbatimSegmentQId || 'auto',
+      translationsMap: this.verbatimTranslations
+    });
+    const aiMatch = this.verbatimAiBriefing && this.verbatimAiBriefing.surveyId === survey.id && this.verbatimAiBriefing.briefing
+      ? this.verbatimAiBriefing.briefing
+      : null;
+    const briefing = aiMatch || (window.AETeXtEngine.generateExecutiveBriefing
+      ? window.AETeXtEngine.generateExecutiveBriefing(analysis, survey)
+      : { headline: `Analyzed ${analysis.totalAnalyzed || 0} verbatims.` });
+    const text = this._buildBriefingPlainText(briefing, survey);
+
+    if (window.AEApp && typeof window.AEApp.copyText === 'function') {
+      window.AEApp.copyText(text, 'Executive verbatim briefing copied to clipboard.');
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => window.AEApp && window.AEApp.showToast('Executive verbatim briefing copied to clipboard.', 'success'),
+        () => window.AEApp && window.AEApp.showToast('Executive verbatim briefing ready.', 'info')
+      );
+    } else if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast('Executive verbatim briefing generated.', 'success');
+    }
+    return text;
+  },
+
+  async translateVerbatimsCloud(surveyId) {
+    if (this.verbatimBusy) return;
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
+    if (!survey || !window.AETeXtEngine) return;
+    const filtered = this.getFilteredResponses(survey.id);
+    const analysis = window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+      questionId: this.verbatimQuestionId || 'all',
+      segmentQId: this.verbatimSegmentQId || 'auto',
+      translationsMap: this.verbatimTranslations
+    });
+    const records = analysis.records || [];
+    if (records.length === 0) {
+      if (window.AEApp) window.AEApp.showToast('No verbatims in active slice to translate.', 'info');
+      return;
+    }
+
+    this.verbatimBusy = true;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    try {
+      if (typeof window.AETeXtEngine.translateVerbatimsViaGAS !== 'function') {
+        throw new Error('Cloud translation helper unavailable.');
+      }
+      const res = await window.AETeXtEngine.translateVerbatimsViaGAS(records, 'en');
+      const map = (res && res.translations && typeof res.translations === 'object')
+        ? res.translations
+        : (res && typeof res === 'object' && !Array.isArray(res) && res.ok === undefined ? res : {});
+      let mergedCount = 0;
+      Object.entries(map).forEach(([k, v]) => {
+        if (v && typeof v === 'string' && v.trim()) {
+          this.verbatimTranslations[k] = v.trim();
+          mergedCount++;
+        }
+      });
+      if (window.AEApp) {
+        if (mergedCount > 0) {
+          window.AEApp.showToast(`Translated ${mergedCount} verbatim note${mergedCount === 1 ? '' : 's'} to English.`, 'success');
+        } else {
+          window.AEApp.showToast(res?.message || 'All verbatims are already in English or cloud sync is offline.', 'info');
+        }
+      }
+    } catch (err) {
+      if (window.AEApp) window.AEApp.showToast(`Translation notice: ${err.message || 'Cloud unavailable'}`, 'warning');
+    } finally {
+      this.verbatimBusy = false;
+      if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    }
+  },
+
+  async runAiVerbatimBriefing(surveyId) {
+    if (this.verbatimBusy) return;
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
+    if (!survey || !window.AETeXtEngine) return;
+    const filtered = this.getFilteredResponses(survey.id);
+    const analysis = window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+      questionId: this.verbatimQuestionId || 'all',
+      segmentQId: this.verbatimSegmentQId || 'auto',
+      translationsMap: this.verbatimTranslations
+    });
+    if (!analysis.records || analysis.records.length === 0) {
+      if (window.AEApp) window.AEApp.showToast('No verbatims available to synthesize.', 'info');
+      return;
+    }
+
+    this.verbatimBusy = true;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    try {
+      let res = null;
+      if (typeof window.AETeXtEngine.synthesizeVerbatimsViaGAS === 'function') {
+        res = await window.AETeXtEngine.synthesizeVerbatimsViaGAS(analysis, survey);
+      }
+      const provider = res?.provider || 'offline_fallback';
+      const briefing = res?.briefing || (window.AETeXtEngine.generateExecutiveBriefing
+        ? window.AETeXtEngine.generateExecutiveBriefing(analysis, survey)
+        : null);
+      this.verbatimAiBriefing = {
+        surveyId: survey.id,
+        provider,
+        model: res?.model || null,
+        message: res?.message || null,
+        briefing
+      };
+      if (window.AEApp) {
+        if (provider === 'gemini') {
+          window.AEApp.showToast('Gemini AI Executive Summary generated.', 'success');
+        } else {
+          window.AEApp.showToast(res?.message || 'Offline NLP Executive Summary active (Gemini API key not configured).', 'info');
+        }
+      }
+    } catch (err) {
+      const fallback = window.AETeXtEngine.generateExecutiveBriefing
+        ? window.AETeXtEngine.generateExecutiveBriefing(analysis, survey)
+        : null;
+      this.verbatimAiBriefing = { surveyId: survey.id, provider: 'offline_fallback', briefing: fallback };
+      if (window.AEApp) window.AEApp.showToast(`Using offline NLP briefing: ${err.message || 'Cloud unreachable'}`, 'warning');
+    } finally {
+      this.verbatimBusy = false;
+      if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    }
+  },
+
+  exportVerbatimCsv(surveyId) {
+    const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    if (window.aeStore && window.aeStore.canUserAccessSurvey) {
+      const check = window.aeStore.canUserAccessSurvey(currentUser, surveyId);
+      if (!check.allowed) {
+        if (window.AEApp) window.AEApp.showToast(check.reason || 'Access denied: You are not assigned to this survey.', 'error');
+        return '';
+      }
+    }
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
+    if (!survey) return '';
+    const filtered = this.getFilteredResponses(survey.id);
+    const questions = window.aeStore.getQuestionsForSurvey(survey);
+    const numMap = this.getQuestionDisplayMap(questions);
+    const qLookup = {};
+    questions.forEach((q) => { qLookup[q.id] = q; });
+
+    const analysis = window.AETeXtEngine
+      ? window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+          questionId: 'all',
+          segmentQId: this.verbatimSegmentQId || 'auto',
+          translationsMap: this.verbatimTranslations
+        })
+      : { records: [] };
+    const pinnedSet = this._getPinnedSet(survey.id);
+
+    const escapeCsv = (val) => {
+      const s = String(val ?? '');
+      if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const headers = [
+      'Response ID',
+      'Question',
+      'Verbatim Text',
+      'English Translation',
+      'Auto Themes',
+      'Sentiment',
+      'Sentiment Score',
+      'Urgency',
+      'Actionable',
+      'Pinned Quote',
+      'Segment',
+      'Enumerator',
+      'Date'
+    ];
+
+    const rows = [headers.map(escapeCsv).join(',')];
+    (analysis.records || []).forEach((rec) => {
+      const recKey = this._getRecordKey(rec);
+      const qObj = qLookup[rec.questionId];
+      const qNum = numMap[rec.questionId]?.label;
+      const cleanQTitle = qObj ? this.cleanQuestionTitle(qObj, {}, survey) : (rec.questionTitle || rec.questionId || 'Verbatim');
+      const qLabel = qNum ? `Q${qNum}: ${cleanQTitle}` : cleanQTitle;
+      const translation = rec.translatedText || this.verbatimTranslations[recKey] || this.verbatimTranslations[rec.text] || '';
+      const themeNames = (rec.themes || []).map((t) => (typeof t === 'string' ? t : (t.name || t.label || t.id))).filter(Boolean).join('; ');
+      const isPinned = pinnedSet.has(recKey);
+      const line = [
+        rec.id || '',
+        qLabel,
+        rec.text || '',
+        translation,
+        themeNames,
+        rec.sentiment || 'neutral',
+        rec.sentimentScore !== undefined ? rec.sentimentScore : 0,
+        rec.urgency || 'normal',
+        rec.isActionable ? 'Yes' : 'No',
+        isPinned ? 'Yes' : 'No',
+        rec.segment || rec.county || '',
+        rec.enumerator || '',
+        this._formatVerbatimDate(rec.submittedAt)
+      ];
+      rows.push(line.map(escapeCsv).join(','));
+    });
+
+    const csv = '\uFEFF' + rows.join('\r\n');
+    if (window.AEApp && typeof window.AEApp.downloadBlob === 'function') {
+      window.AEApp.downloadBlob(csv, `${survey.id}_verbatim_intelligence.csv`, 'text/csv;charset=utf-8;');
+    }
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast(`Exported ${(analysis.records || []).length} coded verbatims to CSV.`, 'success');
+    }
+    return csv;
   },
 
   formatQuestionTypeLabel(type) {
@@ -1971,7 +2396,7 @@ window.AEAnalytics = {
     }
 
     // Algorithmic Discovery 3: Qualitative Verbatim & Risk Sentiment
-    const textAnalysis = window.AETeXtEngine.analyzeVerbatims(responses);
+    const textAnalysis = window.AETeXtEngine ? window.AETeXtEngine.analyzeVerbatims(responses, survey) : null;
     if (textAnalysis && textAnalysis.sentimentSummary && textAnalysis.sentimentSummary.negative > 0) {
       const term0 = AEApp.escapeHtml((textAnalysis.topTerms[0]?.term || 'delay').replace(/"/g, ''));
       const term1 = AEApp.escapeHtml((textAnalysis.topTerms[1]?.term || 'issue').replace(/"/g, ''));
@@ -3763,98 +4188,624 @@ window.AEAnalytics = {
   },
 
   // --------------------------------------------------------------------------
-  // TAB 5: QUALITATIVE FIELD NOTES & SWAHILI/ENGLISH NLP INTELLIGENCE
+  // TAB 5: QUALITATIVE & VERBATIM INTELLIGENCE WORKSPACE
   // --------------------------------------------------------------------------
   renderQualitativeTextTab(survey, responses) {
-    const analysis = window.AETeXtEngine.analyzeVerbatims(responses);
-    const query = (this.verbatimSearchQuery || '').toLowerCase();
-    const filteredRecords = query
-      ? analysis.records.filter((r) => r.text.toLowerCase().includes(query) || r.county.toLowerCase().includes(query) || r.enumerator.toLowerCase().includes(query))
-      : analysis.records;
+    return this.renderTextTab(survey, responses);
+  },
+
+  renderTextTab(survey, responses) {
+    const engine = window.AETeXtEngine;
+    const allQuestions = window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const numMap = this.getQuestionDisplayMap(allQuestions);
+    const qLookup = {};
+    allQuestions.forEach((q) => { qLookup[q.id] = q; });
+
+    const respLookup = {};
+    (responses || []).forEach((r) => {
+      const rid = r.clientResponseId || r.id;
+      if (rid) respLookup[rid] = r;
+    });
+
+    const textQuestions = engine && typeof engine.getTextQuestions === 'function'
+      ? engine.getTextQuestions(survey)
+      : allQuestions.filter((q) => q.type === 'long_text' || q.type === 'short_text' || q.type === 'audio_note');
+    const catQuestions = this.getCategoricalQuestions(survey);
+
+    // Ensure selected question still belongs to current survey
+    const activeQId = this.verbatimQuestionId === 'all' || textQuestions.some((q) => q.id === this.verbatimQuestionId)
+      ? this.verbatimQuestionId
+      : 'all';
+
+    const analysis = engine
+      ? engine.analyzeVerbatims(responses || [], survey, {
+          questionId: activeQId,
+          segmentQId: this.verbatimSegmentQId || 'auto',
+          translationsMap: this.verbatimTranslations
+        })
+      : { totalAnalyzed: 0, sentimentSummary: { positive: 0, neutral: 0, negative: 0 }, themes: [], themeBySegment: { segmentLabel: 'Segment', segments: [], rows: [] }, topTerms: [], records: [] };
+
+    const records = analysis.records || [];
+    const themes = analysis.themes || [];
+    const topTerms = analysis.topTerms || [];
+    const segTable = analysis.themeBySegment || { segmentLabel: 'Segment', segments: [], rows: [] };
+    const pinnedSet = this._getPinnedSet(survey.id);
+
+    const hasAiBriefing = !!(this.verbatimAiBriefing && this.verbatimAiBriefing.surveyId === survey.id && this.verbatimAiBriefing.briefing);
+    const briefingProvider = hasAiBriefing ? (this.verbatimAiBriefing.provider || 'offline_fallback') : 'offline_fallback';
+    const briefing = hasAiBriefing
+      ? this.verbatimAiBriefing.briefing
+      : (engine && typeof engine.generateExecutiveBriefing === 'function'
+          ? engine.generateExecutiveBriefing(analysis, survey)
+          : { headline: `Analyzed ${records.length} open-ended responses.`, summaryBullets: [], topThemesSummary: [], actionableRecommendations: [], urgentAlerts: [] });
+
+    const briefingThemes = (briefing.aiTopThemes && briefing.aiTopThemes.length > 0 ? briefing.aiTopThemes : null) || briefing.topThemesSummary || briefing.topThemes || themes.slice(0, 5);
+    const briefingRecs = (briefing.aiRecommendations && briefing.aiRecommendations.length > 0 ? briefing.aiRecommendations : null) || briefing.actionableRecommendations || briefing.recommendations || [];
+    const briefingRisks = (briefing.aiUrgentRisks && briefing.aiUrgentRisks.length > 0 ? briefing.aiUrgentRisks : null) || briefing.urgentAlerts || briefing.urgentRisks || [];
+    const briefingBullets = briefing.summaryBullets || [];
+
+    // Apply interactive filters to verbatim stream
+    const query = (this.verbatimSearchQuery || '').trim().toLowerCase();
+    const filteredRecords = records.filter((rec) => {
+      const recKey = this._getRecordKey(rec);
+      const translated = rec.translatedText || this.verbatimTranslations[recKey] || this.verbatimTranslations[rec.text] || '';
+      if (this.verbatimSentimentFilter !== 'all' && rec.sentiment !== this.verbatimSentimentFilter) return false;
+      if (this.verbatimActionableOnly && !rec.isActionable) return false;
+      if (this.verbatimPinnedOnly && !pinnedSet.has(recKey)) return false;
+      if (this.verbatimThemeFilter !== 'all') {
+        const recThemeIds = (rec.themes || []).map((t) => (typeof t === 'string' ? t : (t.id || t.name)));
+        if (!recThemeIds.includes(this.verbatimThemeFilter)) return false;
+      }
+      if (query) {
+        const hay = `${rec.text || ''} ${translated} ${rec.county || ''} ${rec.segment || ''} ${rec.enumerator || ''} ${rec.questionTitle || ''}`.toLowerCase();
+        if (!hay.includes(query)) return false;
+      }
+      return true;
+    });
+
+    const totalPos = analysis.sentimentSummary?.positive || 0;
+    const totalNeu = analysis.sentimentSummary?.neutral || 0;
+    const totalNeg = analysis.sentimentSummary?.negative || 0;
+    const actionableCount = records.filter((r) => r.isActionable).length;
+    const pinnedCount = records.filter((r) => pinnedSet.has(this._getRecordKey(r))).length;
+    const hasActiveSubFilters = !!(
+      query ||
+      this.verbatimThemeFilter !== 'all' ||
+      this.verbatimSentimentFilter !== 'all' ||
+      this.verbatimActionableOnly ||
+      this.verbatimPinnedOnly
+    );
+
+    const safeSurveyIdJs = AEApp.escapeJs(survey.id);
+    const busyAttr = this.verbatimBusy ? 'disabled' : '';
 
     return `
-      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-5">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EFEFEF] pb-4">
-          <div>
-            <h2 class="text-base font-semibold text-[#111613]">Qualitative Field Notes &amp; Swahili Agronomic NLP</h2>
-            <p class="text-xs text-[#525B56] mt-0.5">
-              Natural language processing with stop-word removal, keyword extraction, and sentiment classification.
-            </p>
+      <div class="space-y-5">
+        <!-- 1. TOP CONTROL STRIP -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3.5">
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-[#EFEFEF] pb-3.5">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h2 class="text-base font-semibold text-[#111613]">Qualitative &amp; Verbatim Intelligence</h2>
+                <span class="px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[10px] font-bold tabular-nums">
+                  ${records.length} Coded Verbatim${records.length === 1 ? '' : 's'}
+                </span>
+                <span class="px-2 py-0.5 rounded bg-[#F4F6F4] text-[#525B56] text-[10px] font-semibold tabular-nums">
+                  ${textQuestions.length} Open-Ended Q${textQuestions.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <p class="text-xs text-[#525B56] mt-0.5">
+                Offline-first multilingual NLP with negation-aware sentiment, auto-thematic coding, segment cross-tabs, and executive synthesis.
+              </p>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" ${busyAttr} onclick="AEAnalytics.translateVerbatimsCloud('${safeSurveyIdJs}')"
+                class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press disabled:opacity-50">
+                <i class="fa-solid ${this.verbatimBusy ? 'fa-spinner fa-spin' : 'fa-language'} text-[#247B50]"></i>
+                <span>Translate Non-English</span>
+              </button>
+              <button type="button" ${busyAttr} onclick="AEAnalytics.runAiVerbatimBriefing('${safeSurveyIdJs}')"
+                class="h-8 px-2.5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press disabled:opacity-50">
+                <i class="fa-solid ${this.verbatimBusy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[#7CE5A5]"></i>
+                <span>AI Deep Summary</span>
+              </button>
+              <button type="button" onclick="AEAnalytics.exportVerbatimCsv('${safeSurveyIdJs}')"
+                class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
+                <i class="fa-solid fa-file-csv text-[#247B50]"></i>
+                <span>Export Coded CSV</span>
+              </button>
+              <button type="button" onclick="AEAnalytics.copyVerbatimBriefing('${safeSurveyIdJs}')"
+                class="h-8 px-2.5 rounded-[6px] border border-[#247B50]/40 bg-[#F4FAF6] hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
+                <i class="fa-regular fa-copy"></i>
+                <span>Copy Executive Briefing</span>
+              </button>
+            </div>
           </div>
-          <!-- Sentiment Breakdown Strip -->
-          <div class="flex items-center gap-2 text-xs">
-            <span class="px-2.5 py-1 rounded bg-[#DCFAE5] text-[#04250E] font-semibold border border-[#247B50]/30">
-              ${analysis.sentimentSummary.positive} Positive
-            </span>
-            <span class="px-2.5 py-1 rounded bg-[#FFEDEA] text-[#831C1E] font-semibold border border-[#F5C2C0]">
-              ${analysis.sentimentSummary.negative} Agronomic Alerts
-            </span>
-            <span class="px-2.5 py-1 rounded bg-[#F8F9F8] text-[#525B56] font-semibold border border-[#E4E7E4]">
-              ${analysis.sentimentSummary.neutral} Observations
-            </span>
+
+          <!-- Selectors Row: Question Selector + Segment-By Selector -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Open-Ended Question Scope</label>
+              <select onchange="AEAnalytics.setVerbatimQuestion(this.value)"
+                class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
+                <option value="all" ${activeQId === 'all' ? 'selected' : ''}>All Open-Ended Questions (${textQuestions.length})</option>
+                ${textQuestions
+                  .map((q) => {
+                    const qNum = numMap[q.id]?.label || '';
+                    const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
+                    const label = qNum ? `Q${qNum}: ${cleanTitle}` : cleanTitle;
+                    return `<option value="${AEApp.escapeAttr(q.id)}" ${activeQId === q.id ? 'selected' : ''}>${AEApp.escapeHtml(label)}</option>`;
+                  })
+                  .join('')}
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Segment Themes By</label>
+              <select onchange="AEAnalytics.setVerbatimSegment(this.value)"
+                class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
+                <option value="auto" ${this.verbatimSegmentQId === 'auto' ? 'selected' : ''}>Auto / Primary Rating Segment</option>
+                <option value="county" ${this.verbatimSegmentQId === 'county' ? 'selected' : ''}>County / Region</option>
+                <option value="enumerator" ${this.verbatimSegmentQId === 'enumerator' ? 'selected' : ''}>Field Enumerator</option>
+                ${catQuestions
+                  .map((q) => {
+                    const qNum = numMap[q.id]?.label || '';
+                    const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
+                    const label = qNum ? `Q${qNum}: ${cleanTitle}` : cleanTitle;
+                    return `<option value="${AEApp.escapeAttr(q.id)}" ${this.verbatimSegmentQId === q.id ? 'selected' : ''}>${AEApp.escapeHtml(label)}</option>`;
+                  })
+                  .join('')}
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Keyword Frequency Cloud -->
-        <div class="p-3 bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px] space-y-2">
-          <span class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Top Agronomic Terms &amp; Collocations:</span>
-          <div class="flex flex-wrap gap-1.5">
-            ${analysis.topTerms
-              .map(
-                (item) => `
-                  <button type="button" onclick="AEAnalytics.setVerbatimSearch('${AEApp.escapeJs(item.term)}')"
-                    class="px-2.5 py-1 rounded-[4px] border border-[#CFD5D0] bg-white hover:bg-[#DCFAE5] hover:text-[#04250E] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-                    <span>${AEApp.escapeHtml(item.term)}</span>
-                    <span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[10px] text-[#525B56] font-mono tabular-nums">${item.count}</span>
-                  </button>
-                `
-              )
-              .join('')}
+        <!-- 2. EXECUTIVE BRIEFING CARD -->
+        <div class="bg-[#F4FAF6] border border-[#247B50]/30 rounded-[8px] p-5 space-y-4 print:bg-white print:border-[#CFD5D0]">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#247B50]/15 pb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 rounded-[6px] bg-[#247B50] text-white flex items-center justify-center text-xs shrink-0">
+                <i class="fa-solid fa-clipboard-list"></i>
+              </span>
+              <div>
+                <h3 class="text-sm font-bold text-[#04250E]">Top Themes &amp; Actionable Recommendations</h3>
+                <p class="text-[11px] text-[#525B56]">Executive Qualitative Briefing · Ready for reports &amp; debriefs</p>
+              </div>
+            </div>
+            <span class="px-2 py-0.5 rounded-[4px] text-[10px] font-bold self-start sm:self-center ${
+              briefingProvider === 'gemini'
+                ? 'bg-[#141A17] text-[#7CE5A5]'
+                : 'bg-white text-[#247B50] border border-[#247B50]/30'
+            }">
+              ${briefingProvider === 'gemini' ? 'Gemini AI Deep Summary' : 'Offline NLP Synthesis'}
+            </span>
+          </div>
+
+          <div class="space-y-1.5">
+            <p class="text-sm font-semibold text-[#111613] leading-snug">${AEApp.escapeHtml(briefing.headline || 'No open-ended verbatims available in this slice.')}</p>
+            ${
+              briefingBullets.length > 0
+                ? `<ul class="list-disc pl-4 space-y-1 text-xs text-[#37413C]">
+                    ${briefingBullets.slice(0, 4).map((b) => `<li>${AEApp.escapeHtml(typeof b === 'string' ? b : String(b))}</li>`).join('')}
+                  </ul>`
+                : ''
+            }
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <!-- Top Themes Summary -->
+            <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3.5 space-y-2">
+              <div class="text-[11px] font-bold text-[#111613] uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-layer-group text-[#247B50]"></i>
+                <span>Top Themes</span>
+              </div>
+              ${
+                briefingThemes.length > 0
+                  ? `<div class="space-y-1.5">
+                      ${briefingThemes
+                        .slice(0, 5)
+                        .map((t) => {
+                          if (typeof t === 'string') {
+                            return `<div class="text-xs text-[#111613] flex items-start gap-1.5"><span class="text-[#247B50]">•</span><span>${AEApp.escapeHtml(t)}</span></div>`;
+                          }
+                          const tName = t.name || t.theme || t.label || 'Theme';
+                          const pct = t.pct !== undefined ? `${t.pct}%` : '';
+                          const net = Number(t.netSentiment ?? 0);
+                          const valClass = net > 10 ? 'bg-[#DCFAE5] text-[#04250E]' : net < -10 ? 'bg-[#FFEDEA] text-[#831C1E]' : 'bg-[#F4F6F4] text-[#525B56]';
+                          return `
+                            <div class="flex items-center justify-between gap-2 text-xs">
+                              <span class="font-medium text-[#111613] truncate">${AEApp.escapeHtml(tName)}</span>
+                              <div class="flex items-center gap-1.5 shrink-0">
+                                ${pct ? `<span class="text-[11px] font-semibold text-[#525B56] tabular-nums">${AEApp.escapeHtml(pct)}</span>` : ''}
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${valClass}">${net > 0 ? '+' : ''}${net}%</span>
+                              </div>
+                            </div>
+                          `;
+                        })
+                        .join('')}
+                    </div>`
+                  : '<p class="text-xs text-[#646E68]">No dominant themes detected yet.</p>'
+              }
+            </div>
+
+            <!-- Actionable Recommendations -->
+            <div class="bg-white border border-[#E4E7E4] rounded-[6px] p-3.5 space-y-2">
+              <div class="text-[11px] font-bold text-[#111613] uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-lightbulb text-[#D97706]"></i>
+                <span>Actionable Recommendations</span>
+              </div>
+              ${
+                briefingRecs.length > 0
+                  ? `<ul class="space-y-1.5 text-xs text-[#111613]">
+                      ${briefingRecs
+                        .slice(0, 5)
+                        .map((item) => {
+                          const txt = typeof item === 'string' ? item : (item.text || item.recommendation || item.quote || '');
+                          return `<li class="flex items-start gap-1.5 leading-snug"><span class="text-[#247B50] font-bold">→</span><span class="ae-break-words">${AEApp.escapeHtml(txt)}</span></li>`;
+                        })
+                        .join('')}
+                    </ul>`
+                  : '<p class="text-xs text-[#646E68]">No explicit recommendations flagged in this slice.</p>'
+              }
+            </div>
+
+            <!-- Urgent Risk Alerts -->
+            <div class="bg-white border border-[#F5C2C0]/80 rounded-[6px] p-3.5 space-y-2">
+              <div class="text-[11px] font-bold text-[#831C1E] uppercase tracking-wider flex items-center gap-1.5">
+                <i class="fa-solid fa-triangle-exclamation text-[#C4242A]"></i>
+                <span>Urgent Risk Alerts</span>
+              </div>
+              ${
+                briefingRisks.length > 0
+                  ? `<ul class="space-y-1.5 text-xs text-[#831C1E]">
+                      ${briefingRisks
+                        .slice(0, 5)
+                        .map((item) => {
+                          const txt = typeof item === 'string' ? item : (item.text || item.alert || item.quote || '');
+                          return `<li class="flex items-start gap-1.5 leading-snug"><span class="text-[#C4242A] font-bold">!</span><span class="ae-break-words">${AEApp.escapeHtml(txt)}</span></li>`;
+                        })
+                        .join('')}
+                    </ul>`
+                  : '<p class="text-xs text-[#525B56]">No high-urgency risk alerts detected in active slice.</p>'
+              }
+            </div>
           </div>
         </div>
 
-        <!-- Search Input -->
-        <div class="flex items-center gap-2">
-          <div class="relative flex-1">
-            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-[#646E68]"></i>
-            <input type="text" value="${AEApp.escapeAttr(this.verbatimSearchQuery)}"
-              oninput="AEAnalytics.setVerbatimSearch(this.value)"
-              placeholder="Search field notes by keyword, county, or enumerator…"
-              class="w-full h-8 pl-8 pr-3 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+        <!-- 3. THEME DISTRIBUTION & SENTIMENT-BY-THEME MATRIX + THEME × SEGMENT TABLE -->
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
+          <!-- Stacked Bar Matrix -->
+          <div class="xl:col-span-7 bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
+            <div class="flex items-center justify-between gap-2 border-b border-[#EFEFEF] pb-2.5">
+              <div>
+                <h3 class="text-sm font-semibold text-[#111613]">Theme Distribution &amp; Sentiment Matrix</h3>
+                <p class="text-[11px] text-[#525B56]">Click any theme row to filter the coded verbatim stream below.</p>
+              </div>
+              ${
+                this.verbatimThemeFilter !== 'all'
+                  ? `<button type="button" onclick="AEAnalytics.setVerbatimTheme('all')"
+                      class="px-2 py-1 rounded text-[11px] font-semibold bg-[#F4F6F4] hover:bg-[#E4E7E4] text-[#111613]">
+                      Show All Themes
+                    </button>`
+                  : ''
+              }
+            </div>
+
+            ${
+              themes.length > 0
+                ? `<div class="space-y-2">
+                    ${themes
+                      .map((t) => {
+                        const isSelected = this.verbatimThemeFilter === t.id;
+                        const totalT = Math.max(1, Number(t.count || 0));
+                        const posW = Math.round(((t.positive || 0) / totalT) * 100);
+                        const neuW = Math.round(((t.neutral || 0) / totalT) * 100);
+                        const negW = Math.max(0, 100 - posW - neuW);
+                        const net = Number(t.netSentiment ?? 0);
+                        const netBadge = net > 10
+                          ? 'bg-[#DCFAE5] text-[#04250E]'
+                          : net < -10
+                          ? 'bg-[#FFEDEA] text-[#831C1E]'
+                          : 'bg-[#F4F6F4] text-[#525B56]';
+                        return `
+                          <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(t.id)}')"
+                            class="w-full text-left p-2.5 rounded-[6px] border transition-colors ${
+                              isSelected
+                                ? 'border-[#247B50] bg-[#F4FAF6] ring-1 ring-[#247B50]'
+                                : 'border-[#EFEFEF] bg-white hover:border-[#CFD5D0] hover:bg-[#FAFBF9]'
+                            }">
+                            <div class="flex items-center justify-between gap-2 mb-1.5">
+                              <div class="flex items-center gap-2 min-w-0">
+                                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(t.color || '#247B50')}"></span>
+                                <span class="text-xs font-semibold text-[#111613] truncate">${AEApp.escapeHtml(t.name)}</span>
+                              </div>
+                              <div class="flex items-center gap-2 shrink-0 text-xs">
+                                <span class="font-semibold text-[#111613] tabular-nums">${t.count}</span>
+                                <span class="text-[#646E68] tabular-nums text-[11px]">(${t.pct}%)</span>
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums ${netBadge}">
+                                  ${net > 0 ? '+' : ''}${net}%
+                                </span>
+                              </div>
+                            </div>
+                            <div class="w-full h-2 rounded-full bg-[#EFEFEF] overflow-hidden flex" title="Positive: ${t.positive || 0}, Neutral: ${t.neutral || 0}, Negative: ${t.negative || 0}">
+                              ${posW > 0 ? `<div style="width: ${posW}%; background-color: #247B50;"></div>` : ''}
+                              ${neuW > 0 ? `<div style="width: ${neuW}%; background-color: #9CA3AF;"></div>` : ''}
+                              ${negW > 0 ? `<div style="width: ${negW}%; background-color: #C4242A;"></div>` : ''}
+                            </div>
+                          </button>
+                        `;
+                      })
+                      .join('')}
+                  </div>
+                  <div class="flex items-center gap-4 pt-1 text-[10px] text-[#525B56]">
+                    <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#247B50]"></span>Positive</span>
+                    <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#9CA3AF]"></span>Neutral</span>
+                    <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#C4242A]"></span>Negative</span>
+                  </div>`
+                : '<p class="text-xs text-[#646E68] py-4 text-center">No themes extracted for the current slice.</p>'
+            }
           </div>
+
+          <!-- Theme × Segment Breakdown Table -->
+          <div class="xl:col-span-5 bg-white border border-[#E4E7E4] rounded-[8px] p-4 shadow-xs space-y-3">
+            <div class="border-b border-[#EFEFEF] pb-2.5">
+              <h3 class="text-sm font-semibold text-[#111613]">Theme &times; Segment Breakdown</h3>
+              <p class="text-[11px] text-[#525B56]">
+                Cross-tabulated by <strong>${AEApp.escapeHtml(segTable.segmentLabel || 'Segment')}</strong>
+              </p>
+            </div>
+
+            ${
+              segTable.segments && segTable.segments.length > 0 && segTable.rows && segTable.rows.length > 0
+                ? `<div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr class="border-b border-[#E4E7E4] bg-[#FAFBF9]">
+                          <th class="py-2 px-2 font-semibold text-[#525B56]">Theme</th>
+                          ${segTable.segments
+                            .map((seg) => `<th class="py-2 px-2 font-semibold text-[#525B56] text-right whitespace-nowrap">${AEApp.escapeHtml(seg)}</th>`)
+                            .join('')}
+                          <th class="py-2 px-2 font-bold text-[#111613] text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-[#EFEFEF]">
+                        ${segTable.rows
+                          .map((row) => {
+                            const themeObj = typeof row.theme === 'object' ? row.theme : { id: row.themeId || row.theme, name: row.theme };
+                            const rowMax = Math.max(1, ...segTable.segments.map((s) => Number(row.countsBySegment?.[s] || 0)));
+                            return `
+                              <tr class="hover:bg-[#FAFBF9]">
+                                <td class="py-2 px-2 font-medium text-[#111613] max-w-[160px] truncate" title="${AEApp.escapeAttr(themeObj.name || '')}">
+                                  ${AEApp.escapeHtml(themeObj.name || '')}
+                                </td>
+                                ${segTable.segments
+                                  .map((seg) => {
+                                    const cnt = Number(row.countsBySegment?.[seg] || 0);
+                                    const alpha = cnt > 0 ? Math.min(0.32, 0.06 + (cnt / rowMax) * 0.24) : 0;
+                                    const bg = cnt > 0 ? `background-color: rgba(36, 123, 80, ${alpha.toFixed(2)});` : '';
+                                    return `<td class="py-2 px-2 text-right tabular-nums ${cnt > 0 ? 'font-semibold text-[#04250E]' : 'text-[#9CA3AF]'}" style="${bg}">${cnt}</td>`;
+                                  })
+                                  .join('')}
+                                <td class="py-2 px-2 text-right font-bold tabular-nums text-[#111613]">${Number(row.total || 0)}</td>
+                              </tr>
+                            `;
+                          })
+                          .join('')}
+                      </tbody>
+                    </table>
+                  </div>`
+                : '<p class="text-xs text-[#646E68] py-4 text-center">Select a categorical question or collect more responses to view Theme &times; Segment breakdown.</p>'
+            }
+          </div>
+        </div>
+
+        <!-- 4. TF-IDF KEYPHRASE CHIPS + FILTER PILLS + LIVE SEARCH + CODED VERBATIM CARDS -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
+          <!-- Clickable TF-IDF Keyphrase Chips -->
           ${
-            this.verbatimSearchQuery
-              ? `<button type="button" onclick="AEAnalytics.setVerbatimSearch('')" class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] text-xs font-medium text-[#525B56] hover:text-[#111613]">
-                  Clear
-                </button>`
+            topTerms.length > 0
+              ? `<div class="p-3 bg-[#FAFBF9] border border-[#E4E7E4] rounded-[6px] space-y-2">
+                  <span class="text-[11px] font-bold text-[#525B56] uppercase tracking-wider block">Top TF-IDF Keyphrases &amp; Collocations:</span>
+                  <div class="flex flex-wrap gap-1.5">
+                    ${topTerms
+                      .map((item) => {
+                        const isMatch = query && item.term.toLowerCase() === query;
+                        return `
+                          <button type="button" onclick="AEAnalytics.setVerbatimSearch('${AEApp.escapeJs(isMatch ? '' : item.term)}')"
+                            class="px-2.5 py-1 rounded-[4px] border text-xs font-medium inline-flex items-center gap-1.5 ae-press ${
+                              isMatch
+                                ? 'border-[#247B50] bg-[#DCFAE5] text-[#04250E]'
+                                : 'border-[#CFD5D0] bg-white hover:bg-[#DCFAE5] hover:text-[#04250E] text-[#111613]'
+                            }">
+                            <span>${AEApp.escapeHtml(item.term)}</span>
+                            <span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[10px] text-[#525B56] font-mono tabular-nums">${item.count}</span>
+                          </button>
+                        `;
+                      })
+                      .join('')}
+                  </div>
+                </div>`
               : ''
           }
-        </div>
 
-        <!-- Verbatim Records List -->
-        <div class="space-y-3">
-          ${filteredRecords
-            .map((rec) => {
-              const badgeClass = rec.sentiment === 'positive' ? 'bg-[#DCFAE5] text-[#04250E]' : rec.sentiment === 'negative' ? 'bg-[#FFEDEA] text-[#831C1E]' : 'bg-[#F8F9F8] text-[#525B56]';
-              return `
-                <div class="p-3.5 rounded-[6px] border border-[#E4E7E4] bg-white hover:border-[#CFD5D0] space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-2 text-xs">
-                      <span class="font-semibold text-[#111613]">${AEApp.escapeHtml(rec.county)}</span>
-                      <span>·</span>
-                      <span class="text-[#525B56]">${AEApp.escapeHtml(rec.enumerator)}</span>
-                      <span>·</span>
-                      <span class="text-[#646E68] tabular-nums">${rec.submittedAt && !isNaN(new Date(rec.submittedAt).getTime()) ? new Date(rec.submittedAt).toISOString().slice(0, 10) : '—'}</span>
-                    </div>
-                    <span class="px-2 py-0.5 rounded text-[10px] font-bold ${badgeClass}">
-                      ${rec.sentiment.toUpperCase()}
-                    </span>
-                  </div>
-                  <p class="text-xs text-[#111613] leading-relaxed ae-break-words">"${AEApp.escapeHtml(rec.text)}"</p>
-                </div>
-              `;
-            })
-            .join('')}
+          <!-- Filter Pills + Live Search Bar -->
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-1.5">
+              ${[
+                { id: 'all', label: `All (${records.length})` },
+                { id: 'positive', label: `Positive (${totalPos})` },
+                { id: 'neutral', label: `Neutral (${totalNeu})` },
+                { id: 'negative', label: `Negative (${totalNeg})` }
+              ]
+                .map((pill) => {
+                  const active = this.verbatimSentimentFilter === pill.id;
+                  return `
+                    <button type="button" onclick="AEAnalytics.setVerbatimSentiment('${pill.id}')"
+                      class="h-7 px-2.5 rounded-[5px] text-xs font-semibold border ae-press ${
+                        active
+                          ? 'bg-[#141A17] text-white border-[#141A17]'
+                          : 'bg-white text-[#525B56] border-[#CFD5D0] hover:bg-[#F4F6F4] hover:text-[#111613]'
+                      }">
+                      ${pill.label}
+                    </button>
+                  `;
+                })
+                .join('')}
+
+              <button type="button" onclick="AEAnalytics.toggleVerbatimActionable()"
+                class="h-7 px-2.5 rounded-[5px] text-xs font-semibold border ae-press inline-flex items-center gap-1 ${
+                  this.verbatimActionableOnly
+                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706]'
+                    : 'bg-white text-[#525B56] border-[#CFD5D0] hover:bg-[#F4F6F4]'
+                }">
+                <i class="fa-solid fa-lightbulb text-[10px]"></i>
+                <span>Actionable Only (${actionableCount})</span>
+              </button>
+
+              <button type="button" onclick="AEAnalytics.toggleVerbatimPinnedOnly()"
+                class="h-7 px-2.5 rounded-[5px] text-xs font-semibold border ae-press inline-flex items-center gap-1 ${
+                  this.verbatimPinnedOnly
+                    ? 'bg-[#FEF3C7] text-[#92400E] border-[#D97706]'
+                    : 'bg-white text-[#525B56] border-[#CFD5D0] hover:bg-[#F4F6F4]'
+                }">
+                <i class="fa-solid fa-star text-[10px]"></i>
+                <span>Pinned Only (${pinnedCount})</span>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-2 lg:w-80">
+              <div class="relative flex-1">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-[#646E68]"></i>
+                <input type="text" value="${AEApp.escapeAttr(this.verbatimSearchQuery)}"
+                  oninput="AEAnalytics.setVerbatimSearch(this.value)"
+                  placeholder="Search verbatims, themes, segments…"
+                  class="w-full h-8 pl-8 pr-3 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+              </div>
+              ${
+                hasActiveSubFilters
+                  ? `<button type="button" onclick="AEAnalytics.verbatimThemeFilter='all'; AEAnalytics.verbatimSentimentFilter='all'; AEAnalytics.verbatimActionableOnly=false; AEAnalytics.verbatimPinnedOnly=false; AEAnalytics.setVerbatimSearch('');"
+                      class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] text-xs font-medium text-[#525B56] hover:text-[#111613] shrink-0">
+                      Clear
+                    </button>`
+                  : ''
+              }
+            </div>
+          </div>
+
+          <!-- Coded Verbatim Cards Stream -->
+          <div class="space-y-3">
+            ${
+              filteredRecords.length === 0
+                ? `<div class="p-8 text-center text-xs text-[#646E68] bg-[#FAFBF9] border border-dashed border-[#CFD5D0] rounded-[6px]">
+                    No coded verbatims match your active filters.
+                  </div>`
+                : filteredRecords
+                    .map((rec) => {
+                      const recKey = this._getRecordKey(rec);
+                      const isPinned = pinnedSet.has(recKey);
+                      const qObj = qLookup[rec.questionId];
+                      const rAnswers = respLookup[rec.id]?.answers || {};
+                      const qNum = numMap[rec.questionId]?.label;
+                      const cleanQTitle = qObj
+                        ? this.cleanQuestionTitle(qObj, rAnswers, survey)
+                        : this.cleanQuestionTitle(rec.questionTitle || rec.questionId || 'Open-Ended Response', rAnswers, survey);
+                      const translated = rec.translatedText || this.verbatimTranslations[recKey] || this.verbatimTranslations[rec.text] || '';
+                      const showTranslation = !!(translated && translated.trim() && translated.trim().toLowerCase() !== String(rec.text || '').trim().toLowerCase());
+                      const score = typeof rec.sentimentScore === 'number' ? rec.sentimentScore : 0;
+                      const scoreStr = `${score > 0 ? '+' : ''}${score.toFixed(2)}`;
+                      const sentBadge = rec.sentiment === 'positive'
+                        ? 'bg-[#DCFAE5] text-[#04250E]'
+                        : rec.sentiment === 'negative'
+                        ? 'bg-[#FFEDEA] text-[#831C1E]'
+                        : 'bg-[#F4F6F4] text-[#525B56]';
+
+                      return `
+                        <div class="p-3.5 rounded-[6px] border ${isPinned ? 'border-[#D97706] bg-[#FFFDF7]' : 'border-[#E4E7E4] bg-white'} hover:border-[#CFD5D0] space-y-2.5">
+                          <div class="flex flex-wrap items-start justify-between gap-2">
+                            <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                              ${
+                                qNum
+                                  ? `<span class="px-1.5 py-0.5 rounded bg-[#141A17] text-white text-[10px] font-bold tabular-nums shrink-0">Q${AEApp.escapeHtml(qNum)}</span>`
+                                  : ''
+                              }
+                              <span class="text-xs font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(cleanQTitle)}</span>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                              <span class="px-2 py-0.5 rounded text-[10px] font-bold tabular-nums ${sentBadge}">
+                                ${AEApp.escapeHtml(String(rec.sentiment || 'neutral').toUpperCase())} (${scoreStr})
+                              </span>
+                              ${
+                                rec.isActionable
+                                  ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF3C7] text-[#92400E] border border-[#F59E0B]/40">Actionable</span>'
+                                  : ''
+                              }
+                              ${
+                                rec.urgency === 'high'
+                                  ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#C4242A] text-white">High Urgency</span>'
+                                  : rec.urgency === 'medium'
+                                  ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FFEDEA] text-[#831C1E]">Alert</span>'
+                                  : ''
+                              }
+                              <button type="button" onclick="AEAnalytics.togglePinVerbatim('${safeSurveyIdJs}', '${AEApp.escapeJs(recKey)}')"
+                                title="${isPinned ? 'Unpin quote' : 'Pin quote for executive report'}"
+                                class="h-6 px-2 rounded border text-[11px] inline-flex items-center gap-1 ae-press ${
+                                  isPinned
+                                    ? 'bg-[#FEF3C7] border-[#D97706] text-[#92400E] font-semibold'
+                                    : 'bg-white border-[#CFD5D0] text-[#646E68] hover:text-[#111613]'
+                                }">
+                                <i class="${isPinned ? 'fa-solid' : 'fa-regular'} fa-star text-[10px]"></i>
+                                <span>${isPinned ? 'Pinned' : 'Pin'}</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <p class="text-xs text-[#111613] leading-relaxed ae-break-words">&ldquo;${AEApp.escapeHtml(rec.text)}&rdquo;</p>
+
+                          ${
+                            showTranslation
+                              ? `<div class="p-2.5 rounded-[5px] bg-[#F4FAF6] border border-[#247B50]/25 text-xs text-[#04250E] space-y-0.5">
+                                  <span class="text-[10px] font-bold uppercase tracking-wider text-[#247B50] block">English Translation</span>
+                                  <p class="leading-relaxed ae-break-words">${AEApp.escapeHtml(translated)}</p>
+                                </div>`
+                              : ''
+                          }
+
+                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#F4F6F4]">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                              ${(rec.themes || [])
+                                .map((t) => {
+                                  const tId = typeof t === 'string' ? t : (t.id || t.name);
+                                  const tName = typeof t === 'string' ? t : (t.name || t.label || t.id);
+                                  const tColor = typeof t === 'object' && t.color ? t.color : '#247B50';
+                                  return `
+                                    <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(tId)}')"
+                                      class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FAFBF9] border border-[#E4E7E4] hover:border-[#247B50] text-[#111613] inline-flex items-center gap-1">
+                                      <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${AEApp.escapeAttr(tColor)}"></span>
+                                      <span>${AEApp.escapeHtml(tName)}</span>
+                                    </button>
+                                  `;
+                                })
+                                .join('')}
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2 text-[11px] text-[#646E68]">
+                              ${rec.segment ? `<span class="font-medium text-[#111613]">${AEApp.escapeHtml(rec.segment)}</span><span>·</span>` : ''}
+                              <span>${AEApp.escapeHtml(rec.county || 'Kenya')}</span>
+                              <span>·</span>
+                              <span>${AEApp.escapeHtml(rec.enumerator || 'Respondent')}</span>
+                              <span>·</span>
+                              <span class="tabular-nums">${AEApp.escapeHtml(this._formatVerbatimDate(rec.submittedAt))}</span>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join('')
+            }
+          </div>
         </div>
       </div>
     `;
@@ -6649,27 +7600,65 @@ window.AEAnalytics = {
     xml += `</Table></Worksheet>`;
 
     // Sheet 7: Verbatim_Intelligence
-    const verb = window.AETeXtEngine ? window.AETeXtEngine.analyzeVerbatims(responses) : { records: [] };
+    const verb = window.AETeXtEngine
+      ? window.AETeXtEngine.analyzeVerbatims(responses, survey, {
+          questionId: 'all',
+          segmentQId: this.verbatimSegmentQId || 'auto',
+          translationsMap: this.verbatimTranslations
+        })
+      : { records: [] };
     const verbRecords = verb.records || verb.rows || [];
+    const pinnedSet = this._getPinnedSet(survey.id);
+    const qLookup = {};
+    questions.forEach((q) => { qLookup[q.id] = q; });
+
     xml += `<Worksheet ss:Name="Verbatim_Intelligence"><Table>`;
     xml += `<Row ss:StyleID="Header">
-      <Cell><Data ss:Type="String">Enumerator</Data></Cell>
-      <Cell><Data ss:Type="String">County</Data></Cell>
+      <Cell><Data ss:Type="String">Response ID</Data></Cell>
+      <Cell><Data ss:Type="String">Question</Data></Cell>
+      <Cell><Data ss:Type="String">Verbatim Text</Data></Cell>
+      <Cell><Data ss:Type="String">English Translation</Data></Cell>
+      <Cell><Data ss:Type="String">Auto Themes</Data></Cell>
       <Cell><Data ss:Type="String">Sentiment</Data></Cell>
-      <Cell><Data ss:Type="String">Field_Note</Data></Cell>
+      <Cell><Data ss:Type="String">Sentiment Score</Data></Cell>
+      <Cell><Data ss:Type="String">Urgency</Data></Cell>
+      <Cell><Data ss:Type="String">Actionable</Data></Cell>
+      <Cell><Data ss:Type="String">Pinned Quote</Data></Cell>
+      <Cell><Data ss:Type="String">Segment</Data></Cell>
+      <Cell><Data ss:Type="String">Enumerator</Data></Cell>
+      <Cell><Data ss:Type="String">Date</Data></Cell>
     </Row>`;
     verbRecords.forEach((vr) => {
+      const recKey = this._getRecordKey(vr);
+      const qObj = qLookup[vr.questionId];
+      const qNum = numMap[vr.questionId]?.label;
+      const cleanQTitle = qObj ? this.cleanQuestionTitle(qObj, {}, survey) : (vr.questionTitle || vr.questionId || 'Verbatim');
+      const qLabel = qNum ? `Q${qNum}: ${cleanQTitle}` : cleanQTitle;
+      const translation = vr.translatedText || this.verbatimTranslations[recKey] || this.verbatimTranslations[vr.text] || '';
+      const themeNames = (vr.themes || []).map((t) => (typeof t === 'string' ? t : (t.name || t.label || t.id))).filter(Boolean).join('; ');
+      const scoreVal = typeof vr.sentimentScore === 'number' && !isNaN(vr.sentimentScore) ? vr.sentimentScore : 0;
+      const isPinned = pinnedSet.has(recKey);
       xml += `<Row>
-        <Cell><Data ss:Type="String">${escapeXml(vr.enumerator)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(vr.county)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(vr.sentiment)}</Data></Cell>
-        <Cell><Data ss:Type="String">${escapeXml(vr.text)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(vr.id || '')}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(qLabel)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(vr.text || '')}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(translation)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(themeNames)}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(vr.sentiment || 'neutral')}</Data></Cell>
+        <Cell><Data ss:Type="Number">${scoreVal}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(vr.urgency || 'normal')}</Data></Cell>
+        <Cell><Data ss:Type="String">${vr.isActionable ? 'Yes' : 'No'}</Data></Cell>
+        <Cell><Data ss:Type="String">${isPinned ? 'Yes' : 'No'}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(vr.segment || vr.county || '')}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(vr.enumerator || '')}</Data></Cell>
+        <Cell><Data ss:Type="String">${escapeXml(this._formatVerbatimDate(vr.submittedAt))}</Data></Cell>
       </Row>`;
     });
     xml += `</Table></Worksheet></Workbook>`;
 
     window.AEApp.downloadBlob(xml, `${survey.id}_enterprise_analytics.xls`, 'application/vnd.ms-excel');
     window.AEApp.showToast('Exported multi-sheet Enterprise Excel Workbook (.xls).', 'success');
+    return xml;
   },
 
   // --------------------------------------------------------------------------

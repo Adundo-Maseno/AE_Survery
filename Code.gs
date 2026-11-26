@@ -386,7 +386,8 @@ function doGet(e) {
  * - "UPSERT_COLLECTOR" -> Creates or updates a collector
  * - "DELETE_SURVEY"    -> Deletes a survey row by ID
  * - "UPLOAD_MEDIA"     -> Saves media to Drive (runs outside ScriptLock)
- * - "BATCH_TRANSLATE"  -> Translates text via LanguageApp (runs outside ScriptLock)
+ * - "BATCH_TRANSLATE"  -> Translates up to 150 strings via LanguageApp (runs outside ScriptLock)
+ * - "ANALYZE_VERBATIMS_AI" -> Hybrid Gemini AI verbatim briefing with offline fallback (runs outside ScriptLock)
  */
 function doPost(e) {
   try {
@@ -434,24 +435,46 @@ function doPost(e) {
     }
 
     // Google Translate Engine Endpoint (Zero-API-key native GAS LanguageApp) — runs outside ScriptLock
+    // Supports up to 150 strings per request (e.g. on-demand Swahili/FR/PT verbatim translation to English)
     if (action === 'BATCH_TRANSLATE' || action === 'TRANSLATE') {
-      var sourceLang = String(payload.sourceLang || 'en').trim().toLowerCase();
-      var targetLang = String(payload.targetLang || 'sw').trim().toLowerCase();
+      var MAX_TRANSLATE_STRINGS = 150;
+      var MAX_TRANSLATE_CHARS = 5000;
+      var rawSource = (payload.sourceLang === undefined || payload.sourceLang === null)
+        ? 'en'
+        : String(payload.sourceLang).trim().toLowerCase();
+      var sourceLang = (rawSource === 'auto' || rawSource === '') ? '' : rawSource;
+      var targetLang = String(payload.targetLang || 'sw').trim().toLowerCase() || 'en';
       var rawTexts = Array.isArray(payload.texts) ? payload.texts : (payload.text ? [payload.text] : []);
+      var cappedTexts = rawTexts.slice(0, MAX_TRANSLATE_STRINGS);
       var translatedTexts = [];
+      var dedupeCache = {};
 
-      for (var tIdx = 0; tIdx < rawTexts.length; tIdx++) {
-        var src = rawTexts[tIdx];
+      for (var tIdx = 0; tIdx < cappedTexts.length; tIdx++) {
+        var src = cappedTexts[tIdx];
         if (src === null || src === undefined || typeof src !== 'string' || !src.trim()) {
-          translatedTexts.push(src || '');
+          translatedTexts.push(src ? String(src) : '');
           continue;
         }
         var trimmed = src.trim();
+        if (trimmed.length > MAX_TRANSLATE_CHARS) {
+          trimmed = trimmed.substring(0, MAX_TRANSLATE_CHARS);
+        }
+        if (sourceLang && sourceLang === targetLang) {
+          translatedTexts.push(trimmed);
+          continue;
+        }
+        if (Object.prototype.hasOwnProperty.call(dedupeCache, trimmed)) {
+          translatedTexts.push(dedupeCache[trimmed]);
+          continue;
+        }
         try {
           var res = LanguageApp.translate(trimmed, sourceLang, targetLang);
-          translatedTexts.push(res ? res.trim() : trimmed);
+          var outText = res ? String(res).trim() : trimmed;
+          dedupeCache[trimmed] = outText;
+          translatedTexts.push(outText);
         } catch (transErr) {
           // Gracefully fall back to original text if single string exceeds quota or contains invalid characters
+          dedupeCache[trimmed] = trimmed;
           translatedTexts.push(trimmed);
         }
       }
@@ -459,12 +482,19 @@ function doPost(e) {
       return jsonResponse_({
         ok: true,
         action: action,
-        sourceLang: sourceLang,
+        sourceLang: sourceLang || 'auto',
         targetLang: targetLang,
         translations: translatedTexts,
         count: translatedTexts.length,
+        totalReceived: rawTexts.length,
+        truncated: rawTexts.length > MAX_TRANSLATE_STRINGS,
         serverTime: new Date().toISOString()
       });
+    }
+
+    // Hybrid Cloud Verbatim Intelligence Endpoint (Optional Gemini 2.5 Flash) — runs outside ScriptLock
+    if (action === 'ANALYZE_VERBATIMS_AI') {
+      return jsonResponse_(analyzeVerbatimsWithGemini_(payload));
     }
 
     // Acquire ScriptLock ONLY for sheet-mutating operations
@@ -1936,6 +1966,192 @@ function saveMediaFileToDrive_(mediaItem) {
     return file.getUrl();
   } catch (e) {
     return '';
+  }
+}
+
+/**
+ * Samples up to `maxCount` concise verbatim entries from an array of strings or objects,
+ * using evenly spaced stride sampling when the input exceeds `maxCount`.
+ */
+function sampleVerbatimsForAi_(rawVerbatims, maxCount) {
+  if (!Array.isArray(rawVerbatims) || rawVerbatims.length === 0) return [];
+  var limit = maxCount > 0 ? maxCount : 80;
+  var cleaned = [];
+
+  for (var i = 0; i < rawVerbatims.length; i++) {
+    var item = rawVerbatims[i];
+    if (item === null || item === undefined) continue;
+    if (typeof item === 'string') {
+      var s = item.replace(/\s+/g, ' ').trim();
+      if (s) cleaned.push(s.substring(0, 320));
+    } else if (typeof item === 'object') {
+      var rawText = item.text || item.answer || item.verbatim || item.value || '';
+      var text = String(rawText).replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      var metaParts = [];
+      var qLabel = item.question || item.questionLabel || item.field || '';
+      if (qLabel) metaParts.push('Q:' + String(qLabel).replace(/\s+/g, ' ').trim().substring(0, 60));
+      var loc = item.county || item.region || item.location || '';
+      if (loc) metaParts.push('Loc:' + String(loc).replace(/\s+/g, ' ').trim().substring(0, 40));
+      var lang = item.lang || item.language || '';
+      if (lang) metaParts.push('Lang:' + String(lang).trim().substring(0, 12));
+      var prefix = metaParts.length > 0 ? '[' + metaParts.join(' | ') + '] ' : '';
+      cleaned.push(prefix + text.substring(0, 320));
+    }
+  }
+
+  if (cleaned.length <= limit) return cleaned;
+
+  var sampled = [];
+  var step = cleaned.length / limit;
+  for (var j = 0; j < limit; j++) {
+    var idx = Math.floor(j * step);
+    if (idx >= cleaned.length) idx = cleaned.length - 1;
+    sampled.push(cleaned[idx]);
+  }
+  return sampled;
+}
+
+/**
+ * Hybrid Cloud Verbatim Intelligence using Gemini 2.5 Flash.
+ * If `GEMINI_API_KEY` is absent in Script Properties or if the API fails,
+ * returns a structured `offline_fallback` payload so the client never breaks.
+ */
+function analyzeVerbatimsWithGemini_(payload) {
+  var nowIso = new Date().toISOString();
+  var geminiKey = '';
+  try {
+    geminiKey = String(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
+  } catch (propErr) {
+    geminiKey = '';
+  }
+
+  if (!geminiKey) {
+    return {
+      ok: true,
+      provider: 'offline_fallback',
+      configured: false,
+      message: 'GEMINI_API_KEY is not set in Apps Script Project Properties; client offline NLP briefing remains active.',
+      serverTime: nowIso
+    };
+  }
+
+  var rawVerbatims = Array.isArray(payload && payload.verbatims) ? payload.verbatims : [];
+  var sampled = sampleVerbatimsForAi_(rawVerbatims, 80);
+  if (sampled.length === 0) {
+    return {
+      ok: true,
+      provider: 'offline_fallback',
+      configured: true,
+      message: 'No verbatim responses supplied for AI analysis.',
+      serverTime: nowIso
+    };
+  }
+
+  var model = 'gemini-2.5-flash';
+  var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
+  var surveyTitle = (payload && payload.surveyTitle) ? String(payload.surveyTitle).trim().substring(0, 140) : 'Field Survey';
+  var numberedList = [];
+  for (var i = 0; i < sampled.length; i++) {
+    numberedList.push((i + 1) + '. ' + sampled[i]);
+  }
+
+  var promptText = [
+    'You are an agricultural field research analyst for Agri Experience Limited.',
+    'Analyze the following ' + sampled.length + ' field survey verbatim responses (sampled from ' + rawVerbatims.length + ' total) for survey: "' + surveyTitle + '".',
+    'Responses may contain English, Swahili, French, or Portuguese; synthesize all findings in clear, concise executive English.',
+    'Return strictly valid JSON with exactly these keys:',
+    '- "headline": string (1 concise executive takeaway sentence)',
+    '- "summaryBullets": string[] (3 to 5 crisp findings)',
+    '- "topThemes": Array<{ "theme": string, "countEstimate": number, "sentiment": "positive"|"neutral"|"negative"|"mixed", "summary": string }> (3 to 6 themes)',
+    '- "recommendations": string[] (3 to 5 concrete operational actions)',
+    '- "urgentRisks": string[] (0 to 5 urgent field/quality/supply risks; empty array if none)',
+    '',
+    'Verbatim sample:',
+    numberedList.join('\n')
+  ].join('\n');
+
+  try {
+    var requestBody = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: promptText }]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json'
+      }
+    };
+
+    var response = UrlFetchApp.fetch(endpoint, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-goog-api-key': geminiKey
+      },
+      payload: JSON.stringify(requestBody),
+      muteHttpExceptions: true
+    });
+
+    var statusCode = response.getResponseCode();
+    var responseText = response.getContentText() || '';
+    if (statusCode < 200 || statusCode >= 300) {
+      var errExcerpt = responseText.replace(/\s+/g, ' ').trim().substring(0, 200);
+      throw new Error('Gemini API HTTP ' + statusCode + (errExcerpt ? ': ' + errExcerpt : ''));
+    }
+
+    var rawResp = JSON.parse(responseText);
+    var candidateText = '';
+    if (
+      rawResp &&
+      Array.isArray(rawResp.candidates) &&
+      rawResp.candidates.length > 0 &&
+      rawResp.candidates[0] &&
+      rawResp.candidates[0].content &&
+      Array.isArray(rawResp.candidates[0].content.parts) &&
+      rawResp.candidates[0].content.parts.length > 0
+    ) {
+      candidateText = String(rawResp.candidates[0].content.parts[0].text || '').trim();
+    }
+
+    if (!candidateText) {
+      throw new Error('Gemini API returned an empty candidate response.');
+    }
+
+    // Strip optional markdown code fences if present
+    var jsonText = candidateText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    var parsed = JSON.parse(jsonText);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Gemini API returned non-object JSON payload.');
+    }
+
+    var briefing = {
+      headline: typeof parsed.headline === 'string' ? parsed.headline : '',
+      summaryBullets: Array.isArray(parsed.summaryBullets) ? parsed.summaryBullets : [],
+      topThemes: Array.isArray(parsed.topThemes) ? parsed.topThemes : [],
+      recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+      urgentRisks: Array.isArray(parsed.urgentRisks) ? parsed.urgentRisks : []
+    };
+
+    return {
+      ok: true,
+      provider: 'gemini',
+      configured: true,
+      briefing: briefing,
+      model: model,
+      sampledCount: sampled.length,
+      totalReceived: rawVerbatims.length,
+      serverTime: new Date().toISOString()
+    };
+  } catch (err) {
+    return {
+      ok: true,
+      provider: 'offline_fallback',
+      error: (err && err.message) ? String(err.message) : 'Gemini verbatim analysis failed.',
+      serverTime: new Date().toISOString()
+    };
   }
 }
 

@@ -44,6 +44,7 @@ const APP_SHELL_ASSETS = [
   './js/builder.js',
   './js/collector.js',
   './js/chart.umd.min.js',
+  './js/text-intelligence.js',
   './js/analytics.js',
   './js/app.js',
   './js/field-app.js',
