@@ -3,7 +3,7 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.62';
+const CACHE_NAME = 'ae-survey-prod-v3.63';
 const CODE_ASSET_TIMEOUT_MS = 2000;
 const SW_IDB_CANDIDATES = ['AESurveyMonkeyDB', 'AESurveyDB'];
 
@@ -46,6 +46,8 @@ const APP_SHELL_ASSETS = [
   './js/chart.umd.min.js',
   './js/text-intelligence.js',
   './js/analytics.js',
+  './js/report-export.js',
+  './js/templates.js',
   './js/app.js',
   './js/field-app.js',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css',

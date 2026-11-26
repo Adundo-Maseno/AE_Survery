@@ -2146,6 +2146,75 @@ window.AEPiping = {
       }
     }
     return numMap;
+  },
+
+  isQuestionVisible(q, answers = {}, survey = null) {
+    if (!q || !q.displayRule || !q.displayRule.enabled) return true;
+    const sourceId = q.displayRule.sourceQuestionId || q.parentQuestionId;
+    if (!sourceId) return true;
+
+    const rawVal = answers ? answers[sourceId] : undefined;
+    const isEmpty = (v) => {
+      if (v === undefined || v === null) return true;
+      if (typeof v === 'string') return v.trim() === '';
+      if (Array.isArray(v)) return v.length === 0;
+      if (typeof v === 'object') return Object.keys(v).length === 0;
+      return false;
+    };
+
+    const mode = q.displayRule.mode || 'any_answer';
+    if (mode === 'any_answer') {
+      return !isEmpty(rawVal);
+    }
+
+    if (isEmpty(rawVal)) {
+      return false;
+    }
+
+    const canonicalSurvey =
+      survey &&
+      survey.id &&
+      typeof window !== 'undefined' &&
+      window.aeStore &&
+      typeof window.aeStore.getSurveyById === 'function'
+        ? (window.aeStore.getSurveyById(survey.id) || survey)
+        : survey;
+    const lang =
+      typeof window !== 'undefined' &&
+      window.AEI18n &&
+      typeof window.AEI18n.getLanguage === 'function'
+        ? window.AEI18n.getLanguage()
+        : 'en';
+    const canonicalVal =
+      canonicalSurvey &&
+      typeof window !== 'undefined' &&
+      window.AEI18n &&
+      typeof window.AEI18n.getCanonicalEnglishAnswer === 'function'
+        ? window.AEI18n.getCanonicalEnglishAnswer(canonicalSurvey, sourceId, rawVal, lang)
+        : rawVal;
+
+    const norm = (v) => String(v ?? '').trim().toLowerCase();
+    const matchesSingle = (val, target) => {
+      if (target === undefined || target === null) return false;
+      const normTarget = norm(target);
+      if (Array.isArray(val)) {
+        return val.some((item) => norm(item) === normTarget);
+      }
+      return val !== undefined && val !== null && norm(val) === normTarget;
+    };
+    const matchesValue = (target) => matchesSingle(rawVal, target) || matchesSingle(canonicalVal, target);
+
+    if (mode === 'equals') {
+      return matchesValue(q.displayRule.value);
+    }
+    if (mode === 'not_equals') {
+      return !matchesValue(q.displayRule.value);
+    }
+    if (mode === 'in') {
+      const vals = Array.isArray(q.displayRule.values) ? q.displayRule.values : [];
+      return vals.some((v) => matchesValue(v));
+    }
+    return true;
   }
 };
 

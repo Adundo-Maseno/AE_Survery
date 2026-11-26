@@ -17,6 +17,11 @@ window.AEApp = {
   statusFilter: 'All',
   showSyncModal: false,
   showTemplatesModal: false,
+  showPasteOutlineModal: false,
+  templateCategoryFilter: 'All',
+  pasteOutlineTitle: '',
+  pasteOutlineText: '',
+  isPublicReportMode: false,
   isSyncing: false,
   selectedOverviewMetric: 'responses', // 'responses' | 'synced' | 'queued' | 'domain' | 'yield'
   overviewSurveyFilter: 'all', // 'all' | surveyId
@@ -41,6 +46,10 @@ window.AEApp = {
   hasPendingCloudUpdates: false,
   pendingCloudUpdateSummary: '',
 
+  init() {
+    return this.boot();
+  },
+
   async boot() {
     try {
       await window.aeStore.init();
@@ -55,12 +64,21 @@ window.AEApp = {
       ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
       : window.aeStore.surveys || [];
 
-    // Check URL query param `?survey=srv_...` for direct respondent link
+    // Check URL query params for Public Read-Only Stakeholder Report (`?view=report&survey=...`) or direct respondent link
     const params = new URLSearchParams(window.location.search);
+    const viewParam = (params.get('view') || '').toLowerCase();
     const linkedSurveyId = params.get('survey');
     const linkedCollectorId = params.get('collector');
     const linkedMode = (params.get('mode') || '').toLowerCase();
-    if (linkedSurveyId || linkedCollectorId) {
+
+    if (viewParam === 'report' && linkedSurveyId) {
+      this.isPublicReportMode = true;
+      this.activeSurveyId = linkedSurveyId;
+      this.currentStage = 'analyze';
+      if (window.AEAnalytics && (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics')) {
+        window.AEAnalytics.activeTab = 'summary';
+      }
+    } else if (linkedSurveyId || linkedCollectorId) {
       if (!currentUser || linkedMode === 'respondent' || linkedMode === 'self') {
         const qParts = [];
         if (linkedSurveyId) qParts.push(`survey=${encodeURIComponent(linkedSurveyId)}`);
@@ -153,12 +171,24 @@ window.AEApp = {
     this.mirrorSyncSettingsToIdb();
     this.render();
 
-    // Non-blocking freshness pull on Studio boot
+    // Non-blocking freshness pull on Studio boot (forced in public report mode)
     if (window.aeStore && typeof window.aeStore.pullFreshDataIfStale === 'function') {
-      window.aeStore.pullFreshDataIfStale({
-        minAgeMs: 30000,
-        reason: 'stage_' + this.currentStage
-      }).catch(() => {});
+      if (this.isPublicReportMode) {
+        window.aeStore.pullFreshDataIfStale({
+          force: true,
+          minAgeMs: 0,
+          reason: 'public_report'
+        })
+          .then(() => {
+            if (this.isPublicReportMode) this.render();
+          })
+          .catch(() => {});
+      } else {
+        window.aeStore.pullFreshDataIfStale({
+          minAgeMs: 30000,
+          reason: 'stage_' + this.currentStage
+        }).catch(() => {});
+      }
     }
   },
 
@@ -178,6 +208,7 @@ window.AEApp = {
     if (
       this.showSyncModal ||
       this.showTemplatesModal ||
+      this.showPasteOutlineModal ||
       this.showAddPersonnelModal ||
       this.showAssignTaskModal ||
       this.editingPersonnel ||
@@ -243,6 +274,16 @@ window.AEApp = {
       if (this.showSyncModal) {
         e.preventDefault();
         this.closeSyncSettingsModal();
+        return;
+      }
+      if (this.showTemplatesModal) {
+        e.preventDefault();
+        this.closeTemplateLibraryModal();
+        return;
+      }
+      if (this.showPasteOutlineModal) {
+        e.preventDefault();
+        this.closePasteOutlineModal();
         return;
       }
       if (window.AECollector && window.AECollector.showPinPrompt) {
@@ -849,6 +890,12 @@ window.AEApp = {
     const main = document.getElementById('ae_main_viewport');
     if (!main) return;
 
+    if (this.isPublicReportMode) {
+      this.renderPublicReportMain(main);
+      this.renderModals();
+      return;
+    }
+
     if (!currentUser) {
       main.innerHTML = this.renderLoginPortal();
       this.renderModals();
@@ -925,11 +972,216 @@ window.AEApp = {
     }
   },
 
+  getLiveReportUrl(surveyId) {
+    const origin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+    const pathname = typeof window !== 'undefined' && window.location ? window.location.pathname : '/';
+    const basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
+    return `${origin}${basePath}index.html?view=report&survey=${encodeURIComponent(surveyId)}`;
+  },
+
+  copyLiveReportLink(surveyId) {
+    if (!surveyId) return '';
+    const url = this.getLiveReportUrl(surveyId);
+    this.copyText(url, 'Live Read-Only Stakeholder Report link copied to clipboard.');
+    return url;
+  },
+
+  openLiveReport(surveyId) {
+    if (!surveyId) return;
+    const url = this.getLiveReportUrl(surveyId);
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      window.open(url, '_blank', 'noopener');
+    }
+  },
+
+  async refreshPublicReport() {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+    this.render();
+    try {
+      if (window.aeStore && typeof window.aeStore.pullFreshDataIfStale === 'function') {
+        await window.aeStore.pullFreshDataIfStale({
+          force: true,
+          minAgeMs: 0,
+          reason: 'public_report'
+        });
+      }
+      this.showToast('Live report refreshed with latest responses.', 'success');
+    } catch (err) {
+      this.showToast((err && err.message) || 'Could not reach cloud server; showing latest cached data.', 'warning');
+    } finally {
+      this.isSyncing = false;
+      this.render();
+    }
+  },
+
+  stripPiiControlsFromReportHtml(html) {
+    if (!html || typeof html !== 'string') return '';
+    let out = html;
+    // Strip Individual & QA Forensics tab buttons so zero respondent PII or individual inspector is reachable
+    out = out.replace(/<button\b[^>]*onclick="AEApp\.setAnalyticsTab\('individual'\)"[\s\S]*?<\/button>/gi, '');
+    out = out.replace(/<button\b[^>]*onclick="AEApp\.setAnalyticsTab\('forensics'\)"[\s\S]*?<\/button>/gi, '');
+    // Strip raw PII export buttons (CSV, JSON) & Reset Test Data & survey switcher dropdown
+    out = out.replace(/<button\b[^>]*onclick="AEApp\.exportSurveyResponsesCSV\([^"]*\)"[\s\S]*?<\/button>/gi, '');
+    out = out.replace(/<button\b[^>]*onclick="AEApp\.exportResponsesPackJSON\([^"]*\)"[\s\S]*?<\/button>/gi, '');
+    out = out.replace(/<button\b[^>]*onclick="AEApp\.resetSurveyTestData\([^"]*\)"[\s\S]*?<\/button>/gi, '');
+    out = out.replace(/<select\b[^>]*onchange="AEApp\.switchStage\('analyze'[^"]*\)"[\s\S]*?<\/select>/gi, '');
+    return out;
+  },
+
+  renderPublicReportMain(main) {
+    if (window.AEAnalytics && window.AEAnalytics.destroyCharts) {
+      window.AEAnalytics.destroyCharts();
+    }
+    const survey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+    if (!survey) {
+      main.innerHTML = `
+        <div class="py-12 px-4 flex flex-col items-center justify-center min-h-[60vh]">
+          <div class="max-w-md w-full bg-white border border-[#E4E7E4] rounded-[12px] p-6 text-center space-y-4">
+            <div class="w-12 h-12 rounded-full bg-[#F4F6F4] text-[#247B50] mx-auto flex items-center justify-center text-lg">
+              <i class="fa-solid fa-chart-simple"></i>
+            </div>
+            <div>
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold">Live Read-Only Results</span>
+              <h2 class="text-base font-bold text-[#111613] mt-2">Report Not Found Locally</h2>
+              <p class="text-xs text-[#525B56] mt-1">
+                We could not find survey <code>${this.escapeHtml(this.activeSurveyId || '')}</code> in local cache yet. Click Refresh Now to pull live results from the cloud backend.
+              </p>
+            </div>
+            <button type="button" onclick="AEApp.refreshPublicReport()"
+              class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-arrows-rotate"></i> Refresh Now
+            </button>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    // Privacy guard: never allow Individual or Forensics tabs in public report mode
+    if (window.AEAnalytics && (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics')) {
+      window.AEAnalytics.activeTab = 'summary';
+    }
+
+    // Temporarily allow read-only analytics rendering for this specific public survey ID without requiring login
+    const store = window.aeStore;
+    const origCanAccess = store && typeof store.canUserAccessSurvey === 'function' ? store.canUserAccessSurvey : null;
+    let analyticsHtml = '';
+    try {
+      if (store && origCanAccess) {
+        const publicSurveyId = survey.id;
+        store.canUserAccessSurvey = function (user, sId) {
+          if (sId === publicSurveyId) return { allowed: true, reason: '' };
+          return origCanAccess.call(store, user, sId);
+        };
+      }
+      if (window.AEAnalytics && typeof window.AEAnalytics.renderAnalyzeStage === 'function') {
+        analyticsHtml = this.stripPiiControlsFromReportHtml(window.AEAnalytics.renderAnalyzeStage(survey));
+      }
+    } finally {
+      if (store && origCanAccess) {
+        store.canUserAccessSurvey = origCanAccess;
+      }
+    }
+
+    main.innerHTML = `
+      <div class="ae-public-report-shell space-y-5">
+        <div class="bg-[#F8FBF9] border border-[#C8E6C9] rounded-[10px] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] bg-[#DCFAE5] text-[#04250E] text-xs font-semibold shrink-0">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+              Live Read-Only Results
+            </span>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-[#111613] truncate">${this.escapeHtml(survey.title)}</div>
+              <div class="text-[11px] text-[#525B56]">Privacy-Safe Stakeholder View · Individual respondent records &amp; PII are hidden</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button" onclick="AEApp.refreshPublicReport()"
+              ${this.isSyncing ? 'disabled' : ''}
+              class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-arrows-rotate text-[#247B50] ${this.isSyncing ? 'ae-syncing' : ''}"></i>
+              <span>Refresh Now</span>
+            </button>
+          </div>
+        </div>
+        ${analyticsHtml}
+      </div>
+    `;
+
+    try {
+      if (store && origCanAccess) {
+        const publicSurveyId = survey.id;
+        store.canUserAccessSurvey = function (user, sId) {
+          if (sId === publicSurveyId) return { allowed: true, reason: '' };
+          return origCanAccess.call(store, user, sId);
+        };
+      }
+      if (window.AEAnalytics && window.AEAnalytics.initGSAPAnimations) {
+        window.AEAnalytics.initGSAPAnimations();
+      }
+      if (window.AEAnalytics && window.AEAnalytics.mountCharts) {
+        window.AEAnalytics.mountCharts(survey);
+      }
+    } finally {
+      if (store && origCanAccess) {
+        store.canUserAccessSurvey = origCanAccess;
+      }
+    }
+  },
+
   renderHeaderBar(currentUser) {
     const headerEl = document.getElementById('ae_top_header');
     if (!headerEl) return;
 
     const online = window.aeStore.isEffectivelyOnline();
+
+    if (this.isPublicReportMode) {
+      const reportSurvey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+      headerEl.innerHTML = `
+        <div class="max-w-[1340px] mx-auto px-3 sm:px-5 py-2 sm:py-0 sm:h-12 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <picture>
+              <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
+              <img src="./icons/agri_experience_logo.png"
+                alt="Agri Experience Limited"
+                width="66" height="28"
+                style="width: 66px; height: 28px; aspect-ratio: 66/28;"
+                class="h-7 w-[66px] object-contain shrink-0"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+            </picture>
+            <span class="hidden w-6 h-6 rounded-[5px] bg-[#247B50] text-white items-center justify-center text-xs font-semibold">
+              <i class="fa-solid fa-seedling"></i>
+            </span>
+            <span class="font-semibold text-sm text-[#111613] tracking-tight shrink-0">AE Survey</span>
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold shrink-0">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+              Live Read-Only Results
+            </span>
+            ${
+              reportSurvey
+                ? `<span class="hidden md:inline text-xs text-[#525B56] truncate max-w-[340px]">· ${this.escapeHtml(reportSurvey.title)}</span>`
+                : ''
+            }
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button" onclick="AEApp.refreshPublicReport()"
+              ${this.isSyncing ? 'disabled' : ''}
+              class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-arrows-rotate text-[11px] ${this.isSyncing ? 'ae-syncing' : ''}"></i>
+              <span>Refresh Now</span>
+            </button>
+            <button type="button" onclick="window.print()"
+              class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-print text-[11px]"></i>
+              <span class="hidden sm:inline">Print</span>
+            </button>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     if (!currentUser) {
       headerEl.innerHTML = `
@@ -1507,7 +1759,17 @@ window.AEApp = {
             </button>
             ${
               isAdmin
-                ? `<button onclick="AEApp.createBlankSurvey()"
+                ? `<button onclick="AEApp.openTemplateLibraryModal()"
+                    class="h-8 px-3 rounded-[6px] bg-white hover:bg-[#F4F6F4] text-[#111613] font-medium text-xs inline-flex items-center gap-1.5 border border-[#CFD5D0] ae-press">
+                    <i class="fa-solid fa-layer-group text-[11px] text-[#247B50]"></i>
+                    <span>Templates</span>
+                  </button>
+                  <button onclick="AEApp.openPasteOutlineModal()"
+                    class="h-8 px-3 rounded-[6px] bg-white hover:bg-[#F4F6F4] text-[#111613] font-medium text-xs inline-flex items-center gap-1.5 border border-[#CFD5D0] ae-press">
+                    <i class="fa-solid fa-wand-magic-sparkles text-[11px] text-[#247B50]"></i>
+                    <span>Paste Outline</span>
+                  </button>
+                  <button onclick="AEApp.createBlankSurvey()"
                     class="h-8 px-3.5 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white font-medium text-xs inline-flex items-center gap-1.5 ae-press">
                     <i class="fa-solid fa-plus text-[11px]"></i>
                     <span>New Survey</span>
@@ -3005,8 +3267,159 @@ window.AEApp = {
     const modalRoot = document.getElementById('ae_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showSyncModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
+    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
       modalRoot.innerHTML = '';
+      return;
+    }
+
+    if (this.showTemplatesModal) {
+      const templates = (window.AETemplates && Array.isArray(window.AETemplates.TEMPLATES))
+        ? window.AETemplates.TEMPLATES
+        : [];
+      const categories = ['All', ...Array.from(new Set(templates.map((t) => t.category).filter(Boolean)))];
+      const activeCat = this.templateCategoryFilter || 'All';
+      const filtered = activeCat === 'All' ? templates : templates.filter((t) => t.category === activeCat);
+
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEApp.closeTemplateLibraryModal()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-center justify-center p-4 overflow-y-auto">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-4xl w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
+            <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3 gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-[#111613] flex items-center gap-2">
+                  <i class="fa-solid fa-layer-group text-[#247B50]"></i>
+                  <span>Survey Template Library</span>
+                </h3>
+                <p class="text-xs text-[#525B56] mt-0.5">
+                  Domain-agnostic blueprints with pre-wired 2a/2b conditional visibility and dynamic variable piping.
+                </p>
+              </div>
+              <button type="button" onclick="AEApp.closeTemplateLibraryModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              ${categories
+                .map(
+                  (cat) => `
+                    <button type="button" onclick="AEApp.setTemplateCategoryFilter('${this.escapeJs(cat)}')"
+                      class="h-7 px-2.5 rounded-[5px] text-xs font-medium transition-colors ae-press ${
+                        activeCat === cat
+                          ? 'bg-[#141A17] text-white font-semibold'
+                          : 'bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] border border-[#E4E7E4]'
+                      }">
+                      ${this.escapeHtml(cat)}
+                    </button>
+                  `
+                )
+                .join('')}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+              ${filtered
+                .map((tpl) => {
+                  const qCount = (tpl.pages || []).reduce((acc, p) => acc + (p.questions ? p.questions.length : 0), 0);
+                  const condCount = (tpl.pages || []).reduce(
+                    (acc, p) => acc + (p.questions || []).filter((q) => q.displayRule && q.displayRule.enabled).length,
+                    0
+                  );
+                  return `
+                    <div class="bg-white border border-[#E4E7E4] hover:border-[#247B50] rounded-[8px] p-4 flex flex-col justify-between gap-3 transition-colors">
+                      <div class="space-y-1.5">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded bg-[#F4F6F4] text-[#247B50]">
+                            <i class="fa-solid ${this.escapeAttr(tpl.icon || 'fa-clipboard-list')}"></i>
+                            ${this.escapeHtml(tpl.category)}
+                          </span>
+                          <span class="text-[11px] text-[#646E68] tabular-nums">${qCount} Qs · ~${tpl.estimatedMins || 4} min</span>
+                        </div>
+                        <h4 class="text-sm font-semibold text-[#111613]">${this.escapeHtml(tpl.name)}</h4>
+                        <p class="text-xs text-[#525B56] leading-relaxed">${this.escapeHtml(tpl.description)}</p>
+                      </div>
+                      <div class="flex items-center justify-between pt-2 border-t border-[#EFEFEF]">
+                        <span class="text-[11px] text-[#525B56] inline-flex items-center gap-1">
+                          <i class="fa-solid fa-eye text-[#247B50] text-[10px]"></i>
+                          ${condCount} conditional follow-up${condCount === 1 ? '' : 's'}
+                        </span>
+                        <button type="button" onclick="AEApp.createSurveyFromTemplate('${this.escapeJs(tpl.id)}')"
+                          class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
+                          <span>Use Template</span>
+                          <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                        </button>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    if (this.showPasteOutlineModal) {
+      const sampleOutline = `1. Rate the session (Excellent, Good, Average, Poor)\n1b. What could be improved?\n2. How likely are you to recommend this workshop (0-10)?\n3. Overall takeaway and next steps`;
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEApp.closePasteOutlineModal()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-center justify-center p-4 overflow-y-auto">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-2xl w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
+            <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3 gap-3">
+              <div>
+                <h3 class="text-base font-semibold text-[#111613] flex items-center gap-2">
+                  <i class="fa-solid fa-wand-magic-sparkles text-[#247B50]"></i>
+                  <span>Paste Outline to Survey Generator</span>
+                </h3>
+                <p class="text-xs text-[#525B56] mt-0.5">
+                  Paste any numbered question list. Inline options like <code>(Excellent, Good, Poor)</code> and sub-questions like <code>1b.</code> auto-wire into conditional follow-ups.
+                </p>
+              </div>
+              <button type="button" onclick="AEApp.closePasteOutlineModal()" aria-label="Close" class="w-7 h-7 rounded-[4px] bg-[#F4F6F4] text-[#111613] flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+
+            <form onsubmit="AEApp.createSurveyFromOutline(event)" class="space-y-3.5 text-xs">
+              <div>
+                <label for="ae_paste_outline_title" class="block font-semibold text-[#111613] mb-1">Survey Title *</label>
+                <input id="ae_paste_outline_title" name="ae_paste_outline_title" type="text" required maxlength="160"
+                  value="${this.escapeAttr(this.pasteOutlineTitle || '')}"
+                  placeholder="e.g. Q2 Strategy Workshop Feedback"
+                  class="w-full h-9 rounded-[6px] border border-[#CFD5D0] px-3 text-[#111613] bg-white focus:border-[#247B50] focus:outline-none" />
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <label for="ae_paste_outline_text" class="font-semibold text-[#111613]">Question Outline *</label>
+                  <button type="button" onclick="document.getElementById('ae_paste_outline_text').value = ${this.escapeAttr(JSON.stringify(sampleOutline))};"
+                    class="text-[11px] text-[#247B50] hover:underline font-medium">
+                    Insert Example
+                  </button>
+                </div>
+                <textarea id="ae_paste_outline_text" name="ae_paste_outline_text" rows="9" required
+                  placeholder="${this.escapeAttr(sampleOutline)}"
+                  class="w-full rounded-[6px] border border-[#CFD5D0] p-3 text-xs font-mono text-[#111613] bg-white focus:border-[#247B50] focus:outline-none leading-relaxed">${this.escapeHtml(this.pasteOutlineText || '')}</textarea>
+                <p class="text-[11px] text-[#646E68] mt-1">
+                  Tips: Use <code>## Section Name</code> for page breaks, <code>(Opt A, Opt B, Opt C)</code> for choices, <code>1b.</code> for conditional follow-ups, and <code>(0-10)</code> for NPS.
+                </p>
+              </div>
+
+              <div class="flex items-center justify-end gap-2 pt-3 border-t border-[#EFEFEF]">
+                <button type="button" onclick="AEApp.closePasteOutlineModal()" class="h-8 px-3 rounded-[5px] text-xs font-medium text-[#525B56] hover:text-[#111613]">
+                  Cancel
+                </button>
+                <button type="submit" class="h-8 px-4 rounded-[5px] bg-[#141A17] hover:bg-[#247B50] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
+                  <i class="fa-solid fa-wand-magic-sparkles text-[10px]"></i>
+                  <span>Generate &amp; Open Builder</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
       return;
     }
 
@@ -3788,12 +4201,120 @@ window.AEApp = {
     this.render();
   },
 
-  createFromTemplate(templateId) {
+  openTemplateLibraryModal() {
     if (window.AESession && !window.AESession.hasPermission('CREATE_SURVEY')) {
       this.showToast('Access Denied: Only HQ Administrators can author surveys.', 'error');
       return;
     }
-    const tpl = window.SURVEY_TEMPLATES.find((t) => t.id === templateId);
+    this.templateCategoryFilter = 'All';
+    this.showTemplatesModal = true;
+    this.renderModals();
+  },
+
+  closeTemplateLibraryModal() {
+    this.showTemplatesModal = false;
+    this.renderModals();
+  },
+
+  setTemplateCategoryFilter(cat) {
+    this.templateCategoryFilter = cat || 'All';
+    this.renderModals();
+  },
+
+  createSurveyFromTemplate(templateId) {
+    if (window.AESession && !window.AESession.hasPermission('CREATE_SURVEY')) {
+      this.showToast('Access Denied: Only HQ Administrators can author surveys.', 'error');
+      return null;
+    }
+    if (!window.AETemplates || typeof window.AETemplates.buildSurveyFromTemplate !== 'function') {
+      this.showToast('Template library module is not loaded.', 'error');
+      return null;
+    }
+    const survey = window.AETemplates.buildSurveyFromTemplate(templateId);
+    if (!survey) {
+      this.showToast('Template not found.', 'error');
+      return null;
+    }
+    window.aeStore.upsertSurvey(survey);
+    this.showTemplatesModal = false;
+    this.activeSurveyId = survey.id;
+    this.currentStage = 'design';
+    if (window.AEBuilder) window.AEBuilder.activePageIndex = 0;
+    this.showToast(`Created "${survey.title}" from template.`, 'success');
+    this.render();
+    return survey;
+  },
+
+  openPasteOutlineModal() {
+    if (window.AESession && !window.AESession.hasPermission('CREATE_SURVEY')) {
+      this.showToast('Access Denied: Only HQ Administrators can author surveys.', 'error');
+      return;
+    }
+    this.showPasteOutlineModal = true;
+    this.renderModals();
+  },
+
+  closePasteOutlineModal() {
+    this.showPasteOutlineModal = false;
+    this.renderModals();
+  },
+
+  createSurveyFromOutline(eventOrTitle, rawTextArg = null) {
+    if (window.AESession && !window.AESession.hasPermission('CREATE_SURVEY')) {
+      this.showToast('Access Denied: Only HQ Administrators can author surveys.', 'error');
+      return null;
+    }
+    let title = '';
+    let rawText = '';
+    if (eventOrTitle && typeof eventOrTitle === 'object' && typeof eventOrTitle.preventDefault === 'function') {
+      eventOrTitle.preventDefault();
+      const titleEl = document.getElementById('ae_paste_outline_title');
+      const textEl = document.getElementById('ae_paste_outline_text');
+      title = titleEl ? titleEl.value.trim() : '';
+      rawText = textEl ? textEl.value : '';
+    } else {
+      title = String(eventOrTitle || '').trim();
+      rawText = String(rawTextArg || '');
+    }
+
+    if (!rawText.trim()) {
+      this.showToast('Please paste at least one question line to generate a survey.', 'warning');
+      return null;
+    }
+    if (!window.AETemplates || typeof window.AETemplates.parseOutlineToSurvey !== 'function') {
+      this.showToast('Outline parser module is not loaded.', 'error');
+      return null;
+    }
+
+    const survey = window.AETemplates.parseOutlineToSurvey(title || 'Untitled Survey', rawText);
+    const totalQs = (survey.pages || []).reduce((acc, p) => acc + (p.questions ? p.questions.length : 0), 0);
+    if (totalQs === 0) {
+      this.showToast('No questions could be parsed from the pasted text.', 'warning');
+      return null;
+    }
+
+    window.aeStore.upsertSurvey(survey);
+    this.showPasteOutlineModal = false;
+    this.pasteOutlineTitle = '';
+    this.pasteOutlineText = '';
+    this.activeSurveyId = survey.id;
+    this.currentStage = 'design';
+    if (window.AEBuilder) window.AEBuilder.activePageIndex = 0;
+    this.showToast(`Generated "${survey.title}" with ${totalQs} questions.`, 'success');
+    this.render();
+    return survey;
+  },
+
+  createFromTemplate(templateId) {
+    if (window.AETemplates && typeof window.AETemplates.buildSurveyFromTemplate === 'function') {
+      const built = this.createSurveyFromTemplate(templateId);
+      if (built) return built;
+    }
+    if (window.AESession && !window.AESession.hasPermission('CREATE_SURVEY')) {
+      this.showToast('Access Denied: Only HQ Administrators can author surveys.', 'error');
+      return;
+    }
+    const tpl = (window.SURVEY_TEMPLATES || []).find((t) => t.id === templateId);
     if (!tpl) return;
     const survey = tpl.build();
     window.aeStore.upsertSurvey(survey);
@@ -4308,6 +4829,29 @@ window.AEApp = {
     this.render();
   },
 
+  updateQuestionDisplayRule(questionId, field, value) {
+    const ctx = this.findQuestionContext(questionId);
+    if (!ctx) return;
+    const q = ctx.question;
+    if (!q.displayRule || typeof q.displayRule !== 'object') {
+      q.displayRule = {
+        enabled: false,
+        sourceQuestionId: q.parentQuestionId || '',
+        mode: 'any_answer',
+        value: ''
+      };
+    }
+    if (!q.displayRule.sourceQuestionId && q.parentQuestionId) {
+      q.displayRule.sourceQuestionId = q.parentQuestionId;
+    }
+    q.displayRule[field] = value;
+    if (field === 'mode' && value === 'any_answer') {
+      q.displayRule.value = '';
+    }
+    window.aeStore.upsertSurvey(ctx.survey);
+    this.render();
+  },
+
   moveQuestion(questionId, delta) {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx) return;
@@ -4696,7 +5240,15 @@ window.AEApp = {
     }
 
     (page.questions || []).forEach((q) => {
-      const val = window.AECollector.draftAnswers[q.id];
+      const draftAnswers = window.AECollector ? window.AECollector.draftAnswers : {};
+      if (
+        window.AEPiping &&
+        typeof window.AEPiping.isQuestionVisible === 'function' &&
+        !window.AEPiping.isQuestionVisible(q, draftAnswers, rawSurvey)
+      ) {
+        return;
+      }
+      const val = draftAnswers[q.id];
 
       if (q.required) {
         if (val === undefined || val === null || val === '') {
@@ -5019,6 +5571,10 @@ window.AEApp = {
 
   // --- Analytics & Export Actions ---
   setAnalyticsTab(tab) {
+    if (this.isPublicReportMode && (tab === 'individual' || tab === 'forensics')) {
+      this.showToast('Individual respondent records and forensics are hidden in public read-only reports.', 'warning');
+      return;
+    }
     window.AEAnalytics.activeTab = tab;
     this.render();
   },
@@ -5116,6 +5672,10 @@ window.AEApp = {
   },
 
   exportSurveyResponsesCSV(surveyId) {
+    if (this.isPublicReportMode) {
+      this.showToast('Raw respondent CSV export is disabled in public read-only reports.', 'warning');
+      return;
+    }
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
       : null;
@@ -5416,6 +5976,10 @@ window.AEApp = {
   },
 
   async exportResponsesPackJSON(surveyId) {
+    if (this.isPublicReportMode) {
+      this.showToast('Raw respondent JSON pack export is disabled in public read-only reports.', 'warning');
+      return;
+    }
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
       : null;

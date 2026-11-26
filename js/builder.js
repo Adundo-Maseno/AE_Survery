@@ -1081,6 +1081,17 @@ window.AEBuilder = {
       icon: 'fa-circle-question'
     };
     const logic = q.logic || { enabled: false, condition: 'equals', value: '', target: '' };
+    const displayRule = q.displayRule || {
+      enabled: false,
+      sourceQuestionId: q.parentQuestionId || '',
+      mode: 'any_answer',
+      value: ''
+    };
+    const parentQ = q.parentQuestionId
+      ? ((page.questions || []).find((item) => item.id === q.parentQuestionId) ||
+         (survey.pages || []).flatMap((p) => p.questions || []).find((item) => item.id === q.parentQuestionId) ||
+         null)
+      : null;
     const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(qIdx + 1), isSub: false };
 
     return `
@@ -1105,6 +1116,13 @@ window.AEBuilder = {
             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[4px] bg-[#F8F9F8] border border-[#E4E7E4] text-[#111613] text-xs font-medium">
               <i class="fa-solid ${typeMeta.icon} text-[#247B50]"></i> ${typeMeta.label}
             </span>
+            ${
+              q.parentQuestionId && displayRule.enabled
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#EFF6FF] text-[#1E40AF] text-xs font-medium">
+                    <i class="fa-solid fa-eye text-[10px]"></i> Conditional visibility
+                  </span>`
+                : ''
+            }
             ${
               logic.enabled
                 ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E] text-xs font-medium">
@@ -1188,6 +1206,57 @@ window.AEBuilder = {
         <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[6px] p-3.5 min-w-0">
           ${this.renderQuestionTypeConfig(q)}
         </div>
+
+        ${
+          q.parentQuestionId
+            ? `<!-- Conditional Visibility (Show Part b only when…) -->
+        <div class="mt-3 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-3 bg-[#F4F9F6] -mx-1 px-3 py-2.5 rounded-[6px] border border-[#DCFAE5]">
+          <label class="inline-flex items-center gap-2 text-xs font-semibold text-[#04250E] cursor-pointer">
+            <input type="checkbox" ${displayRule.enabled ? 'checked' : ''}
+              onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'enabled', this.checked)"
+              class="accent-[#247B50] w-3.5 h-3.5" />
+            <span><i class="fa-solid fa-eye text-[#247B50] mr-1"></i> Conditional Visibility (Show Part ${AEApp.escapeHtml(numInfo.letter || 'b')} only when…)</span>
+          </label>
+
+          ${
+            displayRule.enabled
+              ? `<div class="flex flex-wrap items-center gap-2 text-xs">
+                  <select aria-label="Conditional visibility mode"
+                    onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'mode', this.value)"
+                    class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] focus:outline-none focus:border-[#247B50]">
+                    <option value="any_answer" ${(displayRule.mode || 'any_answer') === 'any_answer' ? 'selected' : ''}>After any parent answer</option>
+                    <option value="equals" ${displayRule.mode === 'equals' ? 'selected' : ''}>When parent equals</option>
+                    <option value="not_equals" ${displayRule.mode === 'not_equals' ? 'selected' : ''}>When parent does NOT equal</option>
+                  </select>
+                  ${
+                    displayRule.mode === 'equals' || displayRule.mode === 'not_equals'
+                      ? parentQ && Array.isArray(parentQ.options) && parentQ.options.length > 0
+                        ? `<select aria-label="Conditional visibility trigger value"
+                            onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'value', this.value)"
+                            class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs font-medium text-[#111613] max-w-[220px] truncate focus:outline-none focus:border-[#247B50]">
+                            <option value="">Select parent choice…</option>
+                            ${parentQ.options
+                              .map(
+                                (opt) =>
+                                  `<option value="${AEApp.escapeAttr(opt)}" ${displayRule.value === opt ? 'selected' : ''}>${AEApp.escapeHtml(opt)}</option>`
+                              )
+                              .join('')}
+                          </select>`
+                        : `<input type="text"
+                            aria-label="Conditional visibility trigger value"
+                            maxlength="140"
+                            value="${AEApp.escapeAttr(displayRule.value || '')}"
+                            onchange="AEApp.updateQuestionDisplayRule('${q.id}', 'value', this.value)"
+                            placeholder="Expected parent answer…"
+                            class="bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 h-7 text-xs text-[#111613] w-44 focus:outline-none focus:border-[#247B50]" />`
+                      : ''
+                  }
+                </div>`
+              : `<span class="text-[11px] text-[#525B56]">Always visible under Q${numInfo.mainNum || ''}</span>`
+          }
+        </div>`
+            : ''
+        }
 
         <!-- Conditional Skip Logic / Branching Strip -->
         <div class="mt-3 pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-3">

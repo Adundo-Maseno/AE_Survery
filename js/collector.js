@@ -392,7 +392,11 @@ window.AECollector = {
     const accent = (survey.theme && survey.theme.accentColor) || '#247B50';
     const headerBg = accent === '#007A4B' || accent === '#247B50' ? '#1F6A45' : accent;
 
-    const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
+    const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
+      !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+        ? true
+        : window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+    );
     const answeredCount = allQuestions.filter((q) => {
       const v = this.draftAnswers[q.id];
       if (v === undefined || v === null || v === '') return false;
@@ -540,10 +544,16 @@ window.AECollector = {
           <!-- Questions Form Body -->
           <div class="p-6 sm:p-7 space-y-6">
             ${(() => {
+              const pageQuestions = page.questions || [];
               const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
-                ? window.AEPiping.computeQuestionDisplayNumbers(page.questions || [])
+                ? window.AEPiping.computeQuestionDisplayNumbers(pageQuestions)
                 : {};
-              return (page.questions || [])
+              const visibleQuestions = pageQuestions.filter((q) =>
+                !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+                  ? true
+                  : window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+              );
+              return visibleQuestions
                 .map((q, idx) => this.renderRespondentQuestion(survey, q, idx, qNumMap))
                 .join('');
             })()}
@@ -1167,8 +1177,9 @@ window.AECollector = {
           </div>
         </div>
 
-        <!-- Shareable Web Link & Offline QR Poster Card -->
-        <div class="lg:col-span-5 bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
+        <!-- Shareable Web Link, Offline QR Poster & Stakeholder Live Results Column -->
+        <div class="lg:col-span-5 space-y-4">
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
           <div class="flex items-start justify-between gap-2">
             <div>
               <h3 class="text-base font-semibold text-[#111613]">Self-Administered &amp; Field Links</h3>
@@ -1251,6 +1262,37 @@ window.AECollector = {
             <div class="text-xs font-semibold text-[#111613] mt-3 ae-break-words">${AEApp.escapeHtml(survey.title)}</div>
             <div class="text-xs text-[#646E68] mt-0.5">Scan QR to open ${allowsSelfAdmin ? 'Self-Administered Survey' : 'Field Enumerator App'} · ID: <code>${survey.id}</code></div>
           </div>
+        </div>
+
+        <!-- Stakeholder Read-Only Live Results Link Card -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h4 class="text-sm font-semibold text-[#111613] flex items-center gap-1.5">
+                <i class="fa-solid fa-chart-pie text-[#247B50] text-xs"></i>
+                <span>Stakeholder Read-Only Live Results Link</span>
+              </h4>
+              <p class="text-[11px] text-[#525B56] mt-1 leading-relaxed">
+                Share aggregated charts, KPIs, and qualitative themes with stakeholders with zero respondent PII, names, or raw GPS exposed.
+              </p>
+            </div>
+            <span class="px-2 py-0.5 rounded-[4px] text-[10px] font-semibold bg-[#DCFAE5] text-[#04250E] shrink-0">
+              Zero PII
+            </span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" onclick="AEApp.copyLiveReportLink('${AEApp.escapeJs(survey.id)}')"
+              class="flex-1 min-w-[140px] h-8 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
+              <i class="fa-regular fa-copy text-[11px]"></i>
+              <span>Copy Live Results Link</span>
+            </button>
+            <button type="button" onclick="AEApp.openLiveReport('${AEApp.escapeJs(survey.id)}')"
+              class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-[#111613] text-xs font-medium inline-flex items-center justify-center gap-1.5 ae-press">
+              <i class="fa-solid fa-arrow-up-right-from-square text-[10px] text-[#247B50]"></i>
+              <span>Open Live Report</span>
+            </button>
+          </div>
+        </div>
         </div>
       </div>
     `;

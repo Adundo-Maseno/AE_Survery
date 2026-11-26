@@ -1319,6 +1319,7 @@ window.AEAnalytics = {
   verbatimActionableOnly: false,
   verbatimPinnedOnly: false,
   verbatimSegmentQId: 'auto',
+  verbatimImpactMetricQId: 'auto',
   verbatimTranslations: {},
   verbatimAiBriefing: null,
   verbatimBusy: false,
@@ -1669,6 +1670,7 @@ window.AEAnalytics = {
     this.verbatimActionableOnly = false;
     this.verbatimPinnedOnly = false;
     this.verbatimSegmentQId = 'auto';
+    this.verbatimImpactMetricQId = 'auto';
     window.AEApp.render();
   },
 
@@ -1840,6 +1842,11 @@ window.AEAnalytics = {
 
   setVerbatimSegment(segId) {
     this.verbatimSegmentQId = segId || 'auto';
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setVerbatimImpactMetric(qId) {
+    this.verbatimImpactMetricQId = qId || 'auto';
     if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
   },
 
@@ -2296,6 +2303,10 @@ window.AEAnalytics = {
     const allResponses = window.aeStore.getResponsesForSurvey(survey.id, currentUser);
     const filtered = this.getFilteredResponses(survey.id);
     const collectors = window.aeStore.getCollectorsForSurvey(survey.id);
+    const isPublicReportMode = Boolean(window.AEApp && window.AEApp.isPublicReportMode);
+    const safeSurveyIdJs = window.AEApp && typeof window.AEApp.escapeJs === 'function'
+      ? window.AEApp.escapeJs(survey.id)
+      : String(survey.id || '').replace(/'/g, "\\'");
 
     return `
       <div class="space-y-6">
@@ -2338,35 +2349,58 @@ window.AEAnalytics = {
           </div>
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
-            <!-- Active Survey Switcher -->
-            <select onchange="AEApp.switchStage('analyze', this.value)"
-              aria-label="Select Survey to Analyze"
-              class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[240px] truncate">
-              ${(window.aeStore.getSurveysForUser
-                ? window.aeStore.getSurveysForUser(
-                    window.AESession && typeof window.AESession.getCurrentUser === 'function' ? window.AESession.getCurrentUser() : null,
-                    { includeArchived: true }
-                  )
-                : window.aeStore.surveys
-              )
-                .map(
-                  (s) =>
-                    `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
-                      s.title.substring(0, 30)
-                    )}${s.title.length > 30 ? '…' : ''}${s.status === 'Archived' ? ' [Archived]' : ''}</option>`
-                )
-                .join('')}
-            </select>
+            ${
+              !isPublicReportMode
+                ? `<!-- Active Survey Switcher -->
+                  <select onchange="AEApp.switchStage('analyze', this.value)"
+                    aria-label="Select Survey to Analyze"
+                    class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[240px] truncate">
+                    ${(window.aeStore.getSurveysForUser
+                      ? window.aeStore.getSurveysForUser(
+                          window.AESession && typeof window.AESession.getCurrentUser === 'function' ? window.AESession.getCurrentUser() : null,
+                          { includeArchived: true }
+                        )
+                      : window.aeStore.surveys
+                    )
+                      .map(
+                        (s) =>
+                          `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
+                            s.title.substring(0, 30)
+                          )}${s.title.length > 30 ? '…' : ''}${s.status === 'Archived' ? ' [Archived]' : ''}</option>`
+                      )
+                      .join('')}
+                  </select>`
+                : ''
+            }
 
-            <button onclick="AEApp.exportSurveyResponsesCSV('${survey.id}')"
+            <button onclick="AEApp.exportSurveyResponsesCSV('${safeSurveyIdJs}')"
               class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-file-csv text-xs"></i> Export CSV
             </button>
-            <button onclick="AEAnalytics.exportExcelWorkbook('${survey.id}')"
+            <button onclick="AEAnalytics.exportExcelWorkbook('${safeSurveyIdJs}')"
               class="h-8 px-3 rounded-[6px] border border-[#247B50]/40 bg-[#DCFAE5]/40 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-file-excel text-[#247B50] text-xs"></i> 7-Sheet Excel (.xls)
             </button>
-            <button onclick="AEApp.exportResponsesPackJSON('${survey.id}')"
+            <button onclick="AEReportExport.exportPDF('${safeSurveyIdJs}')"
+              title="Open Branded Executive Briefing PDF Print View"
+              class="h-8 px-3 rounded-[6px] border border-[#247B50]/40 bg-white hover:bg-[#F4FAF6] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-file-pdf text-[#C4242A] text-xs"></i> Executive PDF
+            </button>
+            <button onclick="AEReportExport.exportWordDoc('${safeSurveyIdJs}')"
+              title="Download Branded Executive Briefing for MS Word (.doc)"
+              class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-file-word text-[#2563EB] text-xs"></i> Word (.doc)
+            </button>
+            ${
+              !isPublicReportMode
+                ? `<button onclick="AEApp.copyLiveReportLink('${safeSurveyIdJs}')"
+                    title="Copy privacy-safe read-only live stakeholder results link"
+                    class="h-8 px-3 rounded-[6px] border border-[#247B50] bg-[#247B50] hover:bg-[#1D6340] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                    <i class="fa-solid fa-share-nodes text-xs"></i> Share Live Results
+                  </button>`
+                : ''
+            }
+            <button onclick="AEApp.exportResponsesPackJSON('${safeSurveyIdJs}')"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
               <i class="fa-solid fa-file-code text-[#247B50]"></i> JSON
             </button>
@@ -2377,8 +2411,8 @@ window.AEAnalytics = {
               <i class="fa-solid fa-print"></i>
             </button>
             ${
-              (window.AESession && window.AESession.getCurrentUser && window.AESession.getCurrentUser()?.role === 'admin' && allResponses.length > 0)
-                ? `<button onclick="AEApp.resetSurveyTestData('${survey.id}')"
+              (!isPublicReportMode && window.AESession && window.AESession.getCurrentUser && window.AESession.getCurrentUser()?.role === 'admin' && allResponses.length > 0)
+                ? `<button onclick="AEApp.resetSurveyTestData('${safeSurveyIdJs}')"
                     title="Clear all test responses locally and in Google Sheets (keeps survey questions & link intact)"
                     class="h-8 px-3 rounded-[6px] border border-[#F5C2C0] bg-[#FFEDEA] hover:bg-[#C4242A] text-[#831C1E] hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
                     <i class="fa-solid fa-rotate-left text-xs"></i> Reset Test Data (${allResponses.length})
@@ -2420,11 +2454,11 @@ window.AEAnalytics = {
                 ? this.renderVariableCorrelationsTab(survey, filtered)
                 : this.activeTab === 'pacing'
                 ? this.renderPacingForecastTab(survey, filtered)
-                : this.activeTab === 'forensics'
+                : this.activeTab === 'forensics' && !isPublicReportMode
                 ? this.renderForensicsTab(survey, filtered)
                 : this.activeTab === 'text'
                 ? this.renderQualitativeTextTab(survey, filtered)
-                : this.activeTab === 'individual'
+                : this.activeTab === 'individual' && !isPublicReportMode
                 ? this.renderIndividualInspector(survey, filtered)
                 : this.activeTab === 'gps'
                 ? this.renderGPSFieldLog(survey, filtered)
@@ -2901,16 +2935,26 @@ window.AEAnalytics = {
       }
     ];
 
+    const isPublicReportMode = Boolean(window.AEApp && window.AEApp.isPublicReportMode);
+    const filteredTabGroups = tabGroups
+      .map((group) => ({
+        ...group,
+        tabs: isPublicReportMode
+          ? group.tabs.filter((t) => t.id !== 'individual' && t.id !== 'forensics')
+          : group.tabs
+      }))
+      .filter((group) => group.tabs.length > 0);
+
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-2 space-y-1.5">
         <div class="flex items-center justify-between px-1">
           <div class="flex items-center gap-2">
             <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68]">Analytical Views</span>
-            <span class="text-[11px] text-[#A0AAA3]">· 12 Multi-Dimensional Analytical Perspectives</span>
+            <span class="text-[11px] text-[#A0AAA3]">· ${isPublicReportMode ? 'Aggregated Live Perspectives (PII-Safe)' : '12 Multi-Dimensional Analytical Perspectives'}</span>
           </div>
         </div>
         <div class="flex flex-wrap items-start gap-x-3 gap-y-2 pt-2 border-t border-[#F0F2F0]">
-          ${tabGroups
+          ${filteredTabGroups
             .map(
               (group, gIdx) => `
                 <div class="flex flex-wrap items-center gap-1 ${gIdx > 0 ? 'lg:border-l lg:border-[#E4E7E4] lg:pl-3' : ''}">
@@ -4637,6 +4681,13 @@ window.AEAnalytics = {
     const safeSurveyIdJs = AEApp.escapeJs(survey.id);
     const busyAttr = this.verbatimBusy ? 'disabled' : '';
 
+    // Feature #2: Theme-to-Score Impact Analysis
+    const themeImpact = engine && typeof engine.computeThemeScoreImpact === 'function'
+      ? engine.computeThemeScoreImpact(analysis, responses || [], survey, this.verbatimImpactMetricQId || 'auto')
+      : { hasMetric: false, metricQId: null, metricLabel: '', metricScale: '', overallMean: null, totalScored: 0, availableMetrics: [], impacts: [] };
+    const impactRows = themeImpact.impacts || [];
+    const maxAbsImpactDelta = Math.max(0.25, ...impactRows.map((r) => Math.abs(Number(r.delta || 0))));
+
     return `
       <div class="space-y-5">
         <!-- 1. TOP CONTROL STRIP -->
@@ -4889,6 +4940,131 @@ window.AEAnalytics = {
               }
             </div>
           </div>
+        </div>
+
+        <!-- 2B. THEME-TO-SCORE IMPACT DRIVERS ("Why Did Scores Drop or Rise?") -->
+        <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 shadow-xs space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-[#EFEFEF] pb-3">
+            <div class="flex items-start gap-2.5 min-w-0">
+              <span class="w-7 h-7 rounded-[6px] bg-[#141A17] text-[#7CE5A5] flex items-center justify-center text-xs shrink-0 mt-0.5">
+                <i class="fa-solid fa-arrows-left-right-to-line"></i>
+              </span>
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-sm font-bold text-[#111613]">Theme-to-Score Impact Drivers (&lsquo;Why Did Scores Drop or Rise?&rsquo;)</h3>
+                  ${
+                    themeImpact.hasMetric && themeImpact.overallMean !== null
+                      ? `<span class="px-2 py-0.5 rounded bg-[#F4F6F4] border border-[#E4E7E4] text-[10px] font-bold text-[#111613] tabular-nums">
+                          Baseline: ${themeImpact.overallMean} (${AEApp.escapeHtml(themeImpact.metricScale || 'score')}) &middot; n=${themeImpact.totalScored}
+                        </span>`
+                      : ''
+                  }
+                </div>
+                <p class="text-[11px] text-[#525B56] mt-0.5">
+                  Quantifies how mentioning each verbatim theme shifts the selected quantitative or ordinal score vs. respondents who did not mention it. Click any bar to filter verbatims.
+                </p>
+              </div>
+            </div>
+
+            ${
+              themeImpact.availableMetrics && themeImpact.availableMetrics.length > 0
+                ? `<div class="shrink-0 min-w-[220px] max-w-[320px]">
+                    <label class="text-[10px] font-bold text-[#525B56] uppercase tracking-wider block mb-1">Correlate Against Score</label>
+                    <select onchange="AEAnalytics.setVerbatimImpactMetric(this.value)"
+                      aria-label="Correlate verbatim themes against score metric"
+                      class="w-full h-8 px-2.5 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]">
+                      ${themeImpact.availableMetrics
+                        .map(
+                          (m) =>
+                            `<option value="${AEApp.escapeAttr(m.id)}" ${themeImpact.metricQId === m.id ? 'selected' : ''}>${AEApp.escapeHtml(m.label)} (${AEApp.escapeHtml(m.scale)})</option>`
+                        )
+                        .join('')}
+                    </select>
+                  </div>`
+                : ''
+            }
+          </div>
+
+          ${
+            themeImpact.hasMetric && impactRows.length > 0
+              ? `<div class="space-y-2">
+                  ${impactRows
+                    .map((row) => {
+                      const isSelected = this.verbatimThemeFilter === row.themeId;
+                      const isNeg = row.delta < 0;
+                      const isPos = row.delta > 0;
+                      const barPct = Math.min(100, Math.max(6, Math.round((Math.abs(row.delta) / maxAbsImpactDelta) * 100)));
+                      const deltaText = `${row.delta > 0 ? '+' : ''}${row.delta.toFixed(2)} pts vs baseline`;
+                      const deltaClass = isPos
+                        ? 'bg-[#DCFAE5] text-[#04250E]'
+                        : isNeg
+                        ? 'bg-[#FFEDEA] text-[#831C1E]'
+                        : 'bg-[#F4F6F4] text-[#525B56]';
+                      const sigBadge = row.isSignificant
+                        ? `<span class="px-1.5 py-0.5 rounded bg-[#141A17] text-[#7CE5A5] text-[10px] font-bold tabular-nums" title="Statistically significant (Welch's t-test, p = ${row.pValue})">p=${row.pValue} ★</span>`
+                        : row.pValue !== null
+                        ? `<span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[#646E68] text-[10px] font-medium tabular-nums" title="Welch's t-test p-value">p=${row.pValue}</span>`
+                        : `<span class="px-1.5 py-0.5 rounded bg-[#F4F6F4] text-[#88928B] text-[10px] tabular-nums" title="Need at least 2 respondents with and without theme for Welch's t-test">n&lt;2</span>`;
+
+                      return `
+                        <button type="button" onclick="AEAnalytics.setVerbatimTheme('${AEApp.escapeJs(row.themeId)}')"
+                          class="w-full text-left p-2.5 rounded-[6px] border transition-colors ae-press ${
+                            isSelected
+                              ? 'border-[#247B50] bg-[#F4FAF6] ring-1 ring-[#247B50]'
+                              : 'border-[#EFEFEF] bg-[#FAFBF9] hover:border-[#CFD5D0] hover:bg-white'
+                          }">
+                          <div class="grid grid-cols-1 lg:grid-cols-12 items-center gap-2">
+                            <div class="lg:col-span-4 flex items-center gap-2 min-w-0">
+                              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${AEApp.escapeAttr(row.color || '#247B50')}"></span>
+                              <span class="text-xs font-semibold text-[#111613] truncate" title="${AEApp.escapeAttr(row.name)}">${AEApp.escapeHtml(row.name)}</span>
+                              <span class="text-[10px] text-[#646E68] tabular-nums shrink-0">(n=${row.nWith})</span>
+                            </div>
+
+                            <!-- Diverging Horizontal Impact Bar (Negative Left / Positive Right) -->
+                            <div class="lg:col-span-4 flex items-center gap-0">
+                              <div class="w-1/2 flex justify-end pr-1">
+                                ${
+                                  isNeg
+                                    ? `<div class="h-3 rounded-l-[3px] bg-[#C4242A]" style="width: ${barPct}%;" title="${AEApp.escapeAttr(deltaText)}"></div>`
+                                    : '<div class="h-3 w-full"></div>'
+                                }
+                              </div>
+                              <div class="w-[2px] h-4 bg-[#9CA3AF] shrink-0"></div>
+                              <div class="w-1/2 flex justify-start pl-1">
+                                ${
+                                  isPos
+                                    ? `<div class="h-3 rounded-r-[3px] bg-[#247B50]" style="width: ${barPct}%;" title="${AEApp.escapeAttr(deltaText)}"></div>`
+                                    : '<div class="h-3 w-full"></div>'
+                                }
+                              </div>
+                            </div>
+
+                            <div class="lg:col-span-4 flex flex-wrap items-center justify-end gap-1.5 text-[11px]">
+                              <span class="px-2 py-0.5 rounded font-bold tabular-nums ${deltaClass}">${AEApp.escapeHtml(deltaText)}</span>
+                              <span class="text-[#525B56] tabular-nums text-[10px]">${row.meanWith} vs ${row.meanWithout}</span>
+                              ${sigBadge}
+                            </div>
+                          </div>
+                        </button>
+                      `;
+                    })
+                    .join('')}
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-[10px] text-[#525B56]">
+                  <div class="flex items-center gap-4">
+                    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2 rounded-xs bg-[#C4242A]"></span>Drag on Score (Negative Delta)</span>
+                    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2 rounded-xs bg-[#247B50]"></span>Lift on Score (Positive Delta)</span>
+                  </div>
+                  <span>Sorted by |Impact Delta| &middot; Welch&rsquo;s two-sample t-test (&alpha; = 0.05)</span>
+                </div>`
+              : `<p class="text-xs text-[#646E68] py-3 text-center">
+                  ${
+                    themeImpact.hasMetric
+                      ? 'Collect scored responses with open-ended verbatims to quantify theme-to-score impact drivers.'
+                      : 'No quantitative, rating, NPS, or ordinal score question detected in this survey to correlate against verbatim themes.'
+                  }
+                </p>`
+          }
         </div>
 
         <!-- 3. THEME DISTRIBUTION & SENTIMENT-BY-THEME MATRIX + THEME × SEGMENT TABLE -->

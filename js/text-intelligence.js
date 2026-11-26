@@ -1122,6 +1122,295 @@
   }
 
   // --------------------------------------------------------------------------
+  // 8B. Theme-to-Score Impact Analysis Helpers (Metric Extraction + Welch's t)
+  // --------------------------------------------------------------------------
+  const ORDINAL_POSITIVE_ANCHORS = [
+    'excellent', 'outstanding', 'superb', 'exceptional', 'very good', 'strongly agree',
+    'very satisfied', 'extremely satisfied', 'always', 'very high', 'high', 'great',
+    'bora sana', 'bora', 'nzuri sana', 'nakubali sana', 'très bon', 'tres bon', 'excelente', 'ótimo', 'otimo'
+  ];
+
+  const ORDINAL_NEGATIVE_ANCHORS = [
+    'poor', 'very poor', 'terrible', 'awful', 'bad', 'unsatisfactory', 'needs improvement',
+    'strongly disagree', 'disagree', 'very dissatisfied', 'dissatisfied', 'never', 'very low', 'low',
+    'mbaya', 'mbaya sana', 'duni', 'sikubali', 'mauvais', 'ruim', 'péssimo', 'pessimo'
+  ];
+
+  const ORDINAL_MIDDLE_ANCHORS = [
+    'good', 'average', 'fair', 'moderate', 'neutral', 'neither', 'okay', 'ok', 'satisfactory',
+    'agree', 'satisfied', 'sometimes', 'often', 'rarely', 'medium', 'wastani', 'mzuri', 'nzuri',
+    'moyen', 'bien', 'bon', 'bom', 'regular'
+  ];
+
+  function _normalizeOrdinalLabel(str) {
+    return String(str || '')
+      .toLowerCase()
+      .replace(/^\d+\s*[-–—:.]\s*/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function _detectOrdinalOptionMap(q) {
+    const rawOpts = Array.isArray(q && q.options) ? q.options : [];
+    const labels = rawOpts
+      .map((opt) => (typeof opt === 'string' ? opt : String((opt && (opt.label || opt.value || opt.text)) || '')))
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (labels.length < 2 || labels.length > 7) return null;
+
+    // Case 1: Explicit numeric prefix on all options (e.g., "5 - Excellent", "1 - Poor")
+    const numericPrefixes = labels.map((lbl) => {
+      const m = lbl.match(/^\s*(-?\d+(?:\.\d+)?)\s*(?:[-–—:.]|$)/);
+      return m ? Number(m[1]) : NaN;
+    });
+    if (numericPrefixes.every((n) => !Number.isNaN(n))) {
+      const map = new Map();
+      labels.forEach((lbl, idx) => {
+        map.set(lbl.toLowerCase(), numericPrefixes[idx]);
+        map.set(_normalizeOrdinalLabel(lbl), numericPrefixes[idx]);
+      });
+      const minVal = Math.min(...numericPrefixes);
+      const maxVal = Math.max(...numericPrefixes);
+      return {
+        map,
+        min: minVal,
+        max: maxVal,
+        scaleLabel: `${minVal}–${maxVal}`
+      };
+    }
+
+    // Case 2: Recognizable ordinal quality / satisfaction / agreement scale
+    const normLabels = labels.map(_normalizeOrdinalLabel);
+    let recognizedCount = 0;
+    let firstPolarity = 0;
+    let lastPolarity = 0;
+
+    normLabels.forEach((nl, idx) => {
+      const isPos = ORDINAL_POSITIVE_ANCHORS.some((a) => nl === a || nl.includes(a));
+      const isNeg = ORDINAL_NEGATIVE_ANCHORS.some((a) => nl === a || nl.includes(a));
+      const isMid = ORDINAL_MIDDLE_ANCHORS.some((a) => nl === a || nl.includes(a));
+      if (isPos || isNeg || isMid) recognizedCount++;
+      if (idx === 0) firstPolarity = isPos ? 1 : (isNeg ? -1 : 0);
+      if (idx === normLabels.length - 1) lastPolarity = isPos ? 1 : (isNeg ? -1 : 0);
+    });
+
+    if (recognizedCount < Math.max(2, Math.ceil(labels.length * 0.5))) return null;
+
+    // Default descending (Excellent=N .. Poor=1) unless first is negative and last is positive
+    const ascending = firstPolarity === -1 && lastPolarity === 1;
+    const N = labels.length;
+    const map = new Map();
+    labels.forEach((lbl, idx) => {
+      const score = ascending ? idx + 1 : N - idx;
+      map.set(lbl.toLowerCase(), score);
+      map.set(normLabels[idx], score);
+    });
+
+    return {
+      map,
+      min: 1,
+      max: N,
+      scaleLabel: `1–${N}`
+    };
+  }
+
+  function _extractMetricCandidates(survey, responses) {
+    const questions = _getSurveyQuestions(survey);
+    const safeResponses = Array.isArray(responses) ? responses : [];
+    const candidates = [];
+
+    questions.forEach((q, idx) => {
+      if (!q || !q.id) return;
+      const qType = String(q.type || '').toLowerCase();
+      const code = _extractQuestionCode(q, idx);
+      const cleanTitle = _cleanQuestionTitle(q, {}, survey);
+      const hasCodePrefix = new RegExp(`^${code}\\b`, 'i').test(cleanTitle);
+      const label = hasCodePrefix ? cleanTitle : `${code}: ${cleanTitle}`;
+
+      let priority = 99;
+      let scaleLabel = '';
+      let minVal = null;
+      let maxVal = null;
+      let extractor = null;
+
+      if (['star_rating', 'rating', 'emoji_rating', 'likert', 'scale'].includes(qType)) {
+        priority = 1;
+        const ordinalMap = _detectOrdinalOptionMap(q);
+        minVal = q.min !== undefined ? Number(q.min) : (ordinalMap ? ordinalMap.min : 1);
+        maxVal = q.max !== undefined ? Number(q.max) : (ordinalMap ? ordinalMap.max : 5);
+        scaleLabel = `${minVal}–${maxVal}`;
+        extractor = (raw) => {
+          if (raw === null || raw === undefined || raw === '') return NaN;
+          if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+          const str = String(raw).trim();
+          const num = Number(str);
+          if (!Number.isNaN(num) && str !== '') return num;
+          if (ordinalMap) {
+            const mapped = ordinalMap.map.get(str.toLowerCase()) ?? ordinalMap.map.get(_normalizeOrdinalLabel(str));
+            if (mapped !== undefined) return mapped;
+          }
+          return NaN;
+        };
+      } else if (qType === 'nps') {
+        priority = 2;
+        minVal = 0;
+        maxVal = 10;
+        scaleLabel = '0–10 (NPS)';
+        extractor = (raw) => {
+          if (raw === null || raw === undefined || raw === '') return NaN;
+          const num = Number(raw);
+          return Number.isFinite(num) ? num : NaN;
+        };
+      } else if (['multiple_choice', 'single_choice', 'radio', 'dropdown', 'select'].includes(qType)) {
+        const ordinalMap = _detectOrdinalOptionMap(q);
+        if (!ordinalMap) return;
+        priority = 3;
+        minVal = ordinalMap.min;
+        maxVal = ordinalMap.max;
+        scaleLabel = `${ordinalMap.scaleLabel} (Ordinal)`;
+        extractor = (raw) => {
+          if (raw === null || raw === undefined || raw === '') return NaN;
+          if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+          const str = String(raw).trim();
+          const mapped = ordinalMap.map.get(str.toLowerCase()) ?? ordinalMap.map.get(_normalizeOrdinalLabel(str));
+          if (mapped !== undefined) return mapped;
+          const num = Number(str);
+          return !Number.isNaN(num) && str !== '' ? num : NaN;
+        };
+      } else if (['number_yield', 'number', 'numeric'].includes(qType)) {
+        priority = 4;
+        scaleLabel = q.unit ? String(q.unit).trim() : 'numeric';
+        extractor = (raw) => {
+          if (raw === null || raw === undefined || raw === '') return NaN;
+          const num = Number(raw);
+          return Number.isFinite(num) ? num : NaN;
+        };
+      } else {
+        return;
+      }
+
+      let validCount = 0;
+      let obsMin = Infinity;
+      let obsMax = -Infinity;
+      for (let i = 0; i < safeResponses.length; i++) {
+        const v = extractor(safeResponses[i]?.answers?.[q.id]);
+        if (Number.isFinite(v)) {
+          validCount++;
+          if (v < obsMin) obsMin = v;
+          if (v > obsMax) obsMax = v;
+        }
+      }
+
+      candidates.push({
+        id: q.id,
+        code,
+        title: cleanTitle,
+        label,
+        type: qType,
+        unit: q.unit ? String(q.unit).trim() : '',
+        scale: scaleLabel,
+        min: minVal !== null ? minVal : (Number.isFinite(obsMin) ? obsMin : 0),
+        max: maxVal !== null ? maxVal : (Number.isFinite(obsMax) ? obsMax : 5),
+        priority,
+        validCount,
+        extractor
+      });
+    });
+
+    candidates.sort((a, b) => {
+      const aHas = a.validCount >= 2 ? 0 : 1;
+      const bHas = b.validCount >= 2 ? 0 : 1;
+      if (aHas !== bHas) return aHas - bHas;
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return b.validCount - a.validCount;
+    });
+
+    return candidates;
+  }
+
+  function _logGamma(z) {
+    const p = [
+      676.5203681218851, -1259.1392167224028, 771.32342877765313,
+      -176.61502916214059, 12.507343278686905, -0.13857109585720572,
+      9.9843695780195716e-6, 1.5056327351493116e-7
+    ];
+    if (z < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * z)) - _logGamma(1 - z);
+    z -= 1;
+    let x = 0.99999999999980993;
+    for (let i = 0; i < p.length; i++) x += p[i] / (z + i + 1);
+    const t = z + p.length - 0.5;
+    return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(x);
+  }
+
+  function _betaInc(a, b, x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    if (x > (a + 1) / (a + b + 2)) return 1 - _betaInc(b, a, 1 - x);
+    const lbeta = _logGamma(a) + _logGamma(b) - _logGamma(a + b);
+    const front = Math.exp(Math.log(x) * a + Math.log(1 - x) * b - lbeta) / a;
+    const FPMIN = 1e-30;
+    let c = 1.0;
+    let d = 1.0 - ((a + b) * x) / (a + 1.0);
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    d = 1.0 / d;
+    let h = d;
+    for (let m = 1; m <= 200; m++) {
+      let num = (m * (b - m) * x) / ((a + 2 * m - 1) * (a + 2 * m));
+      d = 1.0 + num * d;
+      if (Math.abs(d) < FPMIN) d = FPMIN;
+      c = 1.0 + num / c;
+      if (Math.abs(c) < FPMIN) c = FPMIN;
+      d = 1.0 / d;
+      h *= d * c;
+
+      num = -((a + m) * (a + b + m) * x) / ((a + 2 * m) * (a + 2 * m + 1));
+      d = 1.0 + num * d;
+      if (Math.abs(d) < FPMIN) d = FPMIN;
+      c = 1.0 + num / c;
+      if (Math.abs(c) < FPMIN) c = FPMIN;
+      d = 1.0 / d;
+      const del = d * c;
+      h *= del;
+      if (Math.abs(del - 1.0) < 1e-12) break;
+    }
+    return Math.max(0, Math.min(1, front * h));
+  }
+
+  function _welchTTestLocal(group1, group2) {
+    const n1 = group1.length;
+    const n2 = group2.length;
+    if (n1 < 2 || n2 < 2) return { tStat: 0, df: 1, pValue: null, isSignificant: false };
+
+    const m1 = group1.reduce((a, b) => a + b, 0) / n1;
+    const m2 = group2.reduce((a, b) => a + b, 0) / n2;
+    const v1 = group1.reduce((acc, v) => acc + Math.pow(v - m1, 2), 0) / (n1 - 1);
+    const v2 = group2.reduce((acc, v) => acc + Math.pow(v - m2, 2), 0) / (n2 - 1);
+
+    const se2 = v1 / n1 + v2 / n2;
+    if (se2 <= 0) {
+      const same = Math.abs(m1 - m2) < 1e-12;
+      return { tStat: same ? 0 : (m1 > m2 ? 99 : -99), df: n1 + n2 - 2, pValue: same ? 1.0 : 0.0001, isSignificant: !same };
+    }
+    if (typeof globalScope !== 'undefined' && globalScope.AEStats && typeof globalScope.AEStats.welchTTest === 'function') {
+      return globalScope.AEStats.welchTTest(group1, group2);
+    }
+    const tStat = (m1 - m2) / Math.sqrt(se2);
+    const numDf = se2 * se2;
+    const denDf = Math.pow(v1 / n1, 2) / (n1 - 1) + Math.pow(v2 / n2, 2) / (n2 - 1);
+    const df = denDf > 0 ? numDf / denDf : 1;
+    const x = df / (df + tStat * tStat);
+    const pVal = Math.max(0, Math.min(1, _betaInc(df / 2.0, 0.5, x)));
+
+    return {
+      tStat: Number(tStat.toFixed(2)),
+      df: Math.round(df),
+      pValue: Number(pVal.toFixed(4)),
+      isSignificant: pVal < 0.05
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // 9. Public Engine Object: window.AETeXtEngine
   // --------------------------------------------------------------------------
   const AETeXtEngine = {
@@ -1674,6 +1963,200 @@
         },
         topTerms,
         records
+      };
+    },
+
+    /**
+     * Theme-to-Score Impact Analysis ("Why Did Scores Drop or Rise?")
+     * Correlates discovered/custom verbatim themes against a quantitative or ordinal rating question.
+     * Auto-selects the survey's primary quantitative/rating question unless metricQId specifies one.
+     */
+    computeThemeScoreImpact(analysis, responses, survey, metricQId = 'auto') {
+      const safeResponses = Array.isArray(responses) ? responses : [];
+      const safeAnalysis = (analysis && typeof analysis === 'object') ? analysis : { themes: [], records: [] };
+      const candidates = _extractMetricCandidates(survey, safeResponses);
+      const availableMetrics = candidates.map((c) => ({
+        id: c.id,
+        code: c.code,
+        title: c.title,
+        label: c.label,
+        type: c.type,
+        unit: c.unit,
+        scale: c.scale,
+        min: c.min,
+        max: c.max,
+        validCount: c.validCount
+      }));
+
+      if (candidates.length === 0) {
+        return {
+          hasMetric: false,
+          metricQId: null,
+          metricLabel: '',
+          metricTitle: '',
+          metricType: '',
+          metricScale: '',
+          metricUnit: '',
+          metricMin: 0,
+          metricMax: 5,
+          overallMean: null,
+          totalScored: 0,
+          availableMetrics,
+          impacts: []
+        };
+      }
+
+      const reqId = String(metricQId || 'auto').trim();
+      const selected = (reqId !== 'auto' ? candidates.find((c) => c.id === reqId) : null) || candidates[0];
+
+      // Map each respondent (by canonical response id) to their numeric metric score
+      const respondentScores = new Map();
+      const allScores = [];
+      for (let i = 0; i < safeResponses.length; i++) {
+        const r = safeResponses[i];
+        if (!r || !r.answers || typeof r.answers !== 'object') continue;
+        const val = selected.extractor(r.answers[selected.id]);
+        if (!Number.isFinite(val)) continue;
+        const canonId = String(r.clientResponseId || r.id || `resp_${i + 1}`);
+        if (!respondentScores.has(canonId)) {
+          respondentScores.set(canonId, val);
+          allScores.push(val);
+        }
+        if (r.id && String(r.id) !== canonId && !respondentScores.has(String(r.id))) {
+          respondentScores.set(String(r.id), val);
+        }
+      }
+
+      const totalScored = allScores.length;
+      if (totalScored === 0) {
+        return {
+          hasMetric: true,
+          metricQId: selected.id,
+          metricLabel: selected.label,
+          metricTitle: selected.title,
+          metricType: selected.type,
+          metricScale: selected.scale,
+          metricUnit: selected.unit,
+          metricMin: selected.min,
+          metricMax: selected.max,
+          overallMean: null,
+          totalScored: 0,
+          availableMetrics,
+          impacts: []
+        };
+      }
+
+      const overallMeanRaw = allScores.reduce((a, b) => a + b, 0) / totalScored;
+      const overallMean = Number(overallMeanRaw.toFixed(2));
+
+      // Build theme -> set of unique respondent canonical IDs mentioning that theme
+      const themeRespondents = new Map();
+      const records = Array.isArray(safeAnalysis.records) ? safeAnalysis.records : [];
+      records.forEach((rec) => {
+        if (!rec) return;
+        const rid = String(rec.id || '');
+        if (!rid || !respondentScores.has(rid)) return;
+        const recThemes = Array.isArray(rec.themes) ? rec.themes : [];
+        recThemes.forEach((th) => {
+          const tid = typeof th === 'string' ? th : (th && th.id);
+          if (!tid) return;
+          if (!themeRespondents.has(tid)) themeRespondents.set(tid, new Set());
+          themeRespondents.get(tid).add(rid);
+        });
+      });
+
+      // Deduplicated respondent list for computing meanWithout accurately
+      const uniqueScoredRespondents = [];
+      const seenCanon = new Set();
+      for (let i = 0; i < safeResponses.length; i++) {
+        const r = safeResponses[i];
+        if (!r || !r.answers || typeof r.answers !== 'object') continue;
+        const val = selected.extractor(r.answers[selected.id]);
+        if (!Number.isFinite(val)) continue;
+        const canonId = String(r.clientResponseId || r.id || `resp_${i + 1}`);
+        if (seenCanon.has(canonId)) continue;
+        seenCanon.add(canonId);
+        uniqueScoredRespondents.push({ id: canonId, altId: r.id ? String(r.id) : null, score: val });
+      }
+
+      const themes = Array.isArray(safeAnalysis.themes) ? safeAnalysis.themes : [];
+      const impacts = [];
+
+      themes.forEach((th) => {
+        if (!th || !th.id || (th.count || 0) < 1) return;
+        const withSet = themeRespondents.get(th.id);
+        if (!withSet || withSet.size < 1) return;
+
+        const scoresWith = [];
+        const scoresWithout = [];
+        for (let i = 0; i < uniqueScoredRespondents.length; i++) {
+          const item = uniqueScoredRespondents[i];
+          if (withSet.has(item.id) || (item.altId && withSet.has(item.altId))) {
+            scoresWith.push(item.score);
+          } else {
+            scoresWithout.push(item.score);
+          }
+        }
+
+        const nWith = scoresWith.length;
+        const nWithout = scoresWithout.length;
+        if (nWith < 1) return;
+
+        const meanWithRaw = scoresWith.reduce((a, b) => a + b, 0) / nWith;
+        const meanWithoutRaw = nWithout > 0
+          ? scoresWithout.reduce((a, b) => a + b, 0) / nWithout
+          : overallMeanRaw;
+        const deltaRaw = nWithout > 0 ? (meanWithRaw - meanWithoutRaw) : 0;
+
+        let tStat = 0;
+        let pValue = null;
+        let isSignificant = false;
+        if (nWith >= 2 && nWithout >= 2) {
+          const welch = _welchTTestLocal(scoresWith, scoresWithout);
+          tStat = welch.tStat;
+          pValue = welch.pValue;
+          isSignificant = Boolean(welch.pValue !== null && welch.pValue < 0.05);
+        }
+
+        const delta = Number(deltaRaw.toFixed(2));
+        impacts.push({
+          themeId: th.id,
+          id: th.id,
+          name: th.name,
+          theme: th.name,
+          color: th.color || '#247B50',
+          isCustom: Boolean(th.isCustom),
+          isFallback: Boolean(th.isFallback),
+          mentionCount: th.count || nWith,
+          netSentiment: th.netSentiment ?? 0,
+          meanWith: Number(meanWithRaw.toFixed(2)),
+          meanWithout: Number(meanWithoutRaw.toFixed(2)),
+          delta,
+          nWith,
+          nWithout,
+          tStat,
+          pValue,
+          isSignificant,
+          direction: delta > 0 ? 'positive' : (delta < 0 ? 'negative' : 'neutral')
+        });
+      });
+
+      impacts.sort((a, b) => (Math.abs(b.delta) - Math.abs(a.delta)) || (b.nWith - a.nWith));
+
+      return {
+        hasMetric: true,
+        metricQId: selected.id,
+        metricLabel: selected.label,
+        metricTitle: selected.title,
+        metricType: selected.type,
+        metricScale: selected.scale,
+        metricUnit: selected.unit,
+        metricMin: selected.min,
+        metricMax: selected.max,
+        overallMean,
+        totalScored,
+        availableMetrics,
+        impacts
       };
     },
 

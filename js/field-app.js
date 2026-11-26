@@ -495,7 +495,11 @@ window.AEFieldApp = {
     // Number keys 1-9 select option on first unanswered choice/star/nps
     if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
       const num = Number(e.key);
-      const questions = page.questions || [];
+      const questions = (page.questions || []).filter((q) =>
+        !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+          ? true
+          : window.AEPiping.isQuestionVisible(q, this.draftAnswers, survey)
+      );
       const targetQ =
         questions.find((q) => {
           const unans = this.draftAnswers[q.id] === undefined || this.draftAnswers[q.id] === '';
@@ -915,7 +919,11 @@ window.AEFieldApp = {
     const progressPct = Math.round(((this.currentPageIndex + 1) / Math.max(1, pages.length)) * 100);
     const accent = (survey.theme && survey.theme.accentColor) || '#247B50';
 
-    const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
+    const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
+      !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+        ? true
+        : window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+    );
     const answeredCount = allQuestions.filter((q) => {
       const v = this.draftAnswers[q.id];
       if (v === undefined || v === null || v === '') return false;
@@ -1044,10 +1052,16 @@ window.AEFieldApp = {
         <!-- Section Questions List -->
         <div class="space-y-4 pb-4">
           ${(() => {
+            const pageQuestions = page.questions || [];
             const qNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
-              ? window.AEPiping.computeQuestionDisplayNumbers(page.questions || [])
+              ? window.AEPiping.computeQuestionDisplayNumbers(pageQuestions)
               : {};
-            return (page.questions || []).map((q, idx) => this.renderQuestionCard(q, idx, survey, qNumMap)).join('');
+            const visibleQuestions = pageQuestions.filter((q) =>
+              !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+                ? true
+                : window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+            );
+            return visibleQuestions.map((q, idx) => this.renderQuestionCard(q, idx, survey, qNumMap)).join('');
           })()}
         </div>
 
@@ -1612,6 +1626,28 @@ window.AEFieldApp = {
       this.render();
       return;
     }
+    const rawSurvey =
+      this.activeSurvey ||
+      (window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+        ? window.aeStore.getSurveyById(this.activeSurveyId)
+        : null);
+    const allQs =
+      rawSurvey && window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+        ? window.aeStore.getQuestionsForSurvey(rawSurvey)
+        : rawSurvey && Array.isArray(rawSurvey.pages)
+        ? rawSurvey.pages.flatMap((p) => p.questions || [])
+        : [];
+    const hasDependentVisibility = allQs.some(
+      (q) =>
+        q &&
+        q.displayRule &&
+        q.displayRule.enabled &&
+        (q.displayRule.sourceQuestionId === questionId || q.parentQuestionId === questionId)
+    );
+    if (hasDependentVisibility) {
+      this.render();
+      return;
+    }
     this.refreshPipedDom();
   },
 
@@ -1747,6 +1783,13 @@ window.AEFieldApp = {
     }
 
     (page.questions || []).forEach((q) => {
+      if (
+        window.AEPiping &&
+        typeof window.AEPiping.isQuestionVisible === 'function' &&
+        !window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+      ) {
+        return;
+      }
       const val = this.draftAnswers[q.id];
 
       if (q.required) {
@@ -1920,7 +1963,11 @@ window.AEFieldApp = {
     if (!survey) return;
     if (!bypassValidation) {
       if (this.runnerMode === 'focus') {
-        const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
+        const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
+          !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+            ? true
+            : window.AEPiping.isQuestionVisible(q, this.draftAnswers, survey)
+        );
         if (!this.validatePage({ questions: allQuestions })) {
           const firstErrId = Object.keys(this.validationErrors)[0];
           const errIdx = allQuestions.findIndex((q) => q.id === firstErrId);
@@ -2558,11 +2605,24 @@ window.AEFieldApp = {
       return this.renderSurveyRunner(rawSurvey);
     }
     const survey = window.AEI18n ? window.AEI18n.localizeSurvey(rawSurvey, this.currentLang) : rawSurvey;
-    const allQuestions = window.aeStore.getQuestionsForSurvey(survey);
-    if (this.focusQuestionIndex >= allQuestions.length) this.focusQuestionIndex = 0;
+    const qNumMap = {};
+    if (window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function') {
+      (survey.pages || []).forEach((p) => {
+        Object.assign(qNumMap, window.AEPiping.computeQuestionDisplayNumbers(p.questions || []));
+      });
+    }
+    const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
+      !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+        ? true
+        : window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+    );
+    if (allQuestions.length === 0) return this.renderSurveyRunner(rawSurvey);
+    if (this.focusQuestionIndex >= allQuestions.length) this.focusQuestionIndex = allQuestions.length - 1;
+    if (this.focusQuestionIndex < 0) this.focusQuestionIndex = 0;
     const q = allQuestions[this.focusQuestionIndex];
     if (!q) return this.renderSurveyRunner(rawSurvey);
 
+    const numLabel = (qNumMap[q.id] && qNumMap[q.id].label) ? qNumMap[q.id].label : String(this.focusQuestionIndex + 1);
     const progressPct = Math.round(((this.focusQuestionIndex + 1) / Math.max(1, allQuestions.length)) * 100);
     const val = this.draftAnswers[q.id];
     const errorMsg = this.validationErrors[q.id];
@@ -2585,7 +2645,7 @@ window.AEFieldApp = {
             </button>
           </div>
           <div class="flex items-center gap-2 tabular-nums">
-            <span class="font-semibold text-[#111613]">Q${this.focusQuestionIndex + 1} ${this.t('of')} ${allQuestions.length}</span>
+            <span class="font-semibold text-[#111613]">Q${numLabel} ${this.t('of')} ${allQuestions.length}</span>
             <span class="text-[#247B50] font-bold">(${progressPct}%)</span>
           </div>
         </div>
@@ -2599,7 +2659,7 @@ window.AEFieldApp = {
         <div class="bg-white border border-[#E4E7E4] rounded-[10px] p-6 sm:p-8 space-y-6 ae-question-animate">
           <div class="space-y-2">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-semibold text-[#247B50]">${this.t('question')} ${this.focusQuestionIndex + 1}</span>
+              <span class="text-xs font-semibold text-[#247B50]">${this.t('question')} ${numLabel}</span>
               ${q.required ? `<span class="text-[#C4242A] text-xs font-semibold">* ${this.t('required')}</span>` : `<span class="text-[#646E68] text-xs">${this.t('optional')}</span>`}
             </div>
             <h2 data-piped-title-for="${q.id}" class="text-lg sm:text-xl md:text-2xl font-semibold text-[#111613] leading-snug tracking-tight">
@@ -2694,7 +2754,11 @@ window.AEFieldApp = {
   nextFocusQuestion() {
     const rawSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!rawSurvey) return;
-    const allQuestions = window.aeStore.getQuestionsForSurvey(rawSurvey);
+    const allQuestions = window.aeStore.getQuestionsForSurvey(rawSurvey).filter((q) =>
+      !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
+        ? true
+        : window.AEPiping.isQuestionVisible(q, this.draftAnswers, rawSurvey)
+    );
     const currentQ = allQuestions[this.focusQuestionIndex];
     if (currentQ && !this.validatePage({ questions: [currentQ] })) {
       this.showToast('Please complete this required question before continuing.', 'error');
