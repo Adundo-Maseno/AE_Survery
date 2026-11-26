@@ -4843,6 +4843,52 @@ window.AEApp = {
     this.render();
   },
 
+  updateSurveyAccessControl(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.accessControl = s.accessControl || {
+      limitOnePerDevice: false,
+      requireInviteToken: false,
+      inviteTokens: []
+    };
+    s.accessControl[field] = Boolean(value);
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.showToast(
+      field === 'limitOnePerDevice'
+        ? (value ? 'Device duplicate guard enabled (1 response per device).' : 'Device duplicate guard disabled.')
+        : (value ? 'Single-use invite link requirement enabled.' : 'Single-use invite link requirement disabled.'),
+      'success'
+    );
+    this.render();
+  },
+
+  generateSurveyInvites(surveyId, count = 5) {
+    const targetSurveyId = surveyId || this.activeSurveyId;
+    if (!targetSurveyId || !window.aeStore || typeof window.aeStore.generateInviteTokens !== 'function') {
+      this.showToast('Invite token generator is unavailable.', 'error');
+      return [];
+    }
+    const created = window.aeStore.generateInviteTokens(targetSurveyId, count) || [];
+    if (!Array.isArray(created) || created.length === 0) {
+      this.showToast('Could not generate invite links for this survey.', 'error');
+      return [];
+    }
+    const origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+    const pathname = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '/';
+    const basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
+    const links = created.map((entry) => {
+      const tok = typeof entry === 'string' ? entry : entry.token;
+      return `${origin}${basePath}field.html?survey=${encodeURIComponent(targetSurveyId)}&mode=respondent&invite=${encodeURIComponent(tok)}`;
+    });
+    this.render();
+    this.copyText(
+      links.join('\n'),
+      `Generated ${links.length} single-use invite link${links.length === 1 ? '' : 's'} & copied to clipboard.`
+    );
+    return links;
+  },
+
   updateSurveyAlerts(field, value) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
@@ -5326,6 +5372,64 @@ window.AEApp = {
     list.splice(targetIdx, 0, item);
     window.aeStore.upsertSurvey(ctx.survey);
     this.render();
+  },
+
+  reorderQuestionBlock(draggedQId, targetQId) {
+    if (!draggedQId || !targetQId || draggedQId === targetQId) return false;
+    const dragCtx = this.findQuestionContext(draggedQId);
+    const targetCtx = this.findQuestionContext(targetQId);
+    if (!dragCtx || !targetCtx) return false;
+    if (dragCtx.pageIndex !== targetCtx.pageIndex) return false;
+    if (dragCtx.question.parentQuestionId) return false;
+    if (targetCtx.question.parentQuestionId === draggedQId) return false;
+
+    const list = dragCtx.page.questions || [];
+    const effectiveTargetId = targetCtx.question.parentQuestionId || targetQId;
+    if (effectiveTargetId === draggedQId) return false;
+
+    const originalDraggedIdx = list.findIndex((q) => q.id === draggedQId);
+    const originalTargetIdx = list.findIndex((q) => q.id === effectiveTargetId);
+    if (originalDraggedIdx < 0 || originalTargetIdx < 0) return false;
+
+    const movingDown = originalDraggedIdx < originalTargetIdx;
+    const block = [];
+    const remaining = [];
+    for (let i = 0; i < list.length; i++) {
+      const q = list[i];
+      if (q.id === draggedQId) {
+        block.unshift(q);
+      } else if (q.parentQuestionId === draggedQId) {
+        block.push(q);
+      } else {
+        remaining.push(q);
+      }
+    }
+
+    const newTargetIdx = remaining.findIndex((q) => q.id === effectiveTargetId);
+    if (newTargetIdx < 0) return false;
+
+    let insertIdx = newTargetIdx;
+    if (movingDown) {
+      insertIdx = newTargetIdx + 1;
+      while (insertIdx < remaining.length && remaining[insertIdx].parentQuestionId === effectiveTargetId) {
+        insertIdx++;
+      }
+    }
+
+    remaining.splice(insertIdx, 0, ...block);
+    dragCtx.page.questions = remaining;
+    dragCtx.survey.version = (dragCtx.survey.version || 1) + 1;
+    dragCtx.survey.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(dragCtx.survey);
+    const subCount = block.length - 1;
+    this.showToast(
+      subCount > 0
+        ? `Moved question and ${subCount} sub-question${subCount === 1 ? '' : 's'}.`
+        : 'Question order updated.',
+      'success'
+    );
+    this.render();
+    return true;
   },
 
   duplicateQuestion(questionId) {

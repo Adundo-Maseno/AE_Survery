@@ -1450,8 +1450,97 @@ window.AECollector = {
             <canvas id="ae_qr_canvas" width="220" height="220" class="bg-white p-2 rounded-[6px] border border-[#E4E7E4]" role="img" aria-label="QR Code for ${AEApp.escapeAttr(survey.title)}"></canvas>
             <div class="text-xs font-semibold text-[#111613] mt-3 ae-break-words">${AEApp.escapeHtml(survey.title)}</div>
             <div class="text-xs text-[#646E68] mt-0.5">Scan QR to open ${allowsSelfAdmin ? 'Self-Administered Survey' : 'Field Enumerator App'} · ID: <code>${survey.id}</code></div>
+            <div class="mt-3.5 w-full flex flex-wrap items-center justify-center gap-2">
+              <button type="button" onclick="AECollector.shareViaWhatsApp('${AEApp.escapeJs(survey.id)}')"
+                class="flex-1 min-w-[135px] h-8 px-3 rounded-[6px] bg-[#25D366] hover:bg-[#1FB858] text-[#04250E] text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
+                <i class="fa-brands fa-whatsapp text-sm"></i>
+                <span>Share via WhatsApp</span>
+              </button>
+              <button type="button" onclick="AECollector.printQRPoster('${AEApp.escapeJs(survey.id)}')"
+                class="flex-1 min-w-[135px] h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613] text-xs font-medium inline-flex items-center justify-center gap-1.5 ae-press">
+                <i class="fa-solid fa-print text-[#247B50] text-xs"></i>
+                <span>Print A4 QR Poster</span>
+              </button>
+            </div>
           </div>
         </div>
+
+        ${(() => {
+          const curUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+            ? window.AESession.getCurrentUser()
+            : null;
+          const isAdmin = Boolean(curUser && curUser.role === 'admin');
+          if (!isAdmin) return '';
+          const inviteTokens = (survey.accessControl && Array.isArray(survey.accessControl.inviteTokens))
+            ? survey.accessControl.inviteTokens
+            : [];
+          const unusedTokens = inviteTokens.filter((t) => t && !t.used);
+          const recentTokens = inviteTokens.slice(-5).reverse();
+          return `
+            <!-- Admin-only Single-Use Invite Links Card -->
+            <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <h4 class="text-sm font-semibold text-[#111613] flex items-center gap-1.5">
+                    <i class="fa-solid fa-ticket text-[#247B50] text-xs"></i>
+                    <span>Single-Use Invite Links</span>
+                  </h4>
+                  <p class="text-[11px] text-[#525B56] mt-1 leading-relaxed">
+                    Generate one-time respondent links that automatically expire after submission.
+                  </p>
+                </div>
+                <span class="px-2 py-0.5 rounded-[4px] text-[10px] font-semibold tabular-nums shrink-0 ${
+                  unusedTokens.length > 0 ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#F4F6F4] text-[#525B56]'
+                }">
+                  ${unusedTokens.length} unused / ${inviteTokens.length}
+                </span>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" onclick="AEApp.generateSurveyInvites('${AEApp.escapeJs(survey.id)}', 5)"
+                  class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                  <i class="fa-solid fa-plus text-[10px]"></i>
+                  <span>Generate 5</span>
+                </button>
+                <button type="button" onclick="AEApp.generateSurveyInvites('${AEApp.escapeJs(survey.id)}', 10)"
+                  class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F8F9F8] text-[#111613] text-xs font-medium inline-flex items-center gap-1.5 ae-press">
+                  <i class="fa-solid fa-layer-group text-[10px] text-[#247B50]"></i>
+                  <span>Generate 10</span>
+                </button>
+                <button type="button" onclick="AECollector.copyUnusedInviteLinks('${AEApp.escapeJs(survey.id)}')"
+                  ${unusedTokens.length === 0 ? 'disabled' : ''}
+                  class="flex-1 min-w-[140px] h-8 px-3 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 ae-press">
+                  <i class="fa-regular fa-copy text-[11px]"></i>
+                  <span>Copy All Unused (${unusedTokens.length})</span>
+                </button>
+              </div>
+
+              ${recentTokens.length > 0 ? `
+                <div class="border border-[#EFEFEF] rounded-[6px] divide-y divide-[#EFEFEF] bg-[#FAFBF9]">
+                  ${recentTokens.map((t) => {
+                    const invUrl = `${respondentUrl}&invite=${encodeURIComponent(t.token)}`;
+                    return `
+                      <div class="px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px]">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <code class="text-[#111613] font-mono truncate">${AEApp.escapeHtml(t.token)}</code>
+                          <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
+                            t.used ? 'bg-[#F4F6F4] text-[#646E68]' : 'bg-[#DCFAE5] text-[#04250E]'
+                          }">${t.used ? 'Used' : 'Unused'}</span>
+                        </div>
+                        ${!t.used ? `
+                          <button type="button" onclick="AEApp.copyText('${AEApp.escapeJs(invUrl)}', 'Invite link copied to clipboard.')"
+                            class="text-[#247B50] hover:underline font-medium shrink-0">
+                            Copy
+                          </button>
+                        ` : `<span class="text-[10px] text-[#646E68] shrink-0">${t.usedAt ? new Date(t.usedAt).toLocaleDateString() : 'Redeemed'}</span>`}
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : ''}
+            </div>
+          `;
+        })()}
 
         <!-- Stakeholder Read-Only Live Results Link Card -->
         <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
@@ -1519,6 +1608,312 @@ window.AECollector = {
         </div>
       </div>
     `;
+  },
+
+  getSurveyShareUrl(survey) {
+    if (!survey || !survey.id) return '';
+    const origin = (typeof window !== 'undefined' && window.location && window.location.origin && window.location.origin !== 'null')
+      ? window.location.origin
+      : 'https://ae-survey.local';
+    const pathname = (typeof window !== 'undefined' && window.location && window.location.pathname)
+      ? window.location.pathname
+      : '/';
+    const basePath = pathname.substring(0, pathname.lastIndexOf('/') + 1);
+    const colMode = survey.collectionMode || 'hybrid';
+    const allowsSelfAdmin = colMode !== 'enumerator';
+    return allowsSelfAdmin
+      ? `${origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}&mode=respondent`
+      : `${origin}${basePath}field.html?survey=${encodeURIComponent(survey.id)}`;
+  },
+
+  buildWhatsAppShareUrl(survey, shareUrl) {
+    if (!survey) return 'https://wa.me/';
+    const url = shareUrl || this.getSurveyShareUrl(survey);
+    const questions = (window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function')
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey.pages || []).flatMap((p) => p.questions || []);
+    const qCount = questions.length;
+    const estMin = Math.max(1, Math.ceil(qCount * 0.4));
+    const lines = [
+      `You are invited to complete: *${survey.title || 'AE Survey'}*`,
+      `Estimated time: ~${estMin} min`,
+      '',
+      `Open survey: ${url}`
+    ];
+    return `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`;
+  },
+
+  shareViaWhatsApp(surveyId) {
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    if (!survey) return null;
+    const shareUrl = this.getSurveyShareUrl(survey);
+    const waUrl = this.buildWhatsAppShareUrl(survey, shareUrl);
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    }
+    return waUrl;
+  },
+
+  buildQRPosterHTML(survey, shareUrl) {
+    const esc = (str) =>
+      String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    const url = shareUrl || this.getSurveyShareUrl(survey);
+    const title = (survey && survey.title) || 'AE Survey';
+    const description = (survey && survey.description) || '';
+    const category = (survey && survey.category) || 'Field Survey';
+    const resolvedTheme = window.AEThemePresets ? window.AEThemePresets.resolve(survey && survey.theme) : null;
+    const accent = (resolvedTheme && resolvedTheme.accentColor) || (survey && survey.theme && survey.theme.accentColor) || '#247B50';
+    const brandLogo = this.getSafeBrandLogo(survey);
+
+    let qrDataUrl = '';
+    try {
+      if (typeof document !== 'undefined' && window.AEQRCode && typeof window.AEQRCode.drawToCanvas === 'function') {
+        const offscreen = document.createElement('canvas');
+        offscreen.width = 420;
+        offscreen.height = 420;
+        window.AEQRCode.drawToCanvas(offscreen, url, {
+          margin: 4,
+          foreground: '#111613',
+          background: '#FFFFFF',
+          level: String(url || '').length > 150 ? 'L' : 'M'
+        });
+        if (typeof offscreen.toDataURL === 'function') {
+          qrDataUrl = offscreen.toDataURL('image/png');
+        }
+      }
+    } catch (_) {
+      qrDataUrl = '';
+    }
+
+    const displayUrl = String(url || '').replace(/^https?:\/\//i, '');
+    const logoHtml = brandLogo
+      ? `<img src="${esc(brandLogo)}" alt="${esc(title)} Logo" class="poster-logo" />`
+      : `<img src="./icons/agri_experience_logo.png" alt="Agri Experience Logo" class="poster-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" /><span class="poster-logo-fallback">Agri Experience · AE Survey</span>`;
+
+    const qrBlockHtml = qrDataUrl
+      ? `<img src="${esc(qrDataUrl)}" width="420" height="420" alt="QR Code for ${esc(title)}" class="qr-img" />`
+      : `<canvas id="ae_poster_qr_canvas" width="420" height="420" class="qr-img" role="img" aria-label="QR Code for ${esc(title)}"></canvas>
+         <script>
+           (function() {
+             try {
+               var c = document.getElementById('ae_poster_qr_canvas');
+               if (c && window.opener && window.opener.AEQRCode && typeof window.opener.AEQRCode.drawToCanvas === 'function') {
+                 window.opener.AEQRCode.drawToCanvas(c, ${JSON.stringify(String(url || ''))}, { margin: 4, foreground: '#111613', background: '#FFFFFF', level: ${String(url || '').length > 150 ? "'L'" : "'M'"} });
+               }
+             } catch (e) {}
+           })();
+         <\/script>`;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QR Poster — ${esc(title)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      color: #111613;
+      background: #F4F6F4;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .no-print {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .btn {
+      padding: 10px 18px;
+      border-radius: 8px;
+      border: 1px solid #CFD5D0;
+      background: #FFFFFF;
+      color: #111613;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: ${esc(accent)};
+      border-color: ${esc(accent)};
+      color: #FFFFFF;
+    }
+    .poster {
+      width: 100%;
+      max-width: 720px;
+      background: #FFFFFF;
+      border: 1px solid #E4E7E4;
+      border-top: 10px solid ${esc(accent)};
+      border-radius: 16px;
+      padding: 44px 40px 36px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(17, 22, 19, 0.06);
+    }
+    .poster-logo {
+      max-height: 60px;
+      max-width: 240px;
+      object-fit: contain;
+      margin: 0 auto 14px;
+      display: block;
+    }
+    .poster-logo-fallback {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 14px;
+      border-radius: 6px;
+      background: #DCFAE5;
+      color: #04250E;
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 999px;
+      background: #F4F6F4;
+      color: #247B50;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 32px;
+      line-height: 1.2;
+      color: #111613;
+    }
+    .desc {
+      margin: 0 auto 28px;
+      max-width: 560px;
+      font-size: 15px;
+      line-height: 1.55;
+      color: #525B56;
+    }
+    .qr-frame {
+      display: inline-block;
+      padding: 18px;
+      border: 2px solid #E4E7E4;
+      border-radius: 16px;
+      background: #FFFFFF;
+      margin-bottom: 24px;
+    }
+    .qr-img {
+      width: 420px;
+      height: 420px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .scan-cta {
+      font-size: 20px;
+      font-weight: 700;
+      color: #111613;
+      margin: 0 0 10px;
+    }
+    .url-box {
+      display: inline-block;
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: #F8F9F8;
+      border: 1px solid #E4E7E4;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #525B56;
+      word-break: break-all;
+      max-width: 100%;
+    }
+    @media print {
+      body { background: #FFFFFF; padding: 0; }
+      .no-print { display: none !important; }
+      .poster { box-shadow: none; border: 1px solid #E4E7E4; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button type="button" class="btn btn-primary" onclick="window.print()">Print / Save A4 PDF</button>
+    <button type="button" class="btn" onclick="window.close()">Close</button>
+  </div>
+  <main class="poster">
+    ${logoHtml}
+    <div class="badge">${esc(category)}</div>
+    <h1>${esc(title)}</h1>
+    ${description ? `<p class="desc">${esc(description)}</p>` : ''}
+    <div class="qr-frame">
+      ${qrBlockHtml}
+    </div>
+    <p class="scan-cta">Scan with your phone camera to begin</p>
+    <div class="url-box">${esc(displayUrl)}</div>
+  </main>
+</body>
+</html>`;
+  },
+
+  printQRPoster(surveyId) {
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    if (!survey) return null;
+    const shareUrl = this.getSurveyShareUrl(survey);
+    const html = this.buildQRPosterHTML(survey, shareUrl);
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      const win = window.open('', '_blank', 'width=860,height=1040');
+      if (win && win.document) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+        setTimeout(() => {
+          try { win.focus(); win.print(); } catch (_) {}
+        }, 300);
+      } else if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('Pop-up blocked — allow pop-ups to print the A4 QR Poster.', 'warning');
+      }
+    }
+    return html;
+  },
+
+  copyUnusedInviteLinks(surveyId) {
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    if (!survey) return '';
+    const tokens = (survey.accessControl && Array.isArray(survey.accessControl.inviteTokens))
+      ? survey.accessControl.inviteTokens.filter((t) => t && !t.used)
+      : [];
+    if (tokens.length === 0) {
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('No unused invite links available. Generate a batch first.', 'warning');
+      }
+      return '';
+    }
+    const baseUrl = this.getSurveyShareUrl(survey);
+    const sep = baseUrl.includes('?') ? '&' : '?';
+    const text = tokens.map((t) => `${baseUrl}${sep}invite=${encodeURIComponent(t.token)}`).join('\n');
+    if (window.AEApp && typeof window.AEApp.copyText === 'function') {
+      window.AEApp.copyText(text, `Copied ${tokens.length} unused single-use invite links.`);
+    } else if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+    return text;
   },
 
   drawQRCode(text) {

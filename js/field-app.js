@@ -32,6 +32,9 @@ window.AEFieldApp = {
   showMobileMenu: false,
   showPacingModal: false,
   showSyncOutboxModal: false,
+  showResumeLaterModal: false,
+  resumeLaterUrl: '',
+  activeInviteToken: null,
   showAdminPinModal: false,
   adminPinError: '',
   failedPinAttempts: 0,
@@ -81,7 +84,11 @@ window.AEFieldApp = {
 
     // Read URL query params
     const urlParams = new URLSearchParams(window.location.search);
-    const paramSurvey = urlParams.get('survey');
+    const paramInvite = urlParams.get('invite');
+    const paramResume = urlParams.get('resume');
+    this.activeInviteToken = paramInvite ? paramInvite.trim() : null;
+    const decodedResume = paramResume ? this.decodeResumeToken(paramResume) : null;
+    const paramSurvey = urlParams.get('survey') || (decodedResume && decodedResume.s ? decodedResume.s : null);
     const paramCollector = urlParams.get('collector');
     const paramMode = (urlParams.get('mode') || '').toLowerCase();
     const isExplicitRespondent =
@@ -288,6 +295,36 @@ window.AEFieldApp = {
     document.addEventListener('keydown', (e) => this.handleKeydown(e));
 
     this.initRunnerForActiveSurvey(false);
+
+    if (paramResume) {
+      if (decodedResume) {
+        if (decodedResume.s && window.aeStore.getSurveyById(decodedResume.s)) {
+          this.activeSurveyId = decodedResume.s;
+        }
+        const activeSurvey = this.activeSurveyId ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+        const maxPageIdx = activeSurvey && Array.isArray(activeSurvey.pages)
+          ? Math.max(0, activeSurvey.pages.length - 1)
+          : 0;
+        this.draftAnswers = { ...(decodedResume.a || {}) };
+        this.currentPageIndex = Math.max(0, Math.min(decodedResume.p || 0, maxPageIdx));
+        this.validationErrors = {};
+        this.persistDraft();
+        this.showToast('Welcome back — your saved progress was restored.', 'success');
+      } else {
+        this.showToast('Saved resume link was invalid or expired.', 'warning');
+      }
+
+      if (typeof window !== 'undefined' && window.history && typeof window.history.replaceState === 'function') {
+        try {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('resume');
+          window.history.replaceState({}, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+        } catch (_) {
+          // Ignore URL rewrite errors in non-standard environments
+        }
+      }
+    }
+
     this.render();
   },
 
@@ -470,7 +507,7 @@ window.AEFieldApp = {
 
   handleKeydown(e) {
     if (e.key === 'Escape') {
-      if (this.showAdminPinModal || this.showSurveyPickerModal || this.showEnumPickerModal) {
+      if (this.showAdminPinModal || this.showSurveyPickerModal || this.showEnumPickerModal || this.showResumeLaterModal) {
         this.closeModals();
         return;
       }
@@ -478,7 +515,7 @@ window.AEFieldApp = {
 
     const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
     const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable;
-    if (isTyping || this.showAdminPinModal || this.showSurveyPickerModal || this.showEnumPickerModal) return;
+    if (isTyping || this.showAdminPinModal || this.showSurveyPickerModal || this.showEnumPickerModal || this.showResumeLaterModal) return;
 
     const survey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!survey) return;
@@ -928,6 +965,260 @@ window.AEFieldApp = {
     `;
   },
 
+  encodeResumeToken() {
+    const MAX_TOKEN_LEN = 12288; // 12KB hard cap
+    const surveyId = this.activeSurveyId || '';
+    if (!surveyId) return null;
+
+    const toBase64Url = (jsonStr) => {
+      try {
+        let base64 = '';
+        if (typeof TextEncoder !== 'undefined' && typeof btoa === 'function') {
+          const bytes = new TextEncoder().encode(jsonStr);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          base64 = btoa(binary);
+        } else if (typeof Buffer !== 'undefined') {
+          base64 = Buffer.from(jsonStr, 'utf8').toString('base64');
+        } else {
+          base64 = btoa(unescape(encodeURIComponent(jsonStr)));
+        }
+        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+      } catch (_) {
+        return null;
+      }
+    };
+
+    const payload = {
+      s: String(surveyId),
+      p: Math.max(0, Math.floor(Number(this.currentPageIndex) || 0)),
+      a: this.draftAnswers && typeof this.draftAnswers === 'object' ? this.draftAnswers : {}
+    };
+
+    let token = toBase64Url(JSON.stringify(payload));
+    if (token && token.length <= MAX_TOKEN_LEN) {
+      return token;
+    }
+
+    // Retry without inline base64 photo/signature blobs if payload exceeded 12KB
+    const compactAnswers = {};
+    Object.entries(payload.a).forEach(([k, v]) => {
+      if (typeof v === 'string' && v.startsWith('data:image/')) return;
+      if (v && typeof v === 'object' && typeof v.dataUrl === 'string' && v.dataUrl.startsWith('data:image/')) {
+        const { dataUrl, ...rest } = v;
+        compactAnswers[k] = rest;
+        return;
+      }
+      compactAnswers[k] = v;
+    });
+
+    token = toBase64Url(JSON.stringify({ ...payload, a: compactAnswers }));
+    if (token && token.length <= MAX_TOKEN_LEN) {
+      return token;
+    }
+    return null;
+  },
+
+  decodeResumeToken(token) {
+    const MAX_TOKEN_LEN = 12288; // 12KB hard cap
+    if (typeof token !== 'string') return null;
+    const clean = token.trim();
+    if (!clean || clean.length > MAX_TOKEN_LEN) return null;
+    if (!/^[A-Za-z0-9\-_]+$/.test(clean)) return null;
+
+    try {
+      const padded = clean.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (clean.length % 4)) % 4);
+      let jsonStr = '';
+      if (typeof atob === 'function' && typeof TextDecoder !== 'undefined') {
+        const binary = atob(padded);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        jsonStr = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      } else if (typeof Buffer !== 'undefined') {
+        jsonStr = Buffer.from(padded, 'base64').toString('utf8');
+      } else {
+        jsonStr = decodeURIComponent(escape(atob(padded)));
+      }
+
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      if (typeof parsed.s !== 'string' || !parsed.s.trim()) return null;
+      if (parsed.a !== undefined && (typeof parsed.a !== 'object' || parsed.a === null || Array.isArray(parsed.a))) {
+        return null;
+      }
+
+      const safeAnswers = {};
+      if (parsed.a && typeof parsed.a === 'object') {
+        Object.entries(parsed.a).forEach(([k, v]) => {
+          if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
+          safeAnswers[k] = v;
+        });
+      }
+
+      const pageIdx = Number(parsed.p);
+      return {
+        s: parsed.s.trim(),
+        p: Number.isFinite(pageIdx) && pageIdx >= 0 ? Math.floor(pageIdx) : 0,
+        a: safeAnswers
+      };
+    } catch (_) {
+      return null;
+    }
+  },
+
+  buildResumeUrl() {
+    const token = this.encodeResumeToken();
+    if (!token) return null;
+    try {
+      const url = new URL(window.location.href);
+      if (this.activeSurveyId) url.searchParams.set('survey', this.activeSurveyId);
+      if (this.activeCollectorId) url.searchParams.set('collector', this.activeCollectorId);
+      if (this.isRespondentMode) url.searchParams.set('mode', 'respondent');
+      if (this.activeInviteToken) url.searchParams.set('invite', this.activeInviteToken);
+      url.searchParams.set('resume', token);
+      return url.toString();
+    } catch (_) {
+      const qs = new URLSearchParams();
+      if (this.activeSurveyId) qs.set('survey', this.activeSurveyId);
+      if (this.isRespondentMode) qs.set('mode', 'respondent');
+      if (this.activeInviteToken) qs.set('invite', this.activeInviteToken);
+      qs.set('resume', token);
+      return `field.html?${qs.toString()}`;
+    }
+  },
+
+  openResumeLaterModal() {
+    this.persistDraft();
+    const url = this.buildResumeUrl();
+    if (!url) {
+      this.showToast('Draft is too large for a portable link (max 12KB). Your progress stays saved on this device.', 'warning');
+      return;
+    }
+    this.closeModals();
+    this.resumeLaterUrl = url;
+    this.showResumeLaterModal = true;
+    this.renderModals();
+  },
+
+  copyResumeLink() {
+    const url = this.resumeLaterUrl || this.buildResumeUrl();
+    if (!url) return;
+    const onSuccess = () => this.showToast('Resume link copied to clipboard.', 'success');
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(url).then(onSuccess).catch(() => {
+        const input = document.getElementById('ae_resume_link_input');
+        if (input) {
+          input.select();
+          document.execCommand('copy');
+          onSuccess();
+        }
+      });
+    } else if (typeof document !== 'undefined') {
+      const input = document.getElementById('ae_resume_link_input');
+      if (input) {
+        input.select();
+        document.execCommand('copy');
+        onSuccess();
+      }
+    }
+  },
+
+  renderAlreadySubmittedCard(survey, priorSubmission) {
+    const resolvedTheme = window.AEThemePresets
+      ? window.AEThemePresets.resolve(survey && survey.theme)
+      : { cardBg: '#FFFFFF', cardBorder: '#E4E7E4', cardRadius: '12px', ink: '#111613', mutedInk: '#525B56', accentColor: '#247B50', headingFont: '"Fraunces", Georgia, serif' };
+    const brandLogo = this.getSafeBrandLogo(survey);
+    const receiptId = priorSubmission && priorSubmission.receiptId ? String(priorSubmission.receiptId) : 'Recorded';
+    const submittedLabel = priorSubmission && priorSubmission.submittedAt
+      ? new Date(priorSubmission.submittedAt).toLocaleString()
+      : 'Previously submitted';
+
+    return `
+      <div class="border border-t-4 p-7 sm:p-9 text-center space-y-5 max-w-lg mx-auto my-8 shadow-sm"
+        style="background:${resolvedTheme.cardBg}; border-color:${resolvedTheme.cardBorder}; border-top-color:${resolvedTheme.accentColor}; border-radius:${resolvedTheme.cardRadius};">
+        <div class="flex flex-col items-center gap-3">
+          ${
+            brandLogo
+              ? `<img src="${this.escapeAttr(brandLogo)}" alt="${this.escapeAttr((survey && survey.title) || 'Survey')} Logo" class="h-10 w-auto max-w-[180px] object-contain" />`
+              : `<div class="w-12 h-12 rounded-full bg-[#DCFAE5] text-[#247B50] flex items-center justify-center text-xl">
+                  <i class="fa-solid fa-circle-check"></i>
+                </div>`
+          }
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-[#DCFAE5] text-[#04250E] border-[#A7F3D0]">
+            <i class="fa-solid fa-shield-check text-[11px]"></i>
+            <span>Already Submitted</span>
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <h1 class="text-xl sm:text-2xl font-semibold tracking-tight ae-break-words" style="font-family:${resolvedTheme.headingFont}; color:${resolvedTheme.ink};">
+            ${this.escapeHtml((survey && survey.title) || 'Survey Already Submitted')}
+          </h1>
+          <p class="text-sm leading-relaxed ae-break-words max-w-md mx-auto" style="color:${resolvedTheme.mutedInk};">
+            Thank you — a response for this survey has already been submitted from this device. Only one submission per device is permitted.
+          </p>
+        </div>
+
+        <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 text-left space-y-2 text-xs text-[#525B56] max-w-sm mx-auto tabular-nums">
+          <div class="flex items-center justify-between gap-2">
+            <span>Receipt ID</span>
+            <code class="font-semibold text-[#111613]">${this.escapeHtml(receiptId)}</code>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span>Submitted</span>
+            <strong class="text-[#111613]">${this.escapeHtml(submittedLabel)}</strong>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderInviteUnavailableCard(survey, inviteCheck) {
+    const resolvedTheme = window.AEThemePresets
+      ? window.AEThemePresets.resolve(survey && survey.theme)
+      : { cardBg: '#FFFFFF', cardBorder: '#E4E7E4', cardRadius: '12px', ink: '#111613', mutedInk: '#525B56', accentColor: '#247B50', headingFont: '"Fraunces", Georgia, serif' };
+    const brandLogo = this.getSafeBrandLogo(survey);
+    const reason = inviteCheck && inviteCheck.reason;
+    const message =
+      reason === 'already_used'
+        ? 'This single-use invite link has already been redeemed and cannot be used again.'
+        : reason === 'missing'
+        ? 'This survey requires a personal single-use invite link. Please open the full link sent to you by the survey administrator.'
+        : 'This invite link is invalid, expired, or has been revoked by the survey administrator.';
+
+    return `
+      <div class="border border-t-4 p-7 sm:p-9 text-center space-y-5 max-w-lg mx-auto my-8 shadow-sm"
+        style="background:${resolvedTheme.cardBg}; border-color:${resolvedTheme.cardBorder}; border-top-color:#C4242A; border-radius:${resolvedTheme.cardRadius};">
+        <div class="flex flex-col items-center gap-3">
+          ${
+            brandLogo
+              ? `<img src="${this.escapeAttr(brandLogo)}" alt="${this.escapeAttr((survey && survey.title) || 'Survey')} Logo" class="h-10 w-auto max-w-[180px] object-contain" />`
+              : `<div class="w-12 h-12 rounded-full bg-[#FFEDEA] text-[#C4242A] flex items-center justify-center text-xl">
+                  <i class="fa-solid fa-ticket"></i>
+                </div>`
+          }
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-[#FFEDEA] text-[#831C1E] border-[#F5C2C0]">
+            <i class="fa-solid fa-ban text-[11px]"></i>
+            <span>Invite Link Unavailable</span>
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <h1 class="text-xl sm:text-2xl font-semibold tracking-tight ae-break-words" style="font-family:${resolvedTheme.headingFont}; color:${resolvedTheme.ink};">
+            ${this.escapeHtml((survey && survey.title) || 'Invite Link Unavailable')}
+          </h1>
+          <p class="text-sm leading-relaxed ae-break-words max-w-md mx-auto" style="color:${resolvedTheme.mutedInk};">
+            ${this.escapeHtml(message)}
+          </p>
+        </div>
+      </div>
+    `;
+  },
+
   render() {
     this.renderHeader();
     const viewport = document.getElementById('ae_field_viewport');
@@ -1007,6 +1298,37 @@ window.AEFieldApp = {
         this.renderModals();
         this.renderBottomNav();
         return;
+      }
+    }
+
+    if (this.isRespondentMode && !this.justSubmittedReceipt) {
+      if (
+        survey.accessControl &&
+        survey.accessControl.limitOnePerDevice &&
+        window.aeStore &&
+        typeof window.aeStore.hasDeviceSubmittedSurvey === 'function'
+      ) {
+        const priorSubmission = window.aeStore.hasDeviceSubmittedSurvey(survey.id);
+        if (priorSubmission) {
+          viewport.innerHTML = this.renderAlreadySubmittedCard(survey, priorSubmission);
+          this.renderModals();
+          this.renderBottomNav();
+          return;
+        }
+      }
+
+      if (
+        ((survey.accessControl && survey.accessControl.requireInviteToken) || this.activeInviteToken) &&
+        window.aeStore &&
+        typeof window.aeStore.validateInviteToken === 'function'
+      ) {
+        const inviteCheck = window.aeStore.validateInviteToken(survey, this.activeInviteToken);
+        if (!inviteCheck.valid) {
+          viewport.innerHTML = this.renderInviteUnavailableCard(survey, inviteCheck);
+          this.renderModals();
+          this.renderBottomNav();
+          return;
+        }
       }
     }
 
@@ -1108,10 +1430,14 @@ window.AEFieldApp = {
                       class="h-8 px-3 rounded-[6px] bg-white border border-[#247B50]/40 text-xs font-medium text-[#04250E] hover:bg-[#F8F9F8] inline-flex items-center gap-1.5 ae-press">
                       <i class="fa-regular fa-copy"></i> ${this.t('copyReceipt')}
                     </button>
-                    <button type="button" onclick="AEFieldApp.startNextInterview()"
-                      class="h-8 px-3.5 rounded-[6px] bg-[#141A17] text-xs font-medium text-white hover:bg-[#232C27] inline-flex items-center gap-1.5 ae-press">
-                      <i class="fa-solid fa-plus text-xs"></i> ${this.isRespondentMode ? 'Submit Another Response' : this.t('nextInterview')}
-                    </button>
+                    ${
+                      !(this.isRespondentMode && rawSurvey.accessControl && (rawSurvey.accessControl.limitOnePerDevice || rawSurvey.accessControl.requireInviteToken))
+                        ? `<button type="button" onclick="AEFieldApp.startNextInterview()"
+                            class="h-8 px-3.5 rounded-[6px] bg-[#141A17] text-xs font-medium text-white hover:bg-[#232C27] inline-flex items-center gap-1.5 ae-press">
+                            <i class="fa-solid fa-plus text-xs"></i> ${this.isRespondentMode ? 'Submit Another Response' : this.t('nextInterview')}
+                          </button>`
+                        : ''
+                    }
                   </div>
                 </div>
                 <div class="pt-2.5 border-t border-[#247B50]/20 flex flex-wrap items-center justify-between gap-2 text-xs text-[#04250E] tabular-nums">
@@ -1219,8 +1545,8 @@ window.AEFieldApp = {
         </div>
 
         <!-- Section Bottom Navigation & Submission Bar (Floating Card Dock) -->
-        <div data-ui="sticky-bar" class="sticky ${this.isRespondentMode ? 'bottom-3' : 'bottom-[4.25rem]'} md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[12px] p-3.5 sm:p-4 shadow-sm flex items-center justify-between gap-3">
-          <div>
+        <div data-ui="sticky-bar" class="sticky ${this.isRespondentMode ? 'bottom-3' : 'bottom-[4.25rem]'} md:bottom-4 z-30 bg-white border border-[#E4E7E4] rounded-[12px] p-3.5 sm:p-4 shadow-sm flex flex-wrap items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2">
             ${
               this.currentPageIndex > 0
                 ? `<button type="button" onclick="AEFieldApp.prevPage()"
@@ -1232,6 +1558,12 @@ window.AEFieldApp = {
                     <i class="fa-solid fa-rotate-left text-xs"></i> <span>${this.t('clearForm')}</span>
                   </button>`
             }
+            <button type="button" onclick="AEFieldApp.openResumeLaterModal()"
+              title="Get a personal link to continue this survey later"
+              class="h-10 px-3 rounded-[8px] border border-[#CFD5D0] bg-[#FAFBF9] hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-regular fa-bookmark text-[#247B50] text-xs"></i>
+              <span>Save &amp; finish later</span>
+            </button>
           </div>
 
           <div class="flex items-center gap-2">
@@ -2296,6 +2628,13 @@ window.AEFieldApp = {
         answers: canonicalAnswers
       });
 
+      if (window.aeStore && typeof window.aeStore.markDeviceSubmittedSurvey === 'function') {
+        window.aeStore.markDeviceSubmittedSurvey(survey.id, saved.id);
+      }
+      if (this.activeInviteToken && window.aeStore && typeof window.aeStore.consumeInviteToken === 'function') {
+        window.aeStore.consumeInviteToken(survey.id, this.activeInviteToken);
+      }
+
       window.aeStore.clearRunnerDraft(survey.id);
       this.initRunnerForActiveSurvey(true);
 
@@ -2816,6 +3155,7 @@ window.AEFieldApp = {
     this.showMobileMenu = false;
     this.showPacingModal = false;
     this.showSyncOutboxModal = false;
+    this.showResumeLaterModal = false;
     this.renderModals();
     this.renderBottomNav();
   },
@@ -3145,14 +3485,21 @@ window.AEFieldApp = {
         </div>
 
         <!-- Focus Navigation Footer -->
-        <div class="flex items-center justify-between pt-2 pb-16 md:pb-0">
-          <button type="button" onclick="AEFieldApp.prevFocusQuestion()"
-            ${this.focusQuestionIndex === 0 ? 'disabled class="opacity-40 cursor-not-allowed"' : ''}
-            class="h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-2 ae-press">
-            <i class="fa-solid fa-arrow-up text-xs"></i>
-            <span>${this.t('previous')}</span>
-            <span class="ae-kbd hidden sm:inline">↑</span>
-          </button>
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 pb-16 md:pb-0">
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="AEFieldApp.prevFocusQuestion()"
+              ${this.focusQuestionIndex === 0 ? 'disabled class="opacity-40 cursor-not-allowed"' : ''}
+              class="h-9 px-4 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-2 ae-press">
+              <i class="fa-solid fa-arrow-up text-xs"></i>
+              <span>${this.t('previous')}</span>
+              <span class="ae-kbd hidden sm:inline">↑</span>
+            </button>
+            <button type="button" onclick="AEFieldApp.openResumeLaterModal()"
+              class="h-9 px-3 rounded-[6px] border border-[#CFD5D0] bg-[#FAFBF9] hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-regular fa-bookmark text-[#247B50] text-xs"></i>
+              <span>Save &amp; finish later</span>
+            </button>
+          </div>
 
           <div class="flex items-center gap-2">
             ${this.focusQuestionIndex < allQuestions.length - 1 ? `
@@ -4069,8 +4416,72 @@ window.AEFieldApp = {
     const modalRoot = document.getElementById('ae_field_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showAdminPinModal && !this.showSurveyPickerModal && !this.showEnumPickerModal && !this.showEnumPinModal && !this.showIosInstallModal && !this.showMobileMenu && !this.showPacingModal && !this.showSyncOutboxModal) {
+    if (!this.showAdminPinModal && !this.showSurveyPickerModal && !this.showEnumPickerModal && !this.showEnumPinModal && !this.showIosInstallModal && !this.showMobileMenu && !this.showPacingModal && !this.showSyncOutboxModal && !this.showResumeLaterModal) {
       modalRoot.innerHTML = '';
+      this.renderBottomNav();
+      return;
+    }
+
+    if (this.showResumeLaterModal) {
+      const survey = window.aeStore.getSurveyById(this.activeSurveyId);
+      const resumeUrl = this.resumeLaterUrl || this.buildResumeUrl() || '';
+      const surveyTitle = (survey && survey.title) ? survey.title : 'AE Survey';
+      const waText = `Resume my saved survey progress for "${surveyTitle}":\n${resumeUrl}`;
+      const waHref = `https://wa.me/?text=${encodeURIComponent(waText)}`;
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEFieldApp.closeModals()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true"
+            class="ae-glass-modal rounded-t-[20px] sm:rounded-[12px] max-w-md w-full p-5 space-y-4 ae-dialog-animate">
+            <div class="w-10 h-1 bg-[#CFD5D0] rounded-full mx-auto sm:hidden -mt-1 mb-1"></div>
+
+            <div class="flex items-center justify-between pb-3 border-b border-[#EFEFEF]">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-[6px] bg-[#DCFAE5] text-[#247B50] flex items-center justify-center text-sm">
+                  <i class="fa-regular fa-bookmark"></i>
+                </div>
+                <div>
+                  <h3 class="text-sm font-semibold text-[#111613]">Save &amp; finish later</h3>
+                  <p class="text-[11px] text-[#525B56]">Continue from Section ${(this.currentPageIndex || 0) + 1} on any device</p>
+                </div>
+              </div>
+              <button type="button" onclick="AEFieldApp.closeModals()" aria-label="Close"
+                class="w-8 h-8 rounded-[6px] bg-[#F4F6F4] hover:bg-[#EAECE9] text-[#111613] flex items-center justify-center ae-press">
+                <i class="fa-solid fa-xmark text-xs"></i>
+              </button>
+            </div>
+
+            <p class="text-xs text-[#525B56] leading-relaxed">
+              Your answers are safely encoded in this portable resume link. Copy it or send it to yourself on WhatsApp to pick up right where you left off.
+            </p>
+
+            <div class="space-y-1.5">
+              <label for="ae_resume_link_input" class="block text-[11px] font-semibold text-[#111613]">Your Portable Resume Link</label>
+              <div class="flex items-center">
+                <input id="ae_resume_link_input" type="text" readonly value="${this.escapeAttr(resumeUrl)}"
+                  class="flex-1 min-w-0 h-9 text-xs bg-[#F8F9F8] border border-[#CFD5D0] rounded-l-[6px] px-3 text-[#111613] focus:outline-none" />
+                <button type="button" onclick="AEFieldApp.copyResumeLink()"
+                  class="h-9 px-3.5 rounded-r-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold border border-l-0 border-[#247B50] ae-press shrink-0">
+                  <i class="fa-regular fa-copy mr-1"></i> Copy
+                </button>
+              </div>
+            </div>
+
+            <div class="pt-1 flex flex-col sm:flex-row items-center gap-2">
+              <a href="${this.escapeAttr(waHref)}" target="_blank" rel="noopener noreferrer"
+                class="w-full sm:flex-1 h-10 px-4 rounded-[6px] bg-[#25D366] hover:bg-[#1FB858] text-[#04250E] text-xs font-semibold inline-flex items-center justify-center gap-2 ae-press">
+                <i class="fa-brands fa-whatsapp text-sm"></i>
+                <span>Send to myself on WhatsApp</span>
+              </a>
+              <button type="button" onclick="AEFieldApp.closeModals()"
+                class="w-full sm:w-auto h-10 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center ae-press">
+                <span>${this.t('close')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
       this.renderBottomNav();
       return;
     }

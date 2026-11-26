@@ -6646,6 +6646,190 @@ class AESurveyStore {
   }
 
   /**
+   * Duplicate-Response Guard: tracks surveys submitted on this device in localStorage
+   * (`ae_submitted_surveys_v1`) with a document.cookie fallback.
+   */
+  _readSubmittedSurveysMap() {
+    const KEY = 'ae_submitted_surveys_v1';
+    let map = {};
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            map = { ...parsed };
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore storage read errors
+    }
+
+    try {
+      if (typeof document !== 'undefined' && typeof document.cookie === 'string' && document.cookie) {
+        const prefix = `${KEY}=`;
+        const parts = document.cookie.split(';');
+        for (const part of parts) {
+          const trimmed = part.trim();
+          if (trimmed.startsWith(prefix)) {
+            const decoded = decodeURIComponent(trimmed.slice(prefix.length));
+            const parsed = JSON.parse(decoded);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+              map = { ...parsed, ...map };
+            }
+            break;
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore cookie parse errors
+    }
+    return map;
+  }
+
+  _writeSubmittedSurveysMap(map) {
+    const KEY = 'ae_submitted_surveys_v1';
+    const safeMap = map && typeof map === 'object' && !Array.isArray(map) ? map : {};
+    const serialized = JSON.stringify(safeMap);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(KEY, serialized);
+      }
+    } catch (_) {
+      // Fallback to cookie below
+    }
+    try {
+      if (typeof document !== 'undefined') {
+        // Keep cookie payload compact (at most 25 most recent survey entries)
+        const entries = Object.entries(safeMap);
+        const cookieMap = entries.length > 25 ? Object.fromEntries(entries.slice(-25)) : safeMap;
+        document.cookie = `${KEY}=${encodeURIComponent(JSON.stringify(cookieMap))}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    } catch (_) {
+      // Ignore cookie write errors
+    }
+  }
+
+  hasDeviceSubmittedSurvey(surveyId) {
+    if (!surveyId) return null;
+    const map = this._readSubmittedSurveysMap();
+    const record = map[String(surveyId)];
+    if (record && typeof record === 'object' && record.submittedAt) {
+      return record;
+    }
+    return null;
+  }
+
+  markDeviceSubmittedSurvey(surveyId, receiptId) {
+    if (!surveyId) return null;
+    const map = this._readSubmittedSurveysMap();
+    const record = {
+      receiptId: String(receiptId || ''),
+      submittedAt: new Date().toISOString()
+    };
+    map[String(surveyId)] = record;
+    this._writeSubmittedSurveysMap(map);
+    return record;
+  }
+
+  /**
+   * Single-Use Invite Links: generate, validate, and consume unique URL-safe invite tokens
+   * stored on `survey.accessControl.inviteTokens`.
+   */
+  generateInviteTokens(surveyId, count = 10) {
+    const survey = this.getSurveyById(surveyId);
+    if (!survey) return [];
+    const n = Math.max(1, Math.min(200, Math.floor(Number(count) || 10)));
+    if (!survey.accessControl || typeof survey.accessControl !== 'object') {
+      survey.accessControl = {};
+    }
+    if (!Array.isArray(survey.accessControl.inviteTokens)) {
+      survey.accessControl.inviteTokens = [];
+    }
+
+    const existing = new Set(
+      survey.accessControl.inviteTokens.map((t) => (t && t.token ? String(t.token) : '')).filter(Boolean)
+    );
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const makeToken = () => {
+      let out = 'inv_';
+      if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(10);
+        crypto.getRandomValues(bytes);
+        for (let i = 0; i < bytes.length; i++) {
+          out += alphabet[bytes[i] % alphabet.length];
+        }
+      } else {
+        for (let i = 0; i < 10; i++) {
+          out += alphabet[Math.floor(Math.random() * alphabet.length)];
+        }
+      }
+      return out;
+    };
+
+    const nowIso = new Date().toISOString();
+    const created = [];
+    for (let i = 0; i < n; i++) {
+      let tok = makeToken();
+      let guard = 0;
+      while (existing.has(tok) && guard < 10) {
+        tok = makeToken();
+        guard++;
+      }
+      existing.add(tok);
+      const entry = {
+        token: tok,
+        used: false,
+        usedAt: null,
+        createdAt: nowIso
+      };
+      survey.accessControl.inviteTokens.push(entry);
+      created.push(entry);
+    }
+
+    this.upsertSurvey(survey, true);
+    return created;
+  }
+
+  validateInviteToken(survey, token) {
+    if (!survey || typeof survey !== 'object') {
+      return { valid: false, reason: 'invalid' };
+    }
+    const cleanToken = typeof token === 'string' ? token.trim() : '';
+    if (!cleanToken) {
+      return { valid: false, reason: 'missing' };
+    }
+    const tokens =
+      survey.accessControl && Array.isArray(survey.accessControl.inviteTokens)
+        ? survey.accessControl.inviteTokens
+        : [];
+    const entry = tokens.find((t) => t && String(t.token) === cleanToken);
+    if (!entry) {
+      return { valid: false, reason: 'invalid' };
+    }
+    if (entry.used) {
+      return { valid: false, reason: 'already_used', usedAt: entry.usedAt || null };
+    }
+    return { valid: true, token: cleanToken };
+  }
+
+  consumeInviteToken(surveyId, token) {
+    const cleanToken = typeof token === 'string' ? token.trim() : '';
+    if (!surveyId || !cleanToken) return false;
+    const survey = this.getSurveyById(surveyId);
+    if (!survey || !survey.accessControl || !Array.isArray(survey.accessControl.inviteTokens)) {
+      return false;
+    }
+    const entry = survey.accessControl.inviteTokens.find((t) => t && String(t.token) === cleanToken);
+    if (!entry) return false;
+    entry.used = true;
+    entry.usedAt = new Date().toISOString();
+    this.upsertSurvey(survey, true);
+    return true;
+  }
+
+  /**
    * Computes a cryptographic Merkle Root across all responses for an instrument.
    * Provides mathematical non-repudiation proof of dataset completeness.
    */

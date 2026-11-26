@@ -2419,6 +2419,11 @@ window.AEAnalytics = {
           <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
             <div class="flex flex-wrap items-center gap-1.5">
               <span class="text-xs font-medium text-[#646E68] mr-1">Reports</span>
+              <button onclick="AEReportExport.openSlideDeck('${safeSurveyIdJs}')"
+                title="Open 16:9 Interactive Presentation Slide Deck"
+                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/35 bg-[#DCFAE5]/35 hover:bg-[#DCFAE5]/70 text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-display text-[#247B50] text-[11px]"></i> Present Slides
+              </button>
               <button onclick="AEReportExport.exportPDF('${safeSurveyIdJs}')"
                 title="Open Branded Executive Briefing PDF Print View"
                 class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/35 bg-white hover:bg-[#DCFAE5]/40 text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
@@ -3045,6 +3050,17 @@ window.AEAnalytics = {
     const isSub = Boolean(numInfo?.isSub);
     const cleanTitle = this.cleanQuestionTitle(q, {}, survey);
     const cleanDesc = q.description ? this.cleanQuestionTitle(q.description, {}, survey) : '';
+    const safeQIdJs = window.AEApp && typeof window.AEApp.escapeJs === 'function'
+      ? window.AEApp.escapeJs(q.id)
+      : String(q.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const rawSlug = String(cleanTitle || q.id || 'chart')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'chart';
+    const safeTitleSlugJs = window.AEApp && typeof window.AEApp.escapeJs === 'function'
+      ? window.AEApp.escapeJs(rawSlug)
+      : rawSlug.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-5 ${isSub ? 'ml-4 sm:ml-6 border-l-4 border-l-[#247B50]/35' : ''}">
@@ -3092,11 +3108,11 @@ window.AEAnalytics = {
             </div>
 
             <!-- Download PNG Chart -->
-            <button type="button" onclick="AEAnalytics.exportQuestionChartImage('${q.id}')"
-              title="Download High-Res PNG Chart"
-              aria-label="Download High-Res PNG Chart"
+            <button type="button" onclick="AEAnalytics.downloadChartPNG('ae_chart_${safeQIdJs}', '${safeTitleSlugJs}')"
+              title="Download PNG"
+              aria-label="Download PNG"
               class="h-7 w-7 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#525B56] hover:text-[#111613] flex items-center justify-center ae-press">
-              <i class="fa-solid fa-camera text-[11px]"></i>
+              <i class="fa-solid fa-image text-[11px]"></i>
             </button>
 
             <!-- Export Question CSV -->
@@ -8876,6 +8892,57 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   // SINGLE-QUESTION HIGH-RES PNG EXPORT (OFF-SCREEN WATERMARKED CANVAS)
   // --------------------------------------------------------------------------
+  downloadChartPNG(canvasId, titleSlug = 'chart') {
+    const canvas = typeof document !== 'undefined' ? document.getElementById(canvasId) : null;
+    if (!canvas || typeof canvas.getContext !== 'function') {
+      const gpsId = String(canvasId || '').replace(/^ae_chart_/, 'ae_gps_map_');
+      if (gpsId && typeof document !== 'undefined' && document.getElementById(gpsId)) {
+        if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+          window.AEApp.showToast('Geospatial cluster map is an interactive vector GIS layer. Use Print or PDF to export.', 'info');
+        }
+        return false;
+      }
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('Please open the Chart view before downloading PNG.', 'warning');
+      }
+      return false;
+    }
+
+    const srcW = canvas.width || 800;
+    const srcH = canvas.height || 400;
+    const pad = 20;
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = srcW + pad * 2;
+    exportCanvas.height = srcH + pad * 2;
+    const ctx = exportCanvas.getContext('2d');
+
+    // Composite onto solid white background so PNGs aren't transparent-black in dark viewers
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    ctx.drawImage(canvas, pad, pad);
+
+    const slug = String(titleSlug || 'chart')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 48) || 'chart';
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `AE_Chart_${slug}_${dateStr}.png`;
+
+    const dataUrl = exportCanvas.toDataURL('image/png', 1.0);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast(`Downloaded ${filename}`, 'success');
+    }
+    return filename;
+  },
+
   exportQuestionChartImage(qId, format = 'png') {
     const canvas = document.getElementById(`ae_chart_${qId}`);
     if (!canvas) {

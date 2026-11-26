@@ -42,6 +42,82 @@ window.AEBuilder = {
   targetLang: 'sw', // 'sw' | 'fr'
   previewMode: false, // false = editor, true = interactive simulator
   previewDevice: 'desktop', // 'desktop' | 'mobile'
+  _draggedQuestionId: null,
+
+  handleQuestionDragStart(e, qId) {
+    if (e && e.target && /^(INPUT|TEXTAREA|SELECT|OPTION)$/i.test(e.target.tagName || '')) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      return;
+    }
+    this._draggedQuestionId = qId;
+    if (e && e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try {
+        e.dataTransfer.setData('text/plain', String(qId));
+      } catch (_) {}
+    }
+    const card = typeof document !== 'undefined' ? document.getElementById(`builder_q_${qId}`) : null;
+    if (card) card.classList.add('opacity-50');
+  },
+
+  handleQuestionDragOver(e, qId) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (e && e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+    if (!this._draggedQuestionId || this._draggedQuestionId === qId) return;
+    const card = typeof document !== 'undefined' ? document.getElementById(`builder_q_${qId}`) : null;
+    if (card) {
+      card.classList.add('ring-2', 'ring-[#247B50]');
+    }
+  },
+
+  handleQuestionDragLeave(e, qId) {
+    if (e && e.currentTarget && e.relatedTarget && typeof e.currentTarget.contains === 'function' && e.currentTarget.contains(e.relatedTarget)) {
+      return;
+    }
+    const card = typeof document !== 'undefined' ? document.getElementById(`builder_q_${qId}`) : null;
+    if (card) {
+      card.classList.remove('ring-2', 'ring-[#247B50]');
+    }
+  },
+
+  handleQuestionDrop(e, targetQId) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    const card = typeof document !== 'undefined' ? document.getElementById(`builder_q_${targetQId}`) : null;
+    if (card) {
+      card.classList.remove('ring-2', 'ring-[#247B50]');
+    }
+    const draggedQId =
+      this._draggedQuestionId ||
+      (e && e.dataTransfer && typeof e.dataTransfer.getData === 'function' ? e.dataTransfer.getData('text/plain') : null);
+    this._draggedQuestionId = null;
+    if (draggedQId && targetQId && draggedQId !== targetQId && window.AEApp && typeof window.AEApp.reorderQuestionBlock === 'function') {
+      window.AEApp.reorderQuestionBlock(draggedQId, targetQId);
+    }
+  },
+
+  handleQuestionDragEnd(e) {
+    this._draggedQuestionId = null;
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('[id^="builder_q_"]').forEach((el) => {
+        el.classList.remove('opacity-50', 'ring-2', 'ring-[#247B50]');
+      });
+    }
+  },
+
+  scrollToQuestion(qId) {
+    if (typeof document === 'undefined' || !qId) return;
+    const el = document.getElementById(`builder_q_${qId}`);
+    if (!el) return;
+    if (typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    el.classList.add('ring-2', 'ring-[#247B50]');
+    setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-[#247B50]');
+    }, 1200);
+  },
 
   createDefaultQuestion(type) {
     const id = 'q_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5);
@@ -492,6 +568,42 @@ window.AEBuilder = {
               placeholder="Section instructions shown to respondent or enumerator…" />
           </div>
 
+          <!-- Quick Outline Navigator (shown when active page has 3+ questions) -->
+          ${(() => {
+            const pageQuestions = currentPage.questions || [];
+            if (pageQuestions.length < 3) return '';
+            const outlineNumMap = window.AEPiping && typeof window.AEPiping.computeQuestionDisplayNumbers === 'function'
+              ? window.AEPiping.computeQuestionDisplayNumbers(pageQuestions)
+              : {};
+            return `
+          <div class="bg-white border border-[#E4E7E4] rounded-[8px] px-3.5 py-2.5 flex items-center gap-2 overflow-x-auto" aria-label="Quick Outline Navigator">
+            <span class="text-[11px] font-semibold text-[#525B56] shrink-0 inline-flex items-center gap-1.5 pr-2 border-r border-[#EFEFEF]">
+              <i class="fa-solid fa-list-ol text-[#247B50]"></i> Outline
+            </span>
+            <div class="flex items-center gap-1.5 flex-nowrap">
+              ${pageQuestions
+                .map((q, idx) => {
+                  const nInfo = (outlineNumMap && outlineNumMap[q.id]) || { label: String(idx + 1), isSub: false };
+                  const rawTitle = String(q.title || 'Untitled Question').trim();
+                  const shortTitle = rawTitle.length > 22 ? rawTitle.substring(0, 22) + '…' : rawTitle;
+                  return `
+                <button type="button"
+                  onclick="AEBuilder.scrollToQuestion('${q.id}')"
+                  title="Q${AEApp.escapeAttr(nInfo.label)}: ${AEApp.escapeAttr(rawTitle)}"
+                  class="h-7 px-2.5 rounded-[5px] border text-[11px] font-medium inline-flex items-center gap-1.5 shrink-0 transition-colors ae-press ${
+                    q.parentQuestionId
+                      ? 'bg-[#DCFAE5]/50 border-[#247B50]/30 text-[#04250E] hover:bg-[#DCFAE5]'
+                      : 'bg-[#F8F9F8] border-[#E4E7E4] text-[#111613] hover:bg-[#DCFAE5]/40 hover:border-[#247B50]'
+                  }">
+                  <span class="font-semibold tabular-nums ${q.parentQuestionId ? 'text-[#247B50]' : 'text-[#141A17]'}">Q${AEApp.escapeHtml(nInfo.label)}</span>
+                  <span class="text-[#525B56] max-w-[120px] truncate hidden sm:inline">${AEApp.escapeHtml(shortTitle)}</span>
+                </button>`;
+                })
+                .join('')}
+            </div>
+          </div>`;
+          })()}
+
           <!-- Questions List on Active Page -->
           <div class="space-y-4">
             ${
@@ -776,6 +888,7 @@ window.AEBuilder = {
     const theme = survey.theme || { accentColor: '#247B50', showProgressBar: true, showQuestionNumbers: true };
     const branding = survey.branding || {};
     const schedule = survey.schedule || {};
+    const accessControl = survey.accessControl || { limitOnePerDevice: false, requireInviteToken: false, inviteTokens: [] };
     const alerts = survey.alerts || { enabled: false, recipients: '', alertOnUrgency: true, alertOnVelocity: true };
     const logoSrc = branding.logoDataUrl || branding.logoUrl || '';
     const formatDatetimeLocal = (val) => {
@@ -992,6 +1105,49 @@ window.AEBuilder = {
               placeholder="e.g. This survey has reached its target responses."
               class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
           </div>
+        </div>
+
+        <!-- Access & Anti-Duplicate -->
+        <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+              <i class="fa-solid fa-shield-halved text-[#247B50] text-[11px]"></i> Access &amp; Anti-Duplicate
+            </span>
+          </div>
+
+          <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer gap-2">
+            <span>Limit to 1 response per device</span>
+            <input type="checkbox" ${accessControl.limitOnePerDevice ? 'checked' : ''}
+              onchange="AEApp.updateSurveyAccessControl('limitOnePerDevice', this.checked)"
+              class="accent-[#247B50] w-4 h-4 rounded shrink-0" />
+          </label>
+
+          <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer gap-2">
+            <span>Require single-use invite link</span>
+            <input type="checkbox" ${accessControl.requireInviteToken ? 'checked' : ''}
+              onchange="AEApp.updateSurveyAccessControl('requireInviteToken', this.checked)"
+              class="accent-[#247B50] w-4 h-4 rounded shrink-0" />
+          </label>
+
+          ${
+            accessControl.requireInviteToken
+              ? (() => {
+                  const tokens = Array.isArray(accessControl.inviteTokens) ? accessControl.inviteTokens : [];
+                  const unusedCount = tokens.filter((t) => t && !t.used).length;
+                  return `
+                <div class="pt-1 space-y-1.5">
+                  <div class="flex items-center justify-between text-[11px] text-[#525B56]">
+                    <span>Unused invite links</span>
+                    <span class="font-semibold text-[#111613] tabular-nums">${unusedCount} / ${tokens.length}</span>
+                  </div>
+                  <button type="button" onclick="AEApp.generateSurveyInvites('${survey.id}', 5)"
+                    class="w-full h-8 px-3 rounded-[6px] border border-[#247B50] bg-[#DCFAE5]/60 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] flex items-center justify-center gap-1.5 ae-press">
+                    <i class="fa-solid fa-ticket text-[#247B50] text-[11px]"></i> Generate 5 Invite Links
+                  </button>
+                </div>`;
+                })()
+              : ''
+          }
         </div>
 
         <!-- Email Alerts & Digest -->
@@ -1304,13 +1460,28 @@ window.AEBuilder = {
       : null;
     const numInfo = (qNumMap && qNumMap[q.id]) || { label: String(qIdx + 1), isSub: false };
 
+    const isIndependent = !q.parentQuestionId;
+    const dragAttrs = isIndependent
+      ? `draggable="true"
+        ondragstart="AEBuilder.handleQuestionDragStart(event, '${q.id}')"
+        ondragover="AEBuilder.handleQuestionDragOver(event, '${q.id}')"
+        ondragleave="AEBuilder.handleQuestionDragLeave(event, '${q.id}')"
+        ondrop="AEBuilder.handleQuestionDrop(event, '${q.id}')"
+        ondragend="AEBuilder.handleQuestionDragEnd(event)"`
+      : '';
+
     return `
-      <div id="builder_q_${q.id}" class="bg-white border ${
+      <div id="builder_q_${q.id}" ${dragAttrs} class="bg-white border ${
         q.parentQuestionId ? 'border-[#E4E7E4] border-l-[3px] border-l-[#247B50] ml-3 sm:ml-6 bg-[#FAFBF9]' : 'border-[#E4E7E4]'
       } rounded-[10px] p-5 sm:p-6 ae-card-hover transition-colors duration-150">
         <!-- Top Row: Question Number, Quiet Type Label, Required Toggle & Actions -->
         <div class="flex flex-wrap items-center justify-between gap-2 pb-3.5 mb-4 border-b border-[#EFEFEF]">
           <div class="flex items-center gap-2.5 flex-wrap">
+            ${
+              isIndependent
+                ? `<span title="Drag to reorder" class="cursor-grab text-[#9CA69F] hover:text-[#111613] px-1"><i class="fa-solid fa-grip-vertical text-xs"></i></span>`
+                : ''
+            }
             <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-[5px] ${
               q.parentQuestionId ? 'bg-[#247B50]' : 'bg-[#141A17]'
             } text-white text-xs font-semibold tabular-nums">
