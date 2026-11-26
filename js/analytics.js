@@ -4105,8 +4105,8 @@ window.AEAnalytics = {
     const analysis = engine && typeof engine.analyzeVerbatims === 'function'
       ? engine.analyzeVerbatims(responses || [], survey, { questionId: q.id })
       : null;
-    const offlineBriefing = analysis && typeof engine.generateExecutiveBriefing === 'function'
-      ? engine.generateExecutiveBriefing(analysis, survey)
+    const insights = analysis && typeof engine.synthesizeQuestionInsights === 'function'
+      ? engine.synthesizeQuestionInsights(analysis, survey, q)
       : null;
 
     const surveyId = (survey && survey.id) || '';
@@ -4123,27 +4123,45 @@ window.AEAnalytics = {
     const negPct = Math.max(0, Math.min(100, Math.round(Number(sentiment.negativePct) || 0)));
     const neuPct = Math.max(0, 100 - posPct - negPct);
 
-    const themes = (analysis?.themes || []).filter((t) => (t.count || 0) > 0).slice(0, 5);
+    const themeInsights = insights && Array.isArray(insights.themeInsights) && insights.themeInsights.length > 0
+      ? insights.themeInsights.slice(0, 5)
+      : (analysis?.themes || []).filter((t) => (t.count || 0) > 0).slice(0, 5).map((t) => ({
+          id: t.id,
+          name: t.name,
+          count: t.count,
+          pct: t.pct,
+          insight: '',
+          sampleQuote: t.topQuote || ''
+        }));
+
     const records = analysis?.records || [];
     const actionableCount = records.filter((r) => r && r.isActionable).length;
 
-    // Build concise 2-3 sentence overall takeaway
-    let takeawayHeadline = '';
-    let takeawayBullets = [];
+    // Overall narrative synthesis (substance-first: puts all responses together)
+    let overallNarrative = '';
+    let keyTakeaways = [];
+    let aiRecommendations = [];
+    let aiUrgentRisks = [];
+
     if (isGemini) {
-      takeawayHeadline = String(cachedAi.briefing.headline || '').trim();
-      takeawayBullets = Array.isArray(cachedAi.briefing.summaryBullets)
-        ? cachedAi.briefing.summaryBullets.slice(0, 2)
-        : [];
-    } else if (offlineBriefing) {
-      takeawayHeadline = String(offlineBriefing.headline || '').trim();
-      const topThemeLead = themes.length > 0
-        ? `Leading topics: ${themes.slice(0, 3).map((t) => `${t.name} (${t.pct}%)`).join(', ')}.`
-        : '';
-      const sentimentLead = `Overall tone is ${posPct}% positive, ${neuPct}% neutral, and ${negPct}% negative${actionableCount > 0 ? `, with ${actionableCount} actionable ${actionableCount === 1 ? 'suggestion' : 'suggestions'}` : ''}.`;
-      takeawayBullets = [topThemeLead, sentimentLead].filter(Boolean);
+      overallNarrative = String(cachedAi.briefing.headline || '').trim();
+      const bullets = Array.isArray(cachedAi.briefing.summaryBullets) ? cachedAi.briefing.summaryBullets.slice(0, 5) : [];
+      keyTakeaways = bullets.map((b, i) => ({
+        label: i === 0 ? 'Key Finding' : 'Insight',
+        tone: 'neutral',
+        text: String(b || '').trim()
+      })).filter((k) => k.text);
+      aiRecommendations = Array.isArray(cachedAi.briefing.aiRecommendations)
+        ? cachedAi.briefing.aiRecommendations.slice(0, 4)
+        : (Array.isArray(cachedAi.briefing.recommendations) ? cachedAi.briefing.recommendations.slice(0, 4) : []);
+      aiUrgentRisks = Array.isArray(cachedAi.briefing.aiUrgentRisks)
+        ? cachedAi.briefing.aiUrgentRisks.slice(0, 3)
+        : (Array.isArray(cachedAi.briefing.urgentRisks) ? cachedAi.briefing.urgentRisks.slice(0, 3) : []);
+    } else if (insights) {
+      overallNarrative = insights.narrative;
+      keyTakeaways = insights.keyTakeaways || [];
     } else {
-      takeawayHeadline = `${values.length} open-ended ${values.length === 1 ? 'response' : 'responses'} recorded for this question.`;
+      overallNarrative = `${values.length} open-ended ${values.length === 1 ? 'response' : 'responses'} recorded for this question.`;
     }
 
     const aiBtnLabel = isBusy
@@ -4156,6 +4174,13 @@ window.AEAnalytics = {
       ? new Date(cachedAi.generatedAt).toISOString().replace('T', ' ').slice(0, 16)
       : '';
 
+    const takeawayBadgeStyle = (tone) => {
+      if (tone === 'positive') return 'bg-[#DCFAE5] text-[#04250E]';
+      if (tone === 'negative') return 'bg-[#FEE2E2] text-[#831C1E]';
+      if (tone === 'action') return 'bg-[#FFFBEB] text-[#92400E]';
+      return 'bg-[#EAECE9] text-[#2C3530]';
+    };
+
     return `
       <div class="space-y-4">
         <!-- Top Action Strip -->
@@ -4164,13 +4189,13 @@ window.AEAnalytics = {
             ${
               isGemini
                 ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] font-semibold">
-                    <i class="fa-solid fa-sparkles text-[10px]"></i> Gemini AI Summary
+                    <i class="fa-solid fa-sparkles text-[10px]"></i> Gemini AI Synthesis
                   </span>`
                 : `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#F4F6F4] text-[#525B56] font-medium">
-                    <i class="fa-solid fa-bolt text-[10px] text-[#247B50]"></i> Instant Analysis
+                    <i class="fa-solid fa-layer-group text-[10px] text-[#247B50]"></i> Overall Insights
                   </span>`
             }
-            <span class="text-[#646E68] tabular-nums">Based on ${values.length} ${values.length === 1 ? 'response' : 'responses'}</span>
+            <span class="text-[#646E68] tabular-nums">Synthesized from ${values.length} ${values.length === 1 ? 'response' : 'responses'}</span>
             ${cachedTimeLabel ? `<span class="text-[#CFD5D0]">&middot;</span><span class="text-[#646E68] tabular-nums">Updated ${AEApp.escapeHtml(cachedTimeLabel)}</span>` : ''}
           </div>
 
@@ -4191,111 +4216,126 @@ window.AEAnalytics = {
           </div>
         </div>
 
-        <!-- Overall Takeaway Box -->
-        <div class="p-4 rounded-[6px] border ${isGemini ? 'border-[#247B50]/30 bg-[#F3FBF6]/70' : 'border-[#E4E7E4] bg-[#FAFBF9]'} space-y-2">
-          ${takeawayHeadline ? `<p class="text-[13px] font-medium text-[#111613] leading-relaxed">${AEApp.escapeHtml(takeawayHeadline)}</p>` : ''}
+        <!-- Synthesized Overall Insights Box (Substance First) -->
+        <div class="p-4 rounded-[6px] border ${isGemini ? 'border-[#247B50]/35 bg-[#F3FBF6]/70' : 'border-[#E4E7E4] bg-[#FAFBF9]'} space-y-3">
+          <div>
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-[#247B50] mb-1">Overall Synthesis</div>
+            <p class="text-[13px] font-medium text-[#111613] leading-relaxed">${AEApp.escapeHtml(overallNarrative)}</p>
+          </div>
+
           ${
-            takeawayBullets.length > 0
-              ? `<div class="space-y-1 text-xs text-[#525B56] leading-relaxed">
-                  ${takeawayBullets.map((b) => `<p>${AEApp.escapeHtml(b)}</p>`).join('')}
+            keyTakeaways.length > 0
+              ? `<div class="pt-2.5 border-t border-[#E4E7E4]/80 space-y-2">
+                  <div class="text-[11px] font-semibold text-[#525B56]">Key Takeaways Put Together</div>
+                  <ul class="space-y-2 text-xs text-[#2C3530] leading-relaxed">
+                    ${keyTakeaways
+                      .map((item) => `
+                        <li class="flex items-start gap-2">
+                          <span class="px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold shrink-0 mt-0.5 ${takeawayBadgeStyle(item.tone)}">${AEApp.escapeHtml(item.label)}</span>
+                          <span class="min-w-0 ae-break-words">${AEApp.escapeHtml(item.text)}</span>
+                        </li>
+                      `)
+                      .join('')}
+                  </ul>
+                </div>`
+              : ''
+          }
+
+          ${
+            aiRecommendations.length > 0
+              ? `<div class="pt-2.5 border-t border-[#E4E7E4]/80 space-y-1.5">
+                  <div class="text-[11px] font-semibold text-[#04250E]">Recommended Actions</div>
+                  <ul class="list-disc pl-4 space-y-1 text-xs text-[#2C3530] leading-relaxed">
+                    ${aiRecommendations.map((rec) => `<li>${AEApp.escapeHtml(rec)}</li>`).join('')}
+                  </ul>
+                </div>`
+              : ''
+          }
+
+          ${
+            aiUrgentRisks.length > 0
+              ? `<div class="p-2.5 rounded-[5px] bg-[#FFF7F6] border border-[#F5C2C0] space-y-1">
+                  <div class="text-[11px] font-semibold text-[#831C1E]">Items Needing Attention</div>
+                  <ul class="list-disc pl-4 space-y-0.5 text-xs text-[#831C1E]">
+                    ${aiUrgentRisks.map((risk) => `<li>${AEApp.escapeHtml(risk)}</li>`).join('')}
+                  </ul>
                 </div>`
               : ''
           }
         </div>
 
-        <!-- Themes & Sentiment Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          <!-- Top Themes Horizontal Share Bars -->
-          <div class="lg:col-span-7 space-y-2.5">
-            <div class="flex items-center justify-between text-[11px] font-medium text-[#525B56]">
-              <span>Top Themes</span>
-              <span class="text-[#646E68]">Click any theme to filter</span>
+        <!-- Substantive Theme Breakdown -->
+        ${
+          themeInsights.length > 0
+            ? `<div class="space-y-2">
+                <div class="flex items-center justify-between text-[11px] font-medium text-[#525B56]">
+                  <span>Recurring Themes &amp; What Respondents Said</span>
+                  <span class="text-[#646E68]">Click any theme to filter in Verbatim tab</span>
+                </div>
+                <div class="space-y-2">
+                  ${themeInsights
+                    .map((t) => {
+                      const pct = Math.max(0, Math.min(100, Math.round(Number(t.pct) || 0)));
+                      const safeThemeJs = AEApp.escapeJs(t.id || t.name || 'all');
+                      return `
+                        <button type="button"
+                          onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', '${safeThemeJs}')"
+                          class="w-full text-left group p-2.5 rounded-[6px] border border-[#EFEFEF] hover:border-[#247B50]/40 bg-white hover:bg-[#FAFBF9] transition-colors space-y-1.5">
+                          <div class="flex items-center justify-between gap-2 text-xs">
+                            <span class="font-semibold text-[#111613] group-hover:text-[#247B50] truncate">${AEApp.escapeHtml(t.name)}</span>
+                            <span class="text-[11px] text-[#525B56] tabular-nums shrink-0">
+                              <strong class="text-[#111613]">${t.count}</strong> responses (${pct}%)
+                            </span>
+                          </div>
+                          <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                            <div class="h-full rounded-full bg-[#247B50]" style="width: ${Math.max(pct, 3)}%;"></div>
+                          </div>
+                          ${t.insight ? `<div class="text-[11.5px] text-[#525B56] leading-snug">${AEApp.escapeHtml(t.insight)}</div>` : ''}
+                          ${t.sampleQuote ? `<div class="text-[11px] text-[#646E68] italic truncate">&ldquo;${AEApp.escapeHtml(t.sampleQuote)}&rdquo;</div>` : ''}
+                        </button>
+                      `;
+                    })
+                    .join('')}
+                </div>
+              </div>`
+            : ''
+        }
+
+        <!-- Compact Supporting Tone Bar & Frequent Terms (Secondary to Insights) -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3.5 py-2.5 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] text-[11px]">
+          <div class="flex flex-wrap items-center gap-2.5">
+            <span class="font-medium text-[#525B56]">Tone:</span>
+            <div class="w-24 h-2 rounded-full bg-[#EAECE9] overflow-hidden flex shrink-0" role="img" aria-label="Tone split: ${posPct}% positive, ${neuPct}% neutral, ${negPct}% negative">
+              ${posPct > 0 ? `<div style="width: ${posPct}%;" class="bg-[#247B50] h-full" title="Positive: ${posPct}%"></div>` : ''}
+              ${neuPct > 0 ? `<div style="width: ${neuPct}%;" class="bg-[#94A3B8] h-full" title="Neutral: ${neuPct}%"></div>` : ''}
+              ${negPct > 0 ? `<div style="width: ${negPct}%;" class="bg-[#C4242A] h-full" title="Negative: ${negPct}%"></div>` : ''}
             </div>
-            ${
-              themes.length > 0
-                ? `<div class="space-y-2">
-                    ${themes
-                      .map((t) => {
-                        const pct = Math.max(0, Math.min(100, Math.round(Number(t.pct) || 0)));
-                        const safeThemeJs = AEApp.escapeJs(t.id || t.name || 'all');
-                        return `
-                          <button type="button"
-                            onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', '${safeThemeJs}')"
-                            class="w-full text-left group p-2 rounded-[5px] border border-transparent hover:border-[#E4E7E4] hover:bg-[#FAFBF9] transition-colors">
-                            <div class="flex items-center justify-between gap-2 text-xs mb-1">
-                              <span class="font-medium text-[#111613] group-hover:text-[#247B50] truncate">${AEApp.escapeHtml(t.name)}</span>
-                              <span class="text-[11px] text-[#525B56] tabular-nums shrink-0">
-                                <strong class="text-[#111613]">${t.count}</strong> (${pct}%)
-                              </span>
-                            </div>
-                            <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
-                              <div class="h-full rounded-full bg-[#247B50]" style="width: ${Math.max(pct, 3)}%;"></div>
-                            </div>
-                          </button>
-                        `;
-                      })
-                      .join('')}
-                  </div>`
-                : `<div class="p-3 rounded-[5px] bg-[#FAFBF9] border border-[#EFEFEF] text-xs text-[#646E68]">
-                    Not enough repeated keywords yet to cluster themes automatically.
-                  </div>`
-            }
+            <span class="text-[#525B56] tabular-nums">
+              <strong class="text-[#247B50]">${posPct}%</strong> pos &middot;
+              <strong class="text-[#525B56]">${neuPct}%</strong> neu &middot;
+              <strong class="text-[#C4242A]">${negPct}%</strong> neg
+            </span>
           </div>
 
-          <!-- Compact Sentiment Split & Actionable Pill -->
-          <div class="lg:col-span-5 flex flex-col justify-between gap-3 p-3.5 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9]">
-            <div class="space-y-2.5">
-              <div class="flex items-center justify-between text-[11px] font-medium text-[#525B56]">
-                <span>Sentiment Split</span>
-                ${
-                  actionableCount > 0
-                    ? `<button type="button" onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
-                        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[10.5px] font-semibold hover:bg-[#FEF3C7] tabular-nums">
-                        <i class="fa-solid fa-lightbulb text-[9px]"></i> ${actionableCount} actionable
-                      </button>`
-                    : `<span class="text-[10.5px] text-[#646E68] tabular-nums">0 actionable flagged</span>`
-                }
-              </div>
-              <div class="w-full h-2.5 rounded-full bg-[#EAECE9] overflow-hidden flex" role="img" aria-label="Sentiment split: ${posPct}% positive, ${neuPct}% neutral, ${negPct}% negative">
-                ${posPct > 0 ? `<div style="width: ${posPct}%;" class="bg-[#247B50] h-full" title="Positive: ${posPct}%"></div>` : ''}
-                ${neuPct > 0 ? `<div style="width: ${neuPct}%;" class="bg-[#94A3B8] h-full" title="Neutral: ${neuPct}%"></div>` : ''}
-                ${negPct > 0 ? `<div style="width: ${negPct}%;" class="bg-[#C4242A] h-full" title="Negative: ${negPct}%"></div>` : ''}
-              </div>
-              <div class="grid grid-cols-3 gap-2 pt-1 text-[11px] tabular-nums">
-                <div>
-                  <span class="inline-block w-2 h-2 rounded-full bg-[#247B50] mr-1"></span>
-                  <span class="text-[#525B56]">Positive</span>
-                  <div class="font-semibold text-[#111613] mt-0.5">${posPct}%</div>
-                </div>
-                <div>
-                  <span class="inline-block w-2 h-2 rounded-full bg-[#94A3B8] mr-1"></span>
-                  <span class="text-[#525B56]">Neutral</span>
-                  <div class="font-semibold text-[#111613] mt-0.5">${neuPct}%</div>
-                </div>
-                <div>
-                  <span class="inline-block w-2 h-2 rounded-full bg-[#C4242A] mr-1"></span>
-                  <span class="text-[#525B56]">Negative</span>
-                  <div class="font-semibold text-[#111613] mt-0.5">${negPct}%</div>
-                </div>
-              </div>
-            </div>
-
+          <div class="flex flex-wrap items-center gap-1.5">
+            ${
+              actionableCount > 0
+                ? `<button type="button" onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[10.5px] font-semibold hover:bg-[#FEF3C7] tabular-nums">
+                    <i class="fa-solid fa-lightbulb text-[9px]"></i> ${actionableCount} actionable
+                  </button>`
+                : ''
+            }
             ${
               Array.isArray(analysis?.topTerms) && analysis.topTerms.length > 0
-                ? `<div class="pt-2.5 border-t border-[#E4E7E4]">
-                    <div class="text-[10.5px] text-[#646E68] mb-1.5">Frequent Terms</div>
-                    <div class="flex flex-wrap gap-1.5">
-                      ${analysis.topTerms
-                        .slice(0, 6)
-                        .map((termObj) => {
-                          const label = typeof termObj === 'string' ? termObj : (termObj.term || termObj.word || '');
-                          const cnt = typeof termObj === 'object' && termObj ? (termObj.count || termObj.freq || '') : '';
-                          if (!label) return '';
-                          return `<span class="px-2 py-0.5 rounded-[4px] bg-white border border-[#E4E7E4] text-[10.5px] text-[#111613] tabular-nums">${AEApp.escapeHtml(label)}${cnt ? ` <span class="text-[#646E68]">(${cnt})</span>` : ''}</span>`;
-                        })
-                        .join('')}
-                    </div>
-                  </div>`
+                ? analysis.topTerms
+                    .slice(0, 4)
+                    .map((termObj) => {
+                      const label = typeof termObj === 'string' ? termObj : (termObj.term || termObj.word || '');
+                      if (!label) return '';
+                      return `<span class="px-1.5 py-0.5 rounded-[4px] bg-white border border-[#E4E7E4] text-[10.5px] text-[#525B56]">${AEApp.escapeHtml(label)}</span>`;
+                    })
+                    .join('')
                 : ''
             }
           </div>

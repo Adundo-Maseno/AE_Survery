@@ -141,7 +141,14 @@
           if (sampleQuotes.length < 3) sampleQuotes.push(txt);
         }
       });
-      return { kind: 'text', answered, totalN, sampleQuotes };
+      let insights = null;
+      if (answered > 0 && globalScope.AETeXtEngine && typeof globalScope.AETeXtEngine.analyzeVerbatims === 'function' && typeof globalScope.AETeXtEngine.synthesizeQuestionInsights === 'function') {
+        try {
+          const qAnalysis = globalScope.AETeXtEngine.analyzeVerbatims(responses, { id: 'export', questions: [q] }, { questionId: q.id });
+          insights = globalScope.AETeXtEngine.synthesizeQuestionInsights(qAnalysis, { id: 'export', questions: [q] }, q);
+        } catch (e) {}
+      }
+      return { kind: 'text', answered, totalN, sampleQuotes, insights };
     }
 
     // Categorical / Choice / Rating / NPS
@@ -383,12 +390,27 @@
             </table>
           `;
         } else if (bd.kind === 'text') {
-          bodyHtml = bd.sampleQuotes.length > 0
-            ? `<div style="margin-top:10px; font-size:12px; color:#2C3530;">
-                <div style="font-size:11px; font-weight:600; color:#525B56; margin-bottom:6px;">Selected responses (${bd.answered} recorded)</div>
-                ${bd.sampleQuotes.map((qt) => `<div style="padding:7px 12px; margin-bottom:6px; background-color:#FAFBF9; border-left:2px solid #247B50; font-style:italic; line-height:1.5;">&ldquo;${_esc(qt.length > 220 ? qt.slice(0, 217) + '...' : qt)}&rdquo;</div>`).join('')}
-              </div>`
-            : `<p style="font-size:12px; color:#646E68; margin:8px 0 0 0;">No written responses were recorded for this question.</p>`;
+          if (bd.insights && bd.insights.narrative) {
+            const takeawaysHtml = Array.isArray(bd.insights.keyTakeaways) && bd.insights.keyTakeaways.length > 0
+              ? `<ul style="margin:8px 0 0 0; padding-left:18px; font-size:11.5px; color:#2C3530; line-height:1.5;">
+                  ${bd.insights.keyTakeaways.slice(0, 4).map((t) => `<li style="margin-bottom:4px;"><strong style="color:#111613;">${_esc(t.label)}:</strong> ${_esc(t.text)}</li>`).join('')}
+                </ul>`
+              : '';
+            bodyHtml = `
+              <div style="margin-top:10px; padding:10px 12px; background-color:#FAFBF9; border-left:3px solid #247B50; border-radius:4px;">
+                <div style="font-size:10.5px; font-weight:600; color:#247B50; text-transform:uppercase; margin-bottom:4px;">Overall Insights (${bd.answered} responses)</div>
+                <div style="font-size:12px; color:#111613; line-height:1.55;">${_esc(bd.insights.narrative)}</div>
+                ${takeawaysHtml}
+              </div>
+            `;
+          } else {
+            bodyHtml = bd.sampleQuotes.length > 0
+              ? `<div style="margin-top:10px; font-size:12px; color:#2C3530;">
+                  <div style="font-size:11px; font-weight:600; color:#525B56; margin-bottom:6px;">Selected responses (${bd.answered} recorded)</div>
+                  ${bd.sampleQuotes.map((qt) => `<div style="padding:7px 12px; margin-bottom:6px; background-color:#FAFBF9; border-left:2px solid #247B50; font-style:italic; line-height:1.5;">&ldquo;${_esc(qt.length > 220 ? qt.slice(0, 217) + '...' : qt)}&rdquo;</div>`).join('')}
+                </div>`
+              : `<p style="font-size:12px; color:#646E68; margin:8px 0 0 0;">No written responses were recorded for this question.</p>`;
+          }
         } else {
           const extraStats = bd.npsScore !== null
             ? `<span style="font-size:11px; font-weight:600; color:#04250E; background-color:#DCFAE5; padding:2px 8px; border-radius:3px;">NPS: ${bd.npsScore >= 0 ? '+' : ''}${bd.npsScore}</span>`

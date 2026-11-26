@@ -2349,6 +2349,299 @@
     },
 
     // ------------------------------------------------------------------------
+    // 9B. Question-Level Substantive Insight Synthesis (Offline Narrative)
+    //     Puts all open-ended responses together into cohesive takeaways,
+    //     theme insights, strengths, challenges, and concrete requests —
+    //     rather than just listing sentiment percentages.
+    // ------------------------------------------------------------------------
+    synthesizeQuestionInsights(analysis, survey, question) {
+      const safeAnalysis = analysis || { totalAnalyzed: 0, records: [], themes: [], topTerms: [], sentimentSummary: {} };
+      const records = Array.isArray(safeAnalysis.records) ? safeAnalysis.records : [];
+      const total = records.length || safeAnalysis.totalAnalyzed || 0;
+
+      if (total === 0) {
+        return {
+          narrative: 'No open-ended responses have been recorded for this question yet.',
+          keyTakeaways: [],
+          themeInsights: [],
+          recommendations: [],
+          representativeVoices: []
+        };
+      }
+
+      const cleanExcerpt = (raw, maxLen = 145) => {
+        const s = String(raw || '').replace(/\s+/g, ' ').trim();
+        if (!s) return '';
+        if (s.length <= maxLen) return s;
+        const cut = s.slice(0, maxLen - 1);
+        const lastSpace = cut.lastIndexOf(' ');
+        return (lastSpace > maxLen * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[,;:\-]+$/, '') + '…';
+      };
+
+      const tokenizeLocal = (text) => {
+        return String(text || '')
+          .toLowerCase()
+          .replace(/[^a-z0-9\u00c0-\u024f\s'-]/g, ' ')
+          .split(/\s+/)
+          .filter((w) => w.length >= 3 && !STOP_WORDS.has(w) && !TOPIC_ANCHOR_NOISE.has(w));
+      };
+
+      // Build corpus TF-IDF map for extractive centrality (LexRank-style representative picking)
+      const docTokens = records.map((r) => tokenizeLocal(r.translatedText || r.text || ''));
+      const dfMap = Object.create(null);
+      docTokens.forEach((toks) => {
+        new Set(toks).forEach((w) => {
+          dfMap[w] = (dfMap[w] || 0) + 1;
+        });
+      });
+
+      const scoreRecordInformativeness = (rec, idx) => {
+        const txt = String(rec.translatedText || rec.text || '').trim();
+        const toks = docTokens[idx] || [];
+        if (!txt || toks.length === 0) return 0;
+        let tfidfSum = 0;
+        const seen = new Set();
+        toks.forEach((w) => {
+          if (seen.has(w)) return;
+          seen.add(w);
+          const df = dfMap[w] || 1;
+          const idf = 1 + Math.log((total + 1) / (df + 1));
+          // Favor terms shared by multiple respondents (consensus) over one-off typos
+          const consensusBoost = df >= 2 ? 1.35 : 0.85;
+          tfidfSum += idf * consensusBoost;
+        });
+        const lenScore = Math.min(txt.length, 180) / 90;
+        const actionableBoost = rec.isActionable ? 0.6 : 0;
+        return tfidfSum / Math.sqrt(Math.max(1, seen.size)) + lenScore + actionableBoost;
+      };
+
+      const jaccardSimilarity = (tokA, tokB) => {
+        const setA = new Set(tokA);
+        const setB = new Set(tokB);
+        if (setA.size === 0 || setB.size === 0) return 0;
+        let inter = 0;
+        setA.forEach((w) => {
+          if (setB.has(w)) inter++;
+        });
+        const union = setA.size + setB.size - inter;
+        return union > 0 ? inter / union : 0;
+      };
+
+      const pickDiverseRepresentative = (subsetWithIdx, limit = 3) => {
+        const scored = subsetWithIdx
+          .map(({ rec, idx }) => ({
+            rec,
+            idx,
+            toks: docTokens[idx] || [],
+            score: scoreRecordInformativeness(rec, idx),
+            norm: String(rec.translatedText || rec.text || '').toLowerCase().replace(/\s+/g, ' ').trim()
+          }))
+          .filter((x) => x.norm.length >= 4)
+          .sort((a, b) => b.score - a.score);
+
+        const picked = [];
+        for (let i = 0; i < scored.length && picked.length < limit; i++) {
+          const cand = scored[i];
+          const tooSimilar = picked.some((p) => p.norm === cand.norm || jaccardSimilarity(p.toks, cand.toks) >= 0.55);
+          if (!tooSimilar) picked.push(cand);
+        }
+        return picked.map((p) => p.rec);
+      };
+
+      const extractSubPhrases = (subsetWithIdx, excludeWords = new Set(), maxPhrases = 3) => {
+        const counts = Object.create(null);
+        subsetWithIdx.forEach(({ idx }) => {
+          const toks = docTokens[idx] || [];
+          const seen = new Set();
+          for (let i = 0; i < toks.length; i++) {
+            const w1 = toks[i];
+            if (!excludeWords.has(w1) && !seen.has(w1)) {
+              counts[w1] = (counts[w1] || 0) + 1;
+              seen.add(w1);
+            }
+            if (i < toks.length - 1) {
+              const w2 = toks[i + 1];
+              if (w1 !== w2 && !(excludeWords.has(w1) && excludeWords.has(w2))) {
+                const bg = `${w1} ${w2}`;
+                if (!seen.has(bg)) {
+                  counts[bg] = (counts[bg] || 0) + 1.4;
+                  seen.add(bg);
+                }
+              }
+            }
+          }
+        });
+        return Object.entries(counts)
+          .filter(([, c]) => c >= (subsetWithIdx.length >= 4 ? 2 : 1))
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, maxPhrases)
+          .map(([term]) => term);
+      };
+
+      const indexedRecords = records.map((rec, idx) => ({ rec, idx }));
+      const rawThemes = (safeAnalysis.themes || []).filter((t) => (t.count || 0) > 0).slice(0, 5);
+
+      // 1. Build substantive theme insights (what respondents actually said per theme)
+      const themeInsights = rawThemes.map((t) => {
+        const tRecs = indexedRecords.filter(({ rec }) =>
+          (Array.isArray(rec.themeIds) && rec.themeIds.includes(t.id)) ||
+          (Array.isArray(rec.themeNames) && rec.themeNames.includes(t.name))
+        );
+        const themeExclude = new Set(String(t.name || '').toLowerCase().split(/\s+/));
+        const subPhrases = extractSubPhrases(tRecs, themeExclude, 3);
+        const bestRep = pickDiverseRepresentative(tRecs, 1)[0];
+        const sampleQuote = cleanExcerpt(bestRep ? (bestRep.translatedText || bestRep.text) : (t.topQuote || ''), 135);
+
+        let stance = 'discussed across responses';
+        if (t.positive > t.negative && t.netSentiment >= 20) stance = 'highlighted mostly as a strength';
+        else if (t.negative > t.positive && t.netSentiment <= -20) stance = 'raised primarily as a challenge';
+        else if (t.positive > 0 && t.negative > 0) stance = 'drew mixed feedback';
+
+        const focusText = subPhrases.length > 0 ? ` — centering on ${subPhrases.slice(0, 2).join(' and ')}` : '';
+        const insight = `Raised in ${t.count} of ${total} responses (${t.pct}%), ${stance}${focusText}.`;
+
+        return {
+          id: t.id,
+          name: t.name,
+          count: t.count,
+          pct: t.pct,
+          netSentiment: t.netSentiment,
+          insight,
+          sampleQuote
+        };
+      });
+
+      // 2. Partition by substance: strengths, challenges, actionable requests, and overall representative voices
+      const positiveRecs = indexedRecords.filter(({ rec }) => rec.sentiment === 'positive');
+      const negativeRecs = indexedRecords.filter(({ rec }) => rec.sentiment === 'negative');
+      const actionableRecs = indexedRecords.filter(({ rec }) => rec.isActionable);
+
+      const topPosReps = pickDiverseRepresentative(positiveRecs, 2);
+      const topNegReps = pickDiverseRepresentative(negativeRecs, 2);
+      const topActReps = pickDiverseRepresentative(actionableRecs, 3);
+      const representativeVoices = pickDiverseRepresentative(indexedRecords, 4).map((r) => ({
+        text: cleanExcerpt(r.translatedText || r.text, 160),
+        sentiment: r.sentiment || 'neutral',
+        themes: r.themeNames || []
+      }));
+
+      // 3. Build cohesive overall narrative paragraph (substance-first, NOT sentiment-only)
+      const narrativeParts = [];
+      if (themeInsights.length >= 2) {
+        narrativeParts.push(
+          `Across ${total} responses, respondents most frequently focused on ${themeInsights[0].name} (${themeInsights[0].pct}%) and ${themeInsights[1].name} (${themeInsights[1].pct}%)${themeInsights[2] ? `, alongside ${themeInsights[2].name} (${themeInsights[2].pct}%)` : ''}.`
+        );
+      } else if (themeInsights.length === 1) {
+        narrativeParts.push(
+          `Across ${total} responses, feedback centered primarily on ${themeInsights[0].name} (${themeInsights[0].pct}% of answers).`
+        );
+      } else {
+        const topTerms = (safeAnalysis.topTerms || [])
+          .slice(0, 4)
+          .map((x) => (typeof x === 'string' ? x : (x.term || x.word || '')))
+          .filter(Boolean);
+        narrativeParts.push(
+          topTerms.length > 0
+            ? `Across ${total} responses, respondents shared varied perspectives touching on ${topTerms.slice(0, 3).join(', ')}.`
+            : `Across ${total} responses, respondents provided distinct, individual viewpoints with no single dominant keyword cluster.`
+        );
+      }
+
+      if (topPosReps.length > 0 && topNegReps.length > 0) {
+        narrativeParts.push(
+          `Feedback highlights both strengths (such as "${cleanExcerpt(topPosReps[0].translatedText || topPosReps[0].text, 95)}") and areas of friction (such as "${cleanExcerpt(topNegReps[0].translatedText || topNegReps[0].text, 95)}").`
+        );
+      } else if (topNegReps.length > 0) {
+        narrativeParts.push(
+          `Key concerns raised include "${cleanExcerpt(topNegReps[0].translatedText || topNegReps[0].text, 110)}".`
+        );
+      } else if (topPosReps.length > 0) {
+        narrativeParts.push(
+          `Respondents consistently noted positive experiences, including "${cleanExcerpt(topPosReps[0].translatedText || topPosReps[0].text, 110)}".`
+        );
+      } else if (representativeVoices.length > 0) {
+        narrativeParts.push(
+          `Representative points include "${cleanExcerpt(representativeVoices[0].text, 105)}"${representativeVoices[1] ? ` and "${cleanExcerpt(representativeVoices[1].text, 105)}"` : ''}.`
+        );
+      }
+
+      if (actionableRecs.length > 0 && topActReps.length > 0) {
+        narrativeParts.push(
+          `${actionableRecs.length} ${actionableRecs.length === 1 ? 'response offers' : 'responses offer'} concrete suggestions, notably "${cleanExcerpt(topActReps[0].translatedText || topActReps[0].text, 100)}".`
+        );
+      }
+
+      const narrative = narrativeParts.join(' ');
+
+      // 4. Structured Key Takeaways (3–5 crisp substance bullets)
+      const keyTakeaways = [];
+
+      if (themeInsights.length > 0) {
+        const lead = themeInsights[0];
+        keyTakeaways.push({
+          label: 'Main Pattern',
+          tone: 'neutral',
+          text: `${lead.name} is the leading topic (${lead.count} of ${total} responses, ${lead.pct}%).${lead.sampleQuote ? ` Typical response: "${lead.sampleQuote}"` : ''}`
+        });
+      }
+
+      if (topPosReps.length > 0) {
+        const posPhrases = extractSubPhrases(positiveRecs, new Set(), 3);
+        const posIntro = posPhrases.length > 0 ? `Respondents praised ${posPhrases.slice(0, 2).join(' and ')}` : 'Respondents highlighted positive experiences';
+        keyTakeaways.push({
+          label: 'What’s Working',
+          tone: 'positive',
+          text: `${posIntro} (${positiveRecs.length} responses) — e.g., "${cleanExcerpt(topPosReps[0].translatedText || topPosReps[0].text, 120)}"`
+        });
+      }
+
+      if (topNegReps.length > 0) {
+        const negPhrases = extractSubPhrases(negativeRecs, new Set(), 3);
+        const negIntro = negPhrases.length > 0 ? `Main pain points center on ${negPhrases.slice(0, 2).join(' and ')}` : 'Respondents flagged specific challenges';
+        keyTakeaways.push({
+          label: 'Key Challenges',
+          tone: 'negative',
+          text: `${negIntro} (${negativeRecs.length} responses) — e.g., "${cleanExcerpt(topNegReps[0].translatedText || topNegReps[0].text, 120)}"`
+        });
+      }
+
+      if (topActReps.length > 0) {
+        keyTakeaways.push({
+          label: 'What Respondents Ask For',
+          tone: 'action',
+          text: `${actionableRecs.length} actionable ${actionableRecs.length === 1 ? 'suggestion' : 'suggestions'} — including "${cleanExcerpt(topActReps[0].translatedText || topActReps[0].text, 120)}"${topActReps[1] ? ` and "${cleanExcerpt(topActReps[1].translatedText || topActReps[1].text, 100)}"` : ''}.`
+        });
+      }
+
+      // If responses were predominantly neutral/informational (few takeaways so far), surface the most informative distinct voices directly
+      if (keyTakeaways.length < 3 && representativeVoices.length > 0) {
+        const usedQuotes = new Set(keyTakeaways.map((k) => k.text));
+        representativeVoices.forEach((v) => {
+          if (keyTakeaways.length >= 4) return;
+          const alreadyMentioned = Array.from(usedQuotes).some((u) => u.includes(v.text.slice(0, 45)));
+          if (!alreadyMentioned) {
+            keyTakeaways.push({
+              label: 'Key Response',
+              tone: 'neutral',
+              text: `"${v.text}"`
+            });
+            usedQuotes.add(v.text);
+          }
+        });
+      }
+
+      const recommendations = topActReps.map((r) => cleanExcerpt(r.translatedText || r.text, 160));
+
+      return {
+        narrative,
+        keyTakeaways: keyTakeaways.slice(0, 5),
+        themeInsights,
+        recommendations,
+        representativeVoices
+      };
+    },
+
+    // ------------------------------------------------------------------------
     // 10. Pinned Quotes Persistence (localStorage with in-memory fallback)
     // ------------------------------------------------------------------------
     getPinnedQuotes(surveyId) {
