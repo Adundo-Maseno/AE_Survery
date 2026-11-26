@@ -2327,98 +2327,111 @@ window.AEAnalytics = {
         </div>
 
         <!-- 1. Stage Title & Executive Action Bar -->
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-[#EFEFEF]">
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2.5">
-              <h1 class="text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Analyze Results &amp; Survey Intelligence</h1>
+        <div class="space-y-3 pb-5 border-b border-[#EFEFEF]">
+          <!-- Row 1: Title + Active Survey Switcher + Live Share / Reset -->
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2.5">
+                <h1 class="text-[22px] sm:text-[24px] font-semibold text-[#111613] tracking-tight leading-tight">Analyze Results &amp; Survey Intelligence</h1>
+                ${
+                  survey.status === 'Archived'
+                    ? `<span class="px-2.5 py-0.5 rounded-[4px] text-xs font-semibold bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0] inline-flex items-center gap-1">
+                        <i class="fa-solid fa-box-archive text-[10px]"></i> Archived (Read-Only)
+                      </span>`
+                    : ''
+                }
+                <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56] bg-[#F8F9F8] border border-[#E4E7E4] px-2.5 py-0.5 rounded-full">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
+                  <span class="tabular-nums font-medium">${filtered.length} of ${allResponses.length} records in scope</span>
+                </span>
+              </div>
+              <p class="text-xs sm:text-sm text-[#525B56] mt-1">
+                Cross-tabulations with hypothesis testing (χ²), Pearson variable correlations, automated key drivers, and verbatim NLP.
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
               ${
-                survey.status === 'Archived'
-                  ? `<span class="px-2.5 py-0.5 rounded-[4px] text-xs font-semibold bg-[#F4F6F4] text-[#646E68] border border-[#CFD5D0] inline-flex items-center gap-1">
-                      <i class="fa-solid fa-box-archive text-[10px]"></i> Archived (Read-Only)
-                    </span>`
+                !isPublicReportMode
+                  ? `<!-- Active Survey Switcher -->
+                    <select onchange="AEApp.switchStage('analyze', this.value)"
+                      aria-label="Select Survey to Analyze"
+                      class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[240px] truncate">
+                      ${(window.aeStore.getSurveysForUser
+                        ? window.aeStore.getSurveysForUser(
+                            window.AESession && typeof window.AESession.getCurrentUser === 'function' ? window.AESession.getCurrentUser() : null,
+                            { includeArchived: true }
+                          )
+                        : window.aeStore.surveys
+                      )
+                        .map(
+                          (s) =>
+                            `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
+                              s.title.substring(0, 30)
+                            )}${s.title.length > 30 ? '…' : ''}${s.status === 'Archived' ? ' [Archived]' : ''}</option>`
+                        )
+                        .join('')}
+                    </select>`
                   : ''
               }
-              <span class="inline-flex items-center gap-1.5 text-xs text-[#525B56]">
-                <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
-                <span class="tabular-nums">${filtered.length} of ${allResponses.length} records in scope</span>
-              </span>
+              ${
+                !isPublicReportMode
+                  ? `<button onclick="AEApp.copyLiveReportLink('${safeSurveyIdJs}')"
+                      title="Copy privacy-safe read-only live stakeholder results link"
+                      class="h-8 px-3 rounded-[6px] border border-[#247B50] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                      <i class="fa-solid fa-share-nodes text-xs"></i> Share Live Results
+                    </button>`
+                  : ''
+              }
+              ${
+                (!isPublicReportMode && window.AESession && window.AESession.getCurrentUser && window.AESession.getCurrentUser()?.role === 'admin' && allResponses.length > 0)
+                  ? `<button onclick="AEApp.resetSurveyTestData('${safeSurveyIdJs}')"
+                      title="Clear all test responses locally and in Google Sheets (keeps survey questions & link intact)"
+                      class="h-8 px-3 rounded-[6px] border border-[#F5C2C0] bg-[#FFEDEA] hover:bg-[#C4242A] text-[#831C1E] hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors whitespace-nowrap">
+                      <i class="fa-solid fa-rotate-left text-xs"></i> Reset Test Data (${allResponses.length})
+                    </button>`
+                  : ''
+              }
             </div>
-            <p class="text-sm text-[#525B56] mt-1">
-              Cross-tabulations with hypothesis testing (χ²), Pearson variable correlations, automated key drivers, and verbatim NLP.
-            </p>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2 shrink-0">
-            ${
-              !isPublicReportMode
-                ? `<!-- Active Survey Switcher -->
-                  <select onchange="AEApp.switchStage('analyze', this.value)"
-                    aria-label="Select Survey to Analyze"
-                    class="h-8 text-xs font-semibold bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50] max-w-[240px] truncate">
-                    ${(window.aeStore.getSurveysForUser
-                      ? window.aeStore.getSurveysForUser(
-                          window.AESession && typeof window.AESession.getCurrentUser === 'function' ? window.AESession.getCurrentUser() : null,
-                          { includeArchived: true }
-                        )
-                      : window.aeStore.surveys
-                    )
-                      .map(
-                        (s) =>
-                          `<option value="${s.id}" ${s.id === survey.id ? 'selected' : ''}>${AEApp.escapeHtml(
-                            s.title.substring(0, 30)
-                          )}${s.title.length > 30 ? '…' : ''}${s.status === 'Archived' ? ' [Archived]' : ''}</option>`
-                      )
-                      .join('')}
-                  </select>`
-                : ''
-            }
+          <!-- Row 2: Dedicated Executive Briefings & Data Exports Strip -->
+          <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68] mr-1">Briefings:</span>
+              <button onclick="AEReportExport.exportPDF('${safeSurveyIdJs}')"
+                title="Open Branded Executive Briefing PDF Print View"
+                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/40 bg-white hover:bg-[#DCFAE5]/50 text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-pdf text-[#C4242A] text-xs"></i> Executive PDF
+              </button>
+              <button onclick="AEReportExport.exportWordDoc('${safeSurveyIdJs}')"
+                title="Download Branded Executive Briefing for MS Word (.doc)"
+                class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-word text-[#247B50] text-xs"></i> Word (.doc)
+              </button>
+              <button onclick="window.print()"
+                title="Print Executive Briefing View"
+                aria-label="Print Executive Briefing View"
+                class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#525B56] hover:text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-print text-xs"></i> Print
+              </button>
+            </div>
 
-            <button onclick="AEApp.exportSurveyResponsesCSV('${safeSurveyIdJs}')"
-              class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-file-csv text-xs"></i> Export CSV
-            </button>
-            <button onclick="AEAnalytics.exportExcelWorkbook('${safeSurveyIdJs}')"
-              class="h-8 px-3 rounded-[6px] border border-[#247B50]/40 bg-[#DCFAE5]/40 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-file-excel text-[#247B50] text-xs"></i> 7-Sheet Excel (.xls)
-            </button>
-            <button onclick="AEReportExport.exportPDF('${safeSurveyIdJs}')"
-              title="Open Branded Executive Briefing PDF Print View"
-              class="h-8 px-3 rounded-[6px] border border-[#247B50]/40 bg-white hover:bg-[#F4FAF6] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-file-pdf text-[#C4242A] text-xs"></i> Executive PDF
-            </button>
-            <button onclick="AEReportExport.exportWordDoc('${safeSurveyIdJs}')"
-              title="Download Branded Executive Briefing for MS Word (.doc)"
-              class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-file-word text-[#2563EB] text-xs"></i> Word (.doc)
-            </button>
-            ${
-              !isPublicReportMode
-                ? `<button onclick="AEApp.copyLiveReportLink('${safeSurveyIdJs}')"
-                    title="Copy privacy-safe read-only live stakeholder results link"
-                    class="h-8 px-3 rounded-[6px] border border-[#247B50] bg-[#247B50] hover:bg-[#1D6340] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
-                    <i class="fa-solid fa-share-nodes text-xs"></i> Share Live Results
-                  </button>`
-                : ''
-            }
-            <button onclick="AEApp.exportResponsesPackJSON('${safeSurveyIdJs}')"
-              class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-file-code text-[#247B50]"></i> JSON
-            </button>
-            <button onclick="window.print()"
-              title="Print Executive Briefing View"
-              aria-label="Print Executive Briefing View"
-              class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#525B56] hover:text-[#111613] inline-flex items-center gap-1.5 ae-press">
-              <i class="fa-solid fa-print"></i>
-            </button>
-            ${
-              (!isPublicReportMode && window.AESession && window.AESession.getCurrentUser && window.AESession.getCurrentUser()?.role === 'admin' && allResponses.length > 0)
-                ? `<button onclick="AEApp.resetSurveyTestData('${safeSurveyIdJs}')"
-                    title="Clear all test responses locally and in Google Sheets (keeps survey questions & link intact)"
-                    class="h-8 px-3 rounded-[6px] border border-[#F5C2C0] bg-[#FFEDEA] hover:bg-[#C4242A] text-[#831C1E] hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press transition-colors">
-                    <i class="fa-solid fa-rotate-left text-xs"></i> Reset Test Data (${allResponses.length})
-                  </button>`
-                : ''
-            }
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-[#646E68] mr-1">Data Exports:</span>
+              <button onclick="AEAnalytics.exportExcelWorkbook('${safeSurveyIdJs}')"
+                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/40 bg-[#DCFAE5]/50 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-excel text-[#247B50] text-xs"></i> 7-Sheet Excel (.xls)
+              </button>
+              <button onclick="AEApp.exportSurveyResponsesCSV('${safeSurveyIdJs}')"
+                class="h-7 px-2.5 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-medium inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-csv text-xs"></i> CSV
+              </button>
+              <button onclick="AEApp.exportResponsesPackJSON('${safeSurveyIdJs}')"
+                class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                <i class="fa-solid fa-file-code text-[#247B50] text-xs"></i> JSON
+              </button>
+            </div>
           </div>
         </div>
 
