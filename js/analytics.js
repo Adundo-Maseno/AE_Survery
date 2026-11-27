@@ -10469,33 +10469,6 @@ window.AEAnalytics = {
   },
 
   togglePinGalleryItem(surveyId, itemKey) {
-    const list = new Set(this.getPinnedGalleryItems(surveyId));
-    if (list.has(itemKey)) list.delete(itemKey);
-    else list.add(itemKey);
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(`ae_pinned_media_${surveyId}`, JSON.stringify(Array.from(list)));
-      }
-    } catch (e) {}
-    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
-  },
-
-  openGalleryLightbox(itemKey) {
-    this.galleryLightboxKey = itemKey || null;
-    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
-  },
-
-  closeGalleryLightbox() {
-    this.galleryLightboxKey = null;
-    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
-  },
-
-  downloadMediaItem(itemKey) {
-    const item = this._galleryItemsByKey[itemKey];
-    if (!item || !item.src || typeof document === 'undefined') return;
-    const a = document.createElement('a');
-    a.href = item.src;
-    const ext = item.kind === 'photo' ? 'jpg' : 'webm';
     a.download = `AE_Evidence_${item.questionId}_${item.responseId}.${ext}`;
     a.click();
   },
