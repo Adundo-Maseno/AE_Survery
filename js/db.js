@@ -2036,36 +2036,92 @@ window.AESession = {
  * Replaces {{question_id}} or {{question_id | 'Fallback'}} tokens with draft answers.
  */
 window.AEPiping = {
+  _formatValueForPiping(val, fallback) {
+    const fb = fallback !== undefined ? fallback : '';
+    if (val === undefined || val === null || val === '') {
+      return fb;
+    }
+    if (typeof val === 'string') {
+      if (val.startsWith('data:image/')) return '[Image/Signature]';
+      if (val.startsWith('data:audio/')) return '[Audio Recording]';
+      return val;
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0) return fb;
+      const formatted = val
+        .map((item) => {
+          if (item === undefined || item === null || item === '') return '';
+          if (typeof item === 'object') {
+            return this._formatValueForPiping(item, '');
+          }
+          return String(item).trim();
+        })
+        .filter(Boolean);
+      return formatted.length > 0 ? formatted.join(', ') : fb;
+    }
+    if (typeof val === 'object') {
+      if ('lat' in val || 'lng' in val) {
+        if (val.label) return String(val.label);
+        const latNum = (val.lat !== '' && val.lat !== null && val.lat !== undefined) ? Number(val.lat) : NaN;
+        const lngNum = (val.lng !== '' && val.lng !== null && val.lng !== undefined) ? Number(val.lng) : NaN;
+        if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
+          return `${latNum.toFixed(4)}, ${lngNum.toFixed(4)}`;
+        }
+        return fb;
+      }
+      if (
+        'dataUrl' in val ||
+        'sizeKb' in val ||
+        'durationSec' in val ||
+        'mimeType' in val ||
+        typeof val.preview === 'string' ||
+        typeof val.summary === 'string'
+      ) {
+        if (val.summary) return String(val.summary);
+        if (val.preview) return String(val.preview);
+        if (val.durationSec !== undefined || (val.mimeType && String(val.mimeType).startsWith('audio/'))) {
+          return `Audio note (${val.durationSec || 0}s)`;
+        }
+        return 'Photo proof attached';
+      }
+      if ('level1' in val || 'level2' in val || 'level3' in val) {
+        const parts = [val.level1, val.level2, val.level3]
+          .map((p) => (p === undefined || p === null ? '' : String(p).trim()))
+          .filter(Boolean);
+        return parts.length > 0 ? parts.join(' > ') : fb;
+      }
+      if (val.crop && val.variety) {
+        return `${val.crop} - ${val.variety}`;
+      }
+      if (typeof val.label === 'string' && val.label.trim()) return val.label.trim();
+      if (typeof val.name === 'string' && val.name.trim()) return val.name.trim();
+      if (val.value !== undefined && val.value !== null && typeof val.value !== 'object') {
+        return String(val.value);
+      }
+      const pairs = Object.entries(val)
+        .filter(([k, v]) => {
+          if (v === undefined || v === null || v === '') return false;
+          if (k === 'dataUrl' || k === 'base64' || k === 'base64Data') return false;
+          if (typeof v === 'string' && v.startsWith('data:')) return false;
+          return true;
+        })
+        .map(([k, v]) => {
+          const rendered = typeof v === 'object' ? this._formatValueForPiping(v, '') : String(v).trim();
+          return rendered ? `${k}: ${rendered}` : '';
+        })
+        .filter(Boolean);
+      return pairs.length > 0 ? pairs.join('; ') : fb;
+    }
+    return String(val);
+  },
+
   interpolate(template, answers = {}, survey = null) {
     if (!template || typeof template !== 'string') return '';
+    const safeAnswers = (answers && typeof answers === 'object') ? answers : {};
     const res = template.replace(/\{\{\s*([a-zA-Z0-9_-]+)(?:\s*\|\s*(?:'([^']*)'|"([^"]*)"))?\s*\}\}/g, (match, qId, sqFallback, dqFallback) => {
       const fallback = sqFallback !== undefined ? sqFallback : dqFallback;
-      const val = answers[qId];
-      if (val === undefined || val === null || val === '') {
-        return fallback !== undefined ? fallback : '';
-      }
-      if (Array.isArray(val)) {
-        if (val.length === 0) {
-          return fallback !== undefined ? fallback : '';
-        }
-        return val.join(', ');
-      }
-      if (typeof val === 'object') {
-        if ('lat' in val || 'lng' in val) {
-          if (val.label) return String(val.label);
-          const latNum = (val.lat !== '' && val.lat !== null && val.lat !== undefined) ? Number(val.lat) : NaN;
-          const lngNum = (val.lng !== '' && val.lng !== null && val.lng !== undefined) ? Number(val.lng) : NaN;
-          if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
-            return `${latNum.toFixed(4)}, ${lngNum.toFixed(4)}`;
-          }
-          return fallback !== undefined ? fallback : '';
-        }
-        if (val.crop && val.variety) {
-          return `${val.crop} - ${val.variety}`;
-        }
-        return JSON.stringify(val);
-      }
-      return String(val);
+      const val = safeAnswers[qId];
+      return this._formatValueForPiping(val, fallback);
     });
     // Remove awkward trailing whitespace or space before punctuation caused by empty token replacement
     return res.replace(/\s+([\?\.\!,:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
@@ -2073,9 +2129,10 @@ window.AEPiping = {
 
   computeQuestionDisplayNumbers(questions = []) {
     const numMap = {};
+    const safeQuestions = Array.isArray(questions) ? questions : [];
     const byId = {};
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
+    for (let i = 0; i < safeQuestions.length; i++) {
+      const q = safeQuestions[i];
       if (q && q.id) byId[q.id] = q;
     }
 
@@ -2096,8 +2153,8 @@ window.AEPiping = {
 
     // Pass 1: Assign sequential main numbers to all top-level questions
     let mainCount = 1;
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
+    for (let i = 0; i < safeQuestions.length; i++) {
+      const q = safeQuestions[i];
       if (!q || !q.id) continue;
       if (!resolveRootParent(q)) {
         numMap[q.id] = { label: `${mainCount}`, mainNum: mainCount, hasLetter: false, isSub: false };
@@ -2107,8 +2164,8 @@ window.AEPiping = {
 
     // Pass 2: Assign 2a/2b/2c sub-question labels against resolved root parents
     const parentSubCounts = {};
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
+    for (let i = 0; i < safeQuestions.length; i++) {
+      const q = safeQuestions[i];
       if (!q || !q.id) continue;
       const rootId = resolveRootParent(q);
       if (rootId && numMap[rootId]) {
@@ -2138,12 +2195,18 @@ window.AEPiping = {
     const sourceId = q.displayRule.sourceQuestionId || q.parentQuestionId;
     if (!sourceId) return true;
 
-    const rawVal = answers ? answers[sourceId] : undefined;
+    const safeAnswers = (answers && typeof answers === 'object') ? answers : {};
+    const rawVal = safeAnswers[sourceId];
     const isEmpty = (v) => {
       if (v === undefined || v === null) return true;
       if (typeof v === 'string') return v.trim() === '';
       if (Array.isArray(v)) return v.length === 0;
-      if (typeof v === 'object') return Object.keys(v).length === 0;
+      if (typeof v === 'object') {
+        if ('level1' in v || 'level2' in v || 'level3' in v) {
+          return ![v.level1, v.level2, v.level3].some((p) => p !== undefined && p !== null && String(p).trim() !== '');
+        }
+        return Object.keys(v).length === 0;
+      }
       return false;
     };
 
@@ -2183,7 +2246,26 @@ window.AEPiping = {
       if (target === undefined || target === null) return false;
       const normTarget = norm(target);
       if (Array.isArray(val)) {
-        return val.some((item) => norm(item) === normTarget);
+        return val.some((item) => matchesSingle(item, target));
+      }
+      if (val && typeof val === 'object') {
+        if ('level1' in val || 'level2' in val || 'level3' in val) {
+          const parts = [val.level1, val.level2, val.level3]
+            .map((p) => (p === undefined || p === null ? '' : String(p).trim()))
+            .filter(Boolean);
+          if (parts.some((p) => norm(p) === normTarget)) return true;
+          if (parts.length > 0 && (norm(parts.join(' > ')) === normTarget || norm(parts.join(' / ')) === normTarget)) {
+            return true;
+          }
+          return false;
+        }
+        if (val.value !== undefined && val.value !== null && typeof val.value !== 'object' && norm(val.value) === normTarget) {
+          return true;
+        }
+        if (val.label !== undefined && val.label !== null && typeof val.label !== 'object' && norm(val.label) === normTarget) {
+          return true;
+        }
+        return false;
       }
       return val !== undefined && val !== null && norm(val) === normTarget;
     };
@@ -2644,6 +2726,7 @@ class AESurveyStore {
     this._leaderHeartbeatTimer = null;
     this._leaderUnloadBound = false;
     this._storageListenerBound = false;
+    this._idbStoreQueues = {};
     this.settings = {
       gasWebAppUrl: AE_DEFAULT_GAS_CONFIG.gasWebAppUrl,
       syncToken: AE_DEFAULT_GAS_CONFIG.syncToken,
@@ -2800,10 +2883,25 @@ class AESurveyStore {
     if (idbSurveys.length === 0 && this.surveys.length > 0) {
       await this.persistAllToIDB();
     } else if (idbSurveys.length > 0) {
+      // Collect all deleted survey IDs from memory and pending DELETE_SURVEY queue entries
+      // so deleted surveys, collectors, and responses NEVER resurrect from stale IndexedDB snapshots.
+      const deletedSurveySet = new Set(
+        [
+          ...(Array.isArray(this.deletedSurveyIds) ? this.deletedSurveyIds : []),
+          ...(this.syncQueue || []).filter((q) => q && q.action === 'DELETE_SURVEY' && q.recordId).map((q) => q.recordId),
+          ...(queue || []).filter((q) => q && q.action === 'DELETE_SURVEY' && q.recordId).map((q) => q.recordId)
+        ].filter(Boolean)
+      );
+      if (deletedSurveySet.size > 0) {
+        this.deletedSurveyIds = Array.from(deletedSurveySet);
+      }
+
       // Reconcile surveys by updatedAt timestamp so newer localStorage edits are not overwritten
-      const surveyMap = new Map(idbSurveys.map((s) => [s.id, s]));
+      const surveyMap = new Map(
+        idbSurveys.filter((s) => s && s.id && !deletedSurveySet.has(s.id)).map((s) => [s.id, s])
+      );
       (this.surveys || []).forEach((lsSurvey) => {
-        if (!lsSurvey || !lsSurvey.id) return;
+        if (!lsSurvey || !lsSurvey.id || deletedSurveySet.has(lsSurvey.id)) return;
         const idbItem = surveyMap.get(lsSurvey.id);
         const lsTime = lsSurvey.updatedAt ? Date.parse(lsSurvey.updatedAt) || 0 : 0;
         const idbTime = idbItem && idbItem.updatedAt ? Date.parse(idbItem.updatedAt) || 0 : 0;
@@ -2814,18 +2912,26 @@ class AESurveyStore {
       this.surveys = Array.from(surveyMap.values());
 
       if (cols.length) {
-        const colMap = new Map(cols.map((c) => [c.id, c]));
+        const colMap = new Map(
+          cols.filter((c) => c && c.id && !deletedSurveySet.has(c.surveyId)).map((c) => [c.id, c])
+        );
         (this.collectors || []).forEach((lsCol) => {
-          if (lsCol && lsCol.id) colMap.set(lsCol.id, lsCol);
+          if (lsCol && lsCol.id && !deletedSurveySet.has(lsCol.surveyId)) colMap.set(lsCol.id, lsCol);
         });
         this.collectors = Array.from(colMap.values());
+      } else if (deletedSurveySet.size > 0) {
+        this.collectors = (this.collectors || []).filter((c) => c && !deletedSurveySet.has(c.surveyId));
       }
 
       if (resps.length) {
-        const respMap = new Map(resps.map((r) => [r.id || r.clientResponseId, r]));
+        const respMap = new Map(
+          resps
+            .filter((r) => r && !deletedSurveySet.has(r.surveyId))
+            .map((r) => [r.id || r.clientResponseId, r])
+        );
         (this.responses || []).forEach((lsResp) => {
           const key = lsResp && (lsResp.id || lsResp.clientResponseId);
-          if (!key) return;
+          if (!key || deletedSurveySet.has(lsResp.surveyId)) return;
           const idbResp = respMap.get(key);
           if (!idbResp) {
             respMap.set(key, lsResp);
@@ -2845,6 +2951,8 @@ class AESurveyStore {
         });
         this.responses = Array.from(respMap.values());
         this.healResponsesAnswers();
+      } else if (deletedSurveySet.size > 0) {
+        this.responses = (this.responses || []).filter((r) => r && !deletedSurveySet.has(r.surveyId));
       }
 
       // Reconcile personnel by updatedAt / pinUpdatedAt + pinOverrides ledger so PIN changes never revert
@@ -3062,15 +3170,25 @@ class AESurveyStore {
     });
   }
 
-  async persistStoreToIDB(storeName, items, options = {}) {
+  persistStoreToIDB(storeName, items, options = {}) {
+    if (!this.idb || !storeName) return Promise.resolve();
+    if (!this._idbStoreQueues) this._idbStoreQueues = {};
+    const snapshot = Array.isArray(items) ? items.slice() : (items ? [items] : []);
+    const prev = this._idbStoreQueues[storeName] || Promise.resolve();
+    const next = prev
+      .catch(() => { })
+      .then(() => this._executePersistStoreToIDB(storeName, snapshot, options));
+    this._idbStoreQueues[storeName] = next;
+    return next;
+  }
+
+  async _executePersistStoreToIDB(storeName, list, options = {}) {
     if (!this.idb || !storeName) return;
     if (storeName === 'meta') {
-      const entries = Array.isArray(items) ? items : [items];
-      await Promise.all(entries.filter(Boolean).map((entry) => this.writeStore('meta', entry)));
+      await Promise.all(list.filter(Boolean).map((entry) => this.writeStore('meta', entry)));
       return;
     }
     const replace = options.replace !== false;
-    const list = Array.isArray(items) ? items : (items ? [items] : []);
     return new Promise((resolve) => {
       try {
         const tx = this.idb.transaction(storeName, 'readwrite');
@@ -3313,6 +3431,12 @@ class AESurveyStore {
       }
     }
 
+    // Only fall back to window 'storage' events when BroadcastChannel is unavailable,
+    // eliminating duplicate 10x peer-tab reload storms when both channels fire.
+    if (this._broadcastChannel) {
+      return;
+    }
+
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !this._storageListenerBound) {
       this._storageListenerBound = true;
       const watchedKeys = new Set(Object.values(AE_STORAGE_KEYS));
@@ -3366,7 +3490,7 @@ class AESurveyStore {
       } catch (e) { }
     }
     // Fallback ping via localStorage if BroadcastChannel is unavailable
-    if (typeof BroadcastChannel === 'undefined') {
+    if (!this._broadcastChannel) {
       this._safeLocalStorageSet('ae_survey_sync_ping', JSON.stringify(payload));
     }
   }
@@ -4311,10 +4435,7 @@ class AESurveyStore {
       this._visibilityBound = true;
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
-          this.triggerBackgroundSyncNow();
-          if (!this._isRespondentModeUrl()) {
-            this.pullFreshDataIfStale({ minAgeMs: 5000, reason: 'visibilitychange' }).catch(() => { });
-          }
+          this._pushThenPullSequential({ minAgeMs: 5000, reason: 'visibilitychange' });
         }
       });
       if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -4328,10 +4449,7 @@ class AESurveyStore {
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !this._onlineBound) {
       this._onlineBound = true;
       window.addEventListener('online', () => {
-        this.triggerBackgroundSyncNow();
-        if (!this._isRespondentModeUrl()) {
-          this.pullFreshDataIfStale({ minAgeMs: 2000, reason: 'online' }).catch(() => { });
-        }
+        this._pushThenPullSequential({ minAgeMs: 2000, reason: 'online' });
       });
     }
 
@@ -4385,6 +4503,32 @@ class AESurveyStore {
     const canSyncDeletes = !currentSessionUser || String(currentSessionUser.role || '').toLowerCase() === 'admin';
     const hasDeletedSurveys = canSyncDeletes && Array.isArray(this.deletedSurveyIds) && this.deletedSurveyIds.length > 0;
     return hasUnsyncedResponses || hasEligibleQueuedItems || hasDeletedSurveys;
+  }
+
+  /**
+   * Chains cloud push THEN pull sequentially so an in-flight push is never overwritten
+   * by a concurrent pull returning stale server state.
+   */
+  async _pushThenPullSequential({ minAgeMs = 5000, reason = 'event' } = {}) {
+    if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl) return;
+    if (this._bgTriggerDebounce) {
+      clearTimeout(this._bgTriggerDebounce);
+      this._bgTriggerDebounce = null;
+    }
+    if (this._hasPendingSyncableWork()) {
+      try {
+        await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
+      } catch (e) { }
+    } else if (this._syncInFlightPromise) {
+      try {
+        await this._syncInFlightPromise;
+      } catch (e) { }
+    }
+    if (!this._isRespondentModeUrl()) {
+      try {
+        await this.pullFreshDataIfStale({ minAgeMs, reason });
+      } catch (e) { }
+    }
   }
 
   /**
@@ -4705,7 +4849,7 @@ class AESurveyStore {
     resp.syncStatus = 'queued';
 
     this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Approved (${supervisorPersonnelId}) -> ${resp.id}`);
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
       this.triggerBackgroundSyncNow(400);
     }
@@ -4738,11 +4882,80 @@ class AESurveyStore {
     resp.syncStatus = 'queued';
 
     this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Flagged (${supervisorPersonnelId}) -> ${resp.id}`);
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
       this.triggerBackgroundSyncNow(400);
     }
     return resp;
+  }
+
+  /**
+   * Bulk-flags multiple responses (e.g. Data Hygiene batch action) with a single
+   * scoped localStorage/IDB save and a single debounced background sync trigger.
+   * Each item can be `{ responseId, supervisorPersonnelId, reason }` or a responseId string.
+   */
+  flagResponsesBatch(items = [], defaultSupervisorId = '', defaultReason = '') {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    const byId = new Map();
+    (this.responses || []).forEach((r) => {
+      if (!r) return;
+      if (r.id) byId.set(r.id, r);
+      if (r.clientResponseId) byId.set(r.clientResponseId, r);
+    });
+
+    const flagged = [];
+    const nowIso = new Date().toISOString();
+
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i];
+      if (!entry) continue;
+      const responseId = typeof entry === 'string'
+        ? entry
+        : (entry.responseId || entry.id || entry.clientResponseId);
+      if (!responseId) continue;
+      const resp = byId.get(responseId);
+      if (!resp) continue;
+
+      const supervisorPersonnelId = typeof entry === 'object'
+        ? (entry.supervisorPersonnelId || entry.supervisorId || defaultSupervisorId || 'Supervisor')
+        : (defaultSupervisorId || 'Supervisor');
+      const reason = typeof entry === 'object'
+        ? (entry.reason || defaultReason || 'Flagged for re-survey')
+        : (defaultReason || 'Flagged for re-survey');
+
+      const prevHash = (resp.auditTrail && resp.auditTrail.length > 0)
+        ? resp.auditTrail[resp.auditTrail.length - 1].entryHash
+        : resp.recordHash || '';
+      const auditEntry = window.AESupervisorAuditEngine.createAuditEntry(
+        prevHash,
+        'FLAG',
+        supervisorPersonnelId,
+        reason,
+        resp.id
+      );
+
+      resp.reviewStatus = 'flagged';
+      resp.audit = {
+        flaggedBy: supervisorPersonnelId,
+        flaggedAt: nowIso,
+        reason
+      };
+      resp.auditTrail = Array.isArray(resp.auditTrail) ? resp.auditTrail : [];
+      resp.auditTrail.push(auditEntry);
+      resp.updatedAt = nowIso;
+      resp.syncStatus = 'queued';
+
+      this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Flagged (${supervisorPersonnelId}) -> ${resp.id}`);
+      flagged.push(resp);
+    }
+
+    if (flagged.length > 0) {
+      this.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
+      if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+        this.triggerBackgroundSyncNow(400);
+      }
+    }
+    return flagged;
   }
 
   rejectResponse(responseId, supervisorPersonnelId, reason = '') {
@@ -4771,7 +4984,7 @@ class AESurveyStore {
     resp.syncStatus = 'queued';
 
     this.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Rejected (${supervisorPersonnelId}) -> ${resp.id}`);
-    this.saveToLocalStorage();
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
     if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
       this.triggerBackgroundSyncNow(400);
     }
@@ -5493,6 +5706,133 @@ class AESurveyStore {
     }
 
     return record;
+  }
+
+  /**
+   * Batch-imports multiple responses (e.g. CSV import) with ONE scoped localStorage/IDB save,
+   * ONE batched async SHA-256 upgrade pass, and ONE debounced background sync trigger,
+   * eliminating the O(N^2) storage write storm of calling submitResponse() in a loop.
+   */
+  submitResponsesBatch(records = []) {
+    if (!Array.isArray(records) || records.length === 0) return [];
+    const nowIso = new Date().toISOString();
+    const inserted = [];
+    const surveyCache = new Map();
+
+    for (let i = 0; i < records.length; i++) {
+      const responsePayload = records[i];
+      if (!responsePayload || typeof responsePayload !== 'object') continue;
+
+      const cleanPayload = this.sanitizeResponseRecord(responsePayload) || {};
+      const id = cleanPayload.id || (
+        'resp_' + Date.now().toString(36) + '_' + i.toString(36) + '_' + Math.random().toString(36).slice(2, 6)
+      );
+      let survey = surveyCache.get(cleanPayload.surveyId);
+      if (survey === undefined) {
+        survey = this.getSurveyById(cleanPayload.surveyId) || null;
+        surveyCache.set(cleanPayload.surveyId, survey);
+      }
+
+      if (survey && survey.status === 'Archived') {
+        continue;
+      }
+
+      const durationSec = Math.max(0, Number(responsePayload.durationSec) >= 0 ? Number(responsePayload.durationSec) : 0);
+      const submittedAt = (responsePayload._preserveMeta && cleanPayload.submittedAt)
+        ? cleanPayload.submittedAt
+        : nowIso;
+      const enumerator = cleanPayload.enumerator || this.settings.defaultEnumerator || 'Field Enumerator';
+      const rawFlags = Array.isArray(responsePayload.qaFlags) ? responsePayload.qaFlags : [];
+      const automatedFlags = this.evaluateDataQuality(survey, {
+        ...responsePayload,
+        id,
+        clientResponseId: id,
+        enumerator,
+        submittedAt,
+        durationSec,
+        answers: cleanPayload.answers || {}
+      });
+      const autoCodes = automatedFlags.map((f) => f.code);
+      const combinedFlags = Array.from(new Set([...rawFlags, ...autoCodes]));
+
+      const calculated = this.calculateResponseMetrics(survey, cleanPayload.answers || {});
+      const defaultReviewStatus = combinedFlags.some(
+        (c) => c.includes('OUTLIER') || c === 'SPEEDER' || c === 'IMPOSSIBLE_TRAVEL_VELOCITY'
+      ) ? 'flagged' : 'pending_review';
+      const reviewStatus = (responsePayload._preserveMeta && cleanPayload.reviewStatus)
+        ? cleanPayload.reviewStatus
+        : defaultReviewStatus;
+
+      const record = {
+        id,
+        clientResponseId: id,
+        surveyId: cleanPayload.surveyId,
+        surveyTitle: survey ? survey.title : String(responsePayload.surveyTitle || 'Survey').slice(0, 240),
+        collectorId: cleanPayload.collectorId || 'default',
+        enumerator,
+        submittedByUserId: cleanPayload.submittedByUserId || null,
+        submittedByUserRole: cleanPayload.submittedByUserRole || null,
+        language: responsePayload.language || 'en',
+        status: 'complete',
+        reviewStatus,
+        qaFlags: combinedFlags,
+        calculated,
+        audit: responsePayload._preserveMeta ? (cleanPayload.audit || null) : null,
+        auditTrail: responsePayload._preserveMeta && Array.isArray(cleanPayload.auditTrail) ? cleanPayload.auditTrail : [],
+        recordHash: '',
+        startedAt: responsePayload.startedAt || submittedAt,
+        submittedAt,
+        durationSec,
+        gps: responsePayload.gps || null,
+        answers: cleanPayload.answers || {},
+        syncStatus: 'queued',
+        syncedAt: null
+      };
+
+      if (window.AEIntegrityEngine && typeof window.AEIntegrityEngine.computeSyncFallbackHash === 'function') {
+        record.recordHash = window.AEIntegrityEngine.computeSyncFallbackHash(record);
+      }
+
+      this.responses.unshift(record);
+      this.enqueueSyncItem(
+        'SUBMIT_RESPONSE',
+        record.id,
+        `Response (${record.enumerator}) -> ${record.surveyTitle.substring(0, 38)}`
+      );
+      inserted.push(record);
+    }
+
+    if (inserted.length === 0) return [];
+
+    // Single batched save for all imported responses + syncQueue
+    this.saveToLocalStorage({ stores: ['responses', 'syncQueue'], meta: { newResponsesCount: inserted.length } });
+
+    // Upgrade hashes asynchronously in one batch with a single follow-up save
+    if (window.AEIntegrityEngine && typeof window.AEIntegrityEngine.computeRecordHash === 'function') {
+      Promise.all(
+        inserted.map((rec) =>
+          window.AEIntegrityEngine.computeRecordHash(rec)
+            .then((hash) => { rec.recordHash = hash; })
+            .catch(() => { })
+        )
+      ).then(() => {
+        this.saveToLocalStorage({ stores: ['responses'], broadcast: false });
+      });
+    }
+
+    // Single debounced background sync trigger
+    if (this.isEffectivelyOnline() && this.settings.gasWebAppUrl) {
+      this.triggerBackgroundSyncNow(250);
+    }
+
+    // Register with native W3C Service Worker Background Sync API once
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'SyncManager' in window) {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.sync.register('ae-background-sync').catch(() => { });
+      }).catch(() => { });
+    }
+
+    return inserted;
   }
 
   deleteResponse(responseId) {

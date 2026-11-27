@@ -2048,7 +2048,7 @@
     },
 
     setLanguage(langCode) {
-      const code = (langCode || 'en').toLowerCase();
+      const code = String(langCode || 'en').toLowerCase();
       const valid = code === 'sw' || code === 'fr' || code === 'pt' ? code : 'en';
       try {
         localStorage.setItem('ae_language', valid);
@@ -2091,9 +2091,9 @@
         questions: { ...(seedI18n.questions || {}), ...(userI18n.questions || {}) }
       };
 
-      const localizedPages = (rawSurvey.pages || []).map((page) => {
+      const localizedPages = (rawSurvey.pages || []).filter(Boolean).map((page) => {
         const pageI18n = (surveyI18n.pages && surveyI18n.pages[page.id]) || {};
-        const localizedQuestions = (page.questions || []).map((q) => {
+        const localizedQuestions = (page.questions || []).filter(Boolean).map((q) => {
           const qI18n = (surveyI18n.questions && surveyI18n.questions[q.id]) ||
             (q.translations && q.translations[lang]) || {};
 
@@ -2592,7 +2592,7 @@
           if (REVERSE_DICTIONARY_MAP[lang] && REVERSE_DICTIONARY_MAP[lang][lowerVal]) {
             const matchedEn = REVERSE_DICTIONARY_MAP[lang][lowerVal];
             if (q.options.includes(matchedEn)) return matchedEn;
-            const ciOpt = q.options.find((opt) => opt.toLowerCase() === matchedEn.toLowerCase());
+            const ciOpt = q.options.find((opt) => String(opt || '').toLowerCase() === matchedEn.toLowerCase());
             if (ciOpt) return ciOpt;
           }
         }

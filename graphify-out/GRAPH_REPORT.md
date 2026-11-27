@@ -1,17 +1,17 @@
 # Graph Report - AE_Survery  (2026-11-27)
 
 ## Corpus Check
-- 27 files · ~209,371 words
+- 27 files · ~215,927 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 2, .css 2, .gs 1)
 
 ## Summary
-- 1603 nodes · 3840 edges · 71 communities (58 shown, 13 thin omitted)
+- 1622 nodes · 3926 edges · 69 communities (58 shown, 11 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 47 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7e9809d6`
+- Built from commit: `2c220c2b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -23,14 +23,15 @@
 - i
 - P
 - app.js
-- A
+- t
 - showToast
 - z
 - analytics.js
-- .notifyPlugins
+- .getDataset
+- sw.js
 - Os
 - t
-- getFilteredResponses
+- askSurveyQuestion
 - en
 - db.js
 - A
@@ -69,7 +70,7 @@
 - mean
 - boot
 - .buildOrUpdateElements
-- .update
+- _computeLongitudinalData
 - mountCharts
 - renderSingleQuestionAnalyticsCard
 - updateElements
@@ -78,24 +79,23 @@
 - .isHorizontal
 - e
 - copyText
-- de
+- P
 - Ji
-- Vs
-- ._handleEvent
-- .constructor
+- .getMinMax
+- I
 - runQuestionAiSummary
 
 ## God Nodes (most connected - your core abstractions)
 1. `render()` - 146 edges
-2. `AESurveyStore` - 104 edges
+2. `AESurveyStore` - 108 edges
 3. `showToast()` - 90 edges
 4. `zs` - 73 edges
 5. `i` - 71 edges
 6. `Os` - 58 edges
-7. `render()` - 46 edges
-8. `showToast()` - 31 edges
+7. `render()` - 47 edges
+8. `showToast()` - 32 edges
 9. `$n` - 28 edges
-10. `renderAnalyzeStage()` - 26 edges
+10. `renderAnalyzeStage()` - 27 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `ADR 0004 Offline-First PWA Storage` --specifies--> `sw.js (Service Worker v3.43)`  [EXTRACTED]
@@ -112,83 +112,83 @@
 ## Import Cycles
 - None detected.
 
-## Communities (71 total, 13 thin omitted)
+## Communities (69 total, 11 thin omitted)
 
 ### Community 0 - "AESurveyStore"
 Cohesion: 0.06
-Nodes (6): AESurveyStore, getById(), getInitialPersonnelSeed(), getInitialSeedData(), resolve(), sanitizeDeepObject()
+Nodes (4): AESurveyStore, getInitialPersonnelSeed(), getInitialSeedData(), resolve()
 
 ### Community 1 - "zs"
-Cohesion: 0.14
+Cohesion: 0.12
 Nodes (3): d(), Si(), zs
 
 ### Community 2 - "field-app.js"
 Cohesion: 0.06
-Nodes (106): addRepeatRow(), applyPendingCloudSurveyUpdate(), attachCanvasSignatureListeners(), boot(), buildResumeUrl(), captureGPS(), clearAudioRecording(), clearBarcode() (+98 more)
+Nodes (111): addRepeatRow(), applyPendingCloudSurveyUpdate(), attachCanvasSignatureListeners(), boot(), buildResumeUrl(), cancelAutoRedirect(), captureGPS(), clearAudioRecording() (+103 more)
 
 ### Community 3 - "chart.umd.min.js"
-Cohesion: 0.04
-Nodes (32): add(), addControllers(), addPlugins(), addScales(), beforeLayout(), Bi(), cn(), dataset() (+24 more)
+Cohesion: 0.03
+Nodes (40): add(), addControllers(), addPlugins(), addScales(), be(), beforeLayout(), Bi(), cn() (+32 more)
+
+### Community 4 - "i"
+Cohesion: 0.06
+Nodes (11): Ce(), ea(), fs(), i, k(), ra(), sa(), stop() (+3 more)
 
 ### Community 5 - "P"
-Cohesion: 0.10
-Nodes (16): at(), _calculateBarIndexPixels(), dt(), Fa, _getRuler(), _getStackCount(), _getStackIndex(), _getStacks() (+8 more)
+Cohesion: 0.11
+Nodes (11): at(), de(), dt(), Fa, g(), Ha(), ht(), lt() (+3 more)
 
 ### Community 6 - "app.js"
 Cohesion: 0.04
-Nodes (65): addQuestionOption(), appendQuestionAfter(), appendSubQuestion(), clearAiSurveyFile(), clearSurveySelection(), closeAiSurveyModal(), closeVersionHistoryModal(), deleteQuestion() (+57 more)
+Nodes (69): addQuestionOption(), appendQuestionAfter(), appendSubQuestion(), clearAiSurveyFile(), clearSurveySelection(), closeAiSurveyModal(), closeImportCsvModal(), closeVersionHistoryModal() (+61 more)
 
-### Community 7 - "A"
-Cohesion: 0.10
-Nodes (15): apply(), be(), color(), constructor(), describe(), Fs, get(), i() (+7 more)
+### Community 7 - "t"
+Cohesion: 0.12
+Nodes (12): apply(), bt(), constructor(), describe(), Fe(), Fs, Ge(), _notify() (+4 more)
 
 ### Community 8 - "showToast"
-Cohesion: 0.05
-Nodes (73): addQuestionToActivePage(), addSurveyPage(), applySurveyThemePreset(), archiveSurveyConfirm(), autoTranslateSurvey(), bulkArchiveSelectedSurveys(), bulkDeleteSelectedSurveys(), captureFieldGPS() (+65 more)
-
-### Community 9 - "z"
-Cohesion: 0.24
-Nodes (3): An(), He(), On
+Cohesion: 0.06
+Nodes (69): addQuestionToActivePage(), addSurveyPage(), applySurveyThemePreset(), archiveSurveyConfirm(), autoTranslateSurvey(), bulkArchiveSelectedSurveys(), bulkDeleteSelectedSurveys(), captureFieldGPS() (+61 more)
 
 ### Community 10 - "analytics.js"
-Cohesion: 0.04
-Nodes (21): analyzeVerbatims(), buildFilteredReportUrl(), _computeFieldOpsMetrics(), computeResponseScore(), copyFilteredReportUrl(), deleteCustomTheme(), exportFieldOpsCsv(), generateExecutiveBriefing() (+13 more)
+Cohesion: 0.03
+Nodes (28): analyzeVerbatims(), buildFilteredReportUrl(), clearQuestionSearchTimers(), _computeFieldOpsMetrics(), computeResponseScore(), computeStratifiedQuotas(), copyFilteredReportUrl(), deleteCustomTheme() (+20 more)
+
+### Community 12 - "sw.js"
+Cohesion: 0.20
+Nodes (12): ALLOWED_CDN_HOSTS, APP_SHELL_ASSETS, cleanAnswersForSwSync(), idbDeleteMany(), idbGetByKey(), idbPutMany(), idbReadAll(), isGoogleAppsScriptHost() (+4 more)
 
 ### Community 14 - "t"
-Cohesion: 0.09
-Nodes (24): Ai(), bn(), bt(), buildLookupTable(), ct(), ft(), getDecimalForValue(), getLabelAndValue() (+16 more)
-
-### Community 15 - "getFilteredResponses"
 Cohesion: 0.15
-Nodes (15): _answerSurveyOfflineFallback(), askSurveyQuestion(), _buildAskSurveyContext(), _buildBriefingPlainText(), bulkFlagHygieneRecords(), computeDataHygiene(), copyVerbatimBriefing(), generateAndPublishAiBrief() (+7 more)
+Nodes (13): bn(), buildLookupTable(), ct(), getDecimalForValue(), getLabelAndValue(), initOffsets(), ka(), Ma() (+5 more)
+
+### Community 15 - "askSurveyQuestion"
+Cohesion: 0.40
+Nodes (5): _answerSurveyOfflineFallback(), askSurveyQuestion(), getAskSurveyHistory(), pinAskAnswerToBrief(), renderAskSurveyDrawer()
 
 ### Community 16 - "en"
 Cohesion: 0.14
 Nodes (7): en, r(), _generate(), _getTimestampsForTable(), Ja(), tn(), vt()
 
 ### Community 17 - "db.js"
-Cohesion: 0.10
-Nodes (27): RFC-6962, AE_DEFAULT_GAS_CONFIG, AE_STORAGE_KEYS, buildRecordDigestPayload(), canonicalStringify(), _collectSurveyQuestions(), computeRecordHash(), computeSyncFallbackHash() (+19 more)
+Cohesion: 0.09
+Nodes (31): RFC-6962, AE_DEFAULT_GAS_CONFIG, AE_STORAGE_KEYS, buildRecordDigestPayload(), canonicalStringify(), _collectSurveyQuestions(), computeRecordHash(), computeSyncFallbackHash() (+23 more)
 
 ### Community 18 - "A"
-Cohesion: 0.18
+Cohesion: 0.16
 Nodes (16): A(), afterDatasetsUpdate(), _e(), ei(), Gs(), H(), j(), je() (+8 more)
 
 ### Community 19 - "Ks"
-Cohesion: 0.13
+Cohesion: 0.14
 Nodes (4): Bs(), js(), Ks, Xs()
 
 ### Community 20 - "Da"
 Cohesion: 0.09
-Nodes (11): Da, getMaxOverflow(), gt(), hi(), li(), mn(), nearest(), oi() (+3 more)
-
-### Community 21 - "qa"
-Cohesion: 0.15
-Nodes (4): generateLabels(), I(), qa, ya()
+Nodes (11): beforeDatasetDraw(), beforeDatasetsDraw(), beforeDraw(), Da, kn(), mn(), vn(), v() (+3 more)
 
 ### Community 22 - "ja"
-Cohesion: 0.08
-Nodes (9): configure(), determineDataLimits(), g(), getPixelForTick(), getPixelForValue(), getValueForPixel(), ja, mt() (+1 more)
+Cohesion: 0.10
+Nodes (5): configure(), determineDataLimits(), getValueForPixel(), ja, Va
 
 ### Community 23 - "Ji"
 Cohesion: 0.14
@@ -199,16 +199,12 @@ Cohesion: 0.12
 Nodes (21): cancelKioskPinPrompt(), closeAssignTeamModal(), closePasteOutlineModal(), closeSyncSettingsModal(), closeTemplateLibraryModal(), formatPendingSyncMeta(), getPendingSyncItems(), handleGlobalKeydown() (+13 more)
 
 ### Community 26 - "report-export.js"
-Cohesion: 0.25
-Nodes (17): buildBlankQuestionnaireHTML(), buildExecutiveReportHTML(), buildSlideDeckHTML(), _cleanTitle(), _computeQuestionBreakdown(), _esc(), exportBlankFormPDF(), exportPDF() (+9 more)
+Cohesion: 0.23
+Nodes (19): buildBlankQuestionnaireHTML(), buildExecutiveReportHTML(), buildSlideDeckHTML(), _cleanTitle(), _computeQuestionBreakdown(), _esc(), exportBlankFormPDF(), exportPDF() (+11 more)
 
 ### Community 28 - "I"
-Cohesion: 0.38
-Nodes (4): Ci(), Di(), Nn(), z()
-
-### Community 29 - "bs"
-Cohesion: 0.15
-Nodes (8): addElements(), bs, ki(), qi(), Ui(), _update(), Xi(), xs
+Cohesion: 0.24
+Nodes (6): An(), Ci(), Di(), Nn(), wi(), z()
 
 ### Community 30 - "manifest.json"
 Cohesion: 0.12
@@ -228,7 +224,7 @@ Nodes (16): computeChannelAttribution(), computePortfolioRollup(), escapeAttr(),
 
 ### Community 34 - "$n"
 Cohesion: 0.13
-Nodes (8): afterInit(), Fn(), hn(), initialize(), jn(), $n, rn(), x()
+Nodes (9): afterInit(), Fn(), hn(), jn(), ln(), $n, rn(), W() (+1 more)
 
 ### Community 35 - "builder.js"
 Cohesion: 0.13
@@ -243,8 +239,8 @@ Cohesion: 0.52
 Nodes (6): buildSurveyFromTemplate(), extractInlineOptions(), inferQuestionTypeAndOptions(), parseOutlineToSurvey(), remapPipingTokens(), uid()
 
 ### Community 38 - "collector.js"
-Cohesion: 0.15
-Nodes (24): buildEmbedIframeSnippet(), buildQRPosterHTML(), buildWhatsAppShareUrl(), copyUnusedInviteLinks(), getSafeBrandLogo(), getSafeRedirectUrl(), getSurveyShareUrl(), initRunnerForSurvey() (+16 more)
+Cohesion: 0.14
+Nodes (26): buildEmbedIframeSnippet(), buildQRPosterHTML(), buildWhatsAppShareUrl(), compressFieldPhotoDataUrl(), copyUnusedInviteLinks(), getSafeBrandLogo(), getSafeRedirectUrl(), getSurveyShareUrl() (+18 more)
 
 ### Community 39 - "i18n.js"
 Cohesion: 0.31
@@ -259,60 +255,60 @@ Cohesion: 0.14
 Nodes (14): field.html (PWA Collector Shell), index.html (Admin Studio Shell), manifest.json (Admin PWA), manifest-collector.json (Field PWA), sw.js (Service Worker v3.43), Code.gs (Google Apps Script Backend), ADR 0001 Offline Chart.js, ADR 0002 Merkle Audit & SHA256 (+6 more)
 
 ### Community 42 - "m"
-Cohesion: 0.12
-Nodes (20): ca(), da(), draw(), Fe(), Ge(), Gi(), ii(), c() (+12 more)
+Cohesion: 0.10
+Nodes (22): Ai(), ca(), da(), ft(), getMaxOverflow(), Gi(), gt(), hi() (+14 more)
 
 ### Community 43 - "C"
-Cohesion: 0.13
-Nodes (16): Aa(), beforeDatasetDraw(), beforeDatasetsDraw(), beforeDraw(), C(), fi(), kn(), mi() (+8 more)
+Cohesion: 0.12
+Nodes (14): Aa(), C(), draw(), fi(), getPixelForTick(), getPixelForValue(), mi(), mt() (+6 more)
 
 ### Community 44 - "._computeLabelItems"
-Cohesion: 0.16
-Nodes (3): Es(), L(), Le()
+Cohesion: 0.18
+Nodes (3): Es(), L(), Rs()
 
 ### Community 45 - "qrcode.js"
 Cohesion: 0.38
 Nodes (3): drawToCanvas(), generate(), QRCode()
 
 ### Community 47 - "renderAnalyzeStage"
-Cohesion: 0.17
-Nodes (22): auditDataQuality(), computeStratifiedQuotas(), getCategoricalQuestions(), getContinuousValue(), getNumericQuestions(), renderAgronomicCorrelationsTab(), renderAnalyzeStage(), renderAnovaTab() (+14 more)
+Cohesion: 0.18
+Nodes (22): auditDataQuality(), bulkFlagHygieneRecords(), computeDataHygiene(), getCategoricalQuestions(), getContinuousValue(), getNumericQuestions(), renderAgronomicCorrelationsTab(), renderAnalyzeStage() (+14 more)
 
 ### Community 48 - "cleanQuestionTitle"
-Cohesion: 0.16
-Nodes (24): cleanQuestionTitle(), _computeLongitudinalData(), exportExcelWorkbook(), exportQuestionCsv(), exportVerbatimCsv(), _extractMediaItems(), _extractResponseLocationValue(), _extractWaveChoiceValues() (+16 more)
+Cohesion: 0.22
+Nodes (20): cleanQuestionTitle(), exportExcelWorkbook(), exportQuestionCsv(), exportVerbatimCsv(), _extractMediaItems(), _extractResponseLocationValue(), formatAnswerDisplay(), _formatVerbatimDate() (+12 more)
 
 ### Community 50 - "ae"
-Cohesion: 0.08
-Nodes (16): ae, ee(), ie(), te(), ALLOWED_CDN_HOSTS, APP_SHELL_ASSETS, cleanAnswersForSwSync(), idbDeleteMany() (+8 more)
+Cohesion: 0.07
+Nodes (18): ae, color(), ee(), Et(), ie(), It(), jt(), ke() (+10 more)
 
 ### Community 52 - "mean"
 Cohesion: 0.14
 Nodes (22): betaInc(), chiSquarePValue(), chiSquareTest(), cohensD(), fDistributionPValue(), gammaLowerSeries(), gammaUpperContinuedFraction(), invertMatrix() (+14 more)
 
 ### Community 53 - "boot"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (21): applyResponseAnswerEdit(), approveSingleResponse(), boot(), checkGeminiModelsHealth(), editResponseAnswerPrompt(), flagSingleResponse(), generateSurveyFromAiOrDoc(), getCurrentUser() (+13 more)
 
 ### Community 54 - ".buildOrUpdateElements"
 Cohesion: 0.16
 Nodes (6): ks(), Ms(), Ps(), Ss(), ws(), yt()
 
-### Community 55 - ".update"
-Cohesion: 0.20
-Nodes (3): k(), Qs(), ra()
+### Community 55 - "_computeLongitudinalData"
+Cohesion: 0.22
+Nodes (9): _computeLongitudinalData(), _extractWaveChoiceValues(), formatQuestionTypeLabel(), _formatWaveNumber(), _formatWavePValue(), _isWaveChoiceQuestion(), _isWaveNumericQuestion(), _normalizeWaveQuestionTitle() (+1 more)
 
 ### Community 56 - "mountCharts"
 Cohesion: 0.29
 Nodes (10): destroyCharts(), forecastCompletion(), getCountryGeoFocus(), getOptimalDevicePixelRatio(), mountCharts(), mountForensicsChart(), mountGpsLogMap(), mountLisaMap() (+2 more)
 
 ### Community 57 - "renderSingleQuestionAnalyticsCard"
-Cohesion: 0.15
-Nodes (14): computeQuestionSkipFunnel(), formatQuestionTypeLabel(), _formatWaveNumber(), _formatWavePValue(), renderLongitudinalTab(), renderOpenEndedQuestionSummary(), renderPaginatedVerbatimList(), renderQuestionChartCanvas() (+6 more)
+Cohesion: 0.13
+Nodes (19): _buildAskSurveyContext(), _buildBriefingPlainText(), _buildNlpCacheKey(), _cachedAnalyzeVerbatims(), _cachedSynthesizeQuestionInsights(), computeQuestionSkipFunnel(), copyVerbatimBriefing(), generateAndPublishAiBrief() (+11 more)
 
 ### Community 58 - "updateElements"
 Cohesion: 0.22
-Nodes (4): _calculateBarValuePixels(), _s(), updateElements(), ys()
+Nodes (8): _calculateBarIndexPixels(), _calculateBarValuePixels(), _getRuler(), _getStackCount(), _getStackIndex(), _getStacks(), updateElements(), wt()
 
 ### Community 59 - ".getLabels"
 Cohesion: 0.33
@@ -327,20 +323,24 @@ Cohesion: 0.36
 Nodes (3): Ln, _refresh(), start()
 
 ### Community 62 - "e"
-Cohesion: 0.15
-Nodes (8): e, Et(), getCenterPoint(), It(), rt(), tooltipPosition(), Tt(), za()
+Cohesion: 0.25
+Nodes (6): e, getCenterPoint(), inRange(), pt(), tooltipPosition(), ut()
 
 ### Community 63 - "copyText"
 Cohesion: 0.40
 Nodes (5): copyLiveReportLink(), copyText(), generateSurveyInvites(), getLiveReportUrl(), openLiveReport()
 
-### Community 64 - "de"
-Cohesion: 0.20
-Nodes (6): de(), jt(), ke(), numeric(), se(), Xt()
+### Community 65 - "Ji"
+Cohesion: 0.12
+Nodes (7): addElements(), Ji, ki(), qi(), Ui(), _update(), Xi()
 
-### Community 68 - ".constructor"
+### Community 66 - ".getMinMax"
+Cohesion: 0.33
+Nodes (3): f(), _s(), ys()
+
+### Community 67 - "I"
 Cohesion: 0.40
-Nodes (4): ea(), fs(), sa(), xe()
+Nodes (4): generateLabels(), I(), Is(), ya()
 
 ### Community 69 - "runQuestionAiSummary"
 Cohesion: 0.60
@@ -348,23 +348,23 @@ Nodes (5): getCachedQuestionAiSummary(), _getQuestionAiCacheKey(), _loadQuestion
 
 ## Knowledge Gaps
 - **6 isolated node(s):** `RFC-6962`, `manifest.json (Admin PWA)`, `manifest-collector.json (Field PWA)`, `Code.gs (Google Apps Script Backend)`, `ADR 0001 Offline Chart.js` (+1 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 272 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **13 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 269 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **11 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `i` connect `i` to `de`, `chart.umd.min.js`, `.constructor`, `P`, `._handleEvent`, `m`, `.notifyPlugins`, `A`, `Ks`, `Ji`, `.update`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `zs` connect `zs` to `P`, `chart.umd.min.js`, `C`, `._computeLabelItems`, `.isHorizontal`, `en`, `ja`, `.getLabels`?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
 - **What connects `RFC-6962`, `manifest.json (Admin PWA)`, `manifest-collector.json (Field PWA)` to the rest of the system?**
   _6 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `AESurveyStore` be split into smaller, more focused modules?**
-  _Cohesion score 0.05572545022086307 - nodes in this community are weakly interconnected._
-- **Why does `zs` connect `zs` to `chart.umd.min.js`, `._calculatePadding`, `m`, `._computeLabelItems`, `.isHorizontal`, `en`, `ja`, `.getLabels`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **Should `zs` be split into smaller, more focused modules?**
-  _Cohesion score 0.13763440860215054 - nodes in this community are weakly interconnected._
-- **Why does `ae` connect `ae` to `de`, `chart.umd.min.js`, `e`, `A`?**
+  _Cohesion score 0.057166257166257166 - nodes in this community are weakly interconnected._
+- **Why does `Os` connect `Os` to `.getMinMax`, `chart.umd.min.js`, `.getDataset`, `.buildOrUpdateElements`, `pa`, `updateElements`, `.getParsed`?**
   _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **Should `zs` be split into smaller, more focused modules?**
+  _Cohesion score 0.12299465240641712 - nodes in this community are weakly interconnected._
+- **Why does `i` connect `i` to `P`, `chart.umd.min.js`, `P`, `m`, `A`, `ae`, `Ji`?**
+  _High betweenness centrality (0.016) - this node is a cross-community bridge._
 - **Should `field-app.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.0628245067497404 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.061946902654867256 - nodes in this community are weakly interconnected._

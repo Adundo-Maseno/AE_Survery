@@ -346,7 +346,7 @@ function test(name, fn) {
         setItem: (k, v) => { dbStorage[k] = String(v); },
         removeItem: (k) => { delete dbStorage[k]; }
       },
-      navigator: { onLine: false, userAgent: 'Node-CI' },
+      navigator: { onLine: true, userAgent: 'Node-CI' },
       location: { origin: 'https://ae-survey.pages.dev', pathname: '/index.html', search: '' }
     };
     dbSandbox.window = dbSandbox;
@@ -354,6 +354,7 @@ function test(name, fn) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/db.js'), 'utf8'), dbSandbox);
 
     const store = dbSandbox.window.aeStore;
+    store.settings.gasWebAppUrl = 'https://script.google.com/macros/s/ci-test/exec';
     const legacySurvey = {
       id: 'srv_ver_test',
       title: 'Version Test V2',
@@ -494,6 +495,315 @@ function test(name, fn) {
     assert.strictEqual(personnelRows[1][2], 'enumerator', 'Non-admin self-update must NOT escalate role to admin');
     assert.strictEqual(personnelRows[1][8], 'srv_a', 'Non-admin self-update must NOT modify assignedSurveys');
     assert.strictEqual(personnelRows[1][9], 'Active', 'Non-admin self-update must NOT modify Status');
+  });
+
+  // 13. (a) Performance benchmark: AEStats.moransI at N=1,000 completes in <250ms
+  await test('AEStats.moransI at N=1,000 completes in <250ms', () => {
+    const points = new Array(1000);
+    for (let i = 0; i < 1000; i++) {
+      points[i] = {
+        lat: -1.3 + (i % 50) * 0.04,
+        lng: 36.7 + Math.floor(i / 50) * 0.04,
+        value: 50 + ((i * 17) % 200)
+      };
+    }
+    const t0 = process.hrtime.bigint();
+    const res = AEStats.moransI(points);
+    const elapsedMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert(!res.error, `moransI returned unexpected error: ${res && res.error}`);
+    assert(Number.isFinite(res.moransI), 'moransI must return a finite Moran I statistic');
+    assert.strictEqual(res.sampled, true, 'moransI at N=1,000 should use deterministic stride sampling');
+    assert.strictEqual(res.totalPoints, 1000, 'moransI must preserve totalPoints=1000');
+    assert(elapsedMs < 250, `moransI at N=1,000 took ${elapsedMs.toFixed(1)}ms (budget <250ms)`);
+    console.log(`    [bench] AEStats.moransI(N=1000): ${elapsedMs.toFixed(2)}ms (sampled=${res.sampled}, n=${res.n}, totalPoints=${res.totalPoints})`);
+  });
+
+  // 14. (b) Performance benchmark: computeDataHygiene at N=1,000 completes in <100ms
+  await test('computeDataHygiene at N=1,000 completes in <100ms', () => {
+    const bigResponses = new Array(1000);
+    for (let i = 0; i < 1000; i++) {
+      bigResponses[i] = {
+        id: `hyg_${i}`,
+        surveyId: 's_ci',
+        enumerator: 'EnumOne',
+        submittedAt: now,
+        durationSeconds: 150 + (i % 60),
+        answers: {
+          q_reg: i % 2 === 0 ? 'Nakuru' : 'Kisumu',
+          q_yield: 95 + (i % 20),
+          q_fb: i % 50 === 0
+            ? 'Repeated feedback sentence about seed quality and dispatch timing'
+            : `Unique field observation number ${i} from farmer plot ${i % 97}`
+        }
+      };
+    }
+    const t0 = process.hrtime.bigint();
+    const hygiene = AEAnalytics.computeDataHygiene(survey, bigResponses);
+    const elapsedMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert(hygiene && Array.isArray(hygiene.nearDuplicates), 'computeDataHygiene must return hygiene buckets');
+    assert(hygiene.nearDuplicates.length >= 1, 'computeDataHygiene should still detect near-duplicates');
+    assert(elapsedMs < 100, `computeDataHygiene at N=1,000 took ${elapsedMs.toFixed(1)}ms (budget <100ms)`);
+    console.log(`    [bench] computeDataHygiene(N=1000): ${elapsedMs.toFixed(2)}ms`);
+  });
+
+  // 15. (c) submitResponsesBatch persists N records in 1 saveToLocalStorage call
+  await test('submitResponsesBatch persists N records in 1 saveToLocalStorage call', () => {
+    const dbStorage = {};
+    const dbSandbox = {
+      console, Date, Math, JSON, Object, Array, Set, Map, RegExp, Error, Promise,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      setInterval: () => 0,
+      clearInterval: () => {},
+      localStorage: {
+        getItem: (k) => (k in dbStorage ? dbStorage[k] : null),
+        setItem: (k, v) => { dbStorage[k] = String(v); },
+        removeItem: (k) => { delete dbStorage[k]; }
+      },
+      navigator: { onLine: true, userAgent: 'Node-CI' },
+      location: { origin: 'https://ae-survey.pages.dev', pathname: '/index.html', search: '' }
+    };
+    dbSandbox.window = dbSandbox;
+    vm.createContext(dbSandbox);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/db.js'), 'utf8'), dbSandbox);
+
+    const store = dbSandbox.window.aeStore;
+    store.settings.gasWebAppUrl = 'https://script.google.com/macros/s/ci-test/exec';
+    store.upsertSurvey({
+      id: 'srv_batch',
+      title: 'Batch Import Survey',
+      pages: [{ id: 'p1', title: 'P1', questions: [{ id: 'q1', type: 'short_text', title: 'Name' }] }]
+    }, false);
+
+    let saveCalls = 0;
+    let lastSaveOpts = null;
+    const origSave = store.saveToLocalStorage.bind(store);
+    store.saveToLocalStorage = (opts) => {
+      saveCalls++;
+      lastSaveOpts = opts;
+      return origSave(opts);
+    };
+
+    let syncTriggers = 0;
+    store.triggerBackgroundSyncNow = () => { syncTriggers++; };
+
+    const N = 25;
+    const batch = Array.from({ length: N }, (_, i) => ({
+      id: `resp_batch_${i}`,
+      surveyId: 'srv_batch',
+      enumerator: 'BatchEnum',
+      durationSec: 60,
+      answers: { q1: `Farmer ${i}` }
+    }));
+
+    const inserted = store.submitResponsesBatch(batch);
+    assert.strictEqual(inserted.length, N, 'submitResponsesBatch must insert all N records');
+    assert.strictEqual(saveCalls, 1, `Expected 1 saveToLocalStorage call, got ${saveCalls}`);
+    assert.strictEqual(syncTriggers, 1, `Expected 1 triggerBackgroundSyncNow call, got ${syncTriggers}`);
+    assert(lastSaveOpts && Array.isArray(lastSaveOpts.stores) && lastSaveOpts.stores.includes('responses') && lastSaveOpts.stores.includes('syncQueue'),
+      'submitResponsesBatch should scope saveToLocalStorage to responses and syncQueue');
+    assert.strictEqual(store.responses.filter((r) => r.surveyId === 'srv_batch').length, N);
+  });
+
+  // 16. (d) AECollector.computeResponseScore matches AEAnalytics.computeResponseScore
+  await test('AECollector.computeResponseScore matches AEAnalytics.computeResponseScore', () => {
+    const scoredSurvey = {
+      id: 's_score_parity',
+      title: 'Scoring Parity',
+      scoring: {
+        enabled: true,
+        tiers: [
+          { label: 'Gold', minPct: 80 },
+          { label: 'Silver', minPct: 50 },
+          { label: 'Bronze', minPct: 0 }
+        ]
+      },
+      pages: [{
+        id: 'p1',
+        title: 'P1',
+        questions: [
+          { id: 'q_mc', type: 'multiple_choice', title: 'MC', options: ['A', 'B'], optionPoints: { A: 10, B: 4 } },
+          { id: 'q_cb', type: 'checkboxes', title: 'CB', options: ['X', 'Y', 'Z'], optionPoints: { X: 5, Y: 5, Z: 0 } }
+        ]
+      }]
+    };
+    const cases = [
+      { q_mc: 'A', q_cb: ['X', 'Y'] },
+      { q_mc: 'B', q_cb: ['X'] },
+      { q_mc: 'B', q_cb: [] },
+      {}
+    ];
+    cases.forEach((ans, idx) => {
+      const aScore = AEAnalytics.computeResponseScore(scoredSurvey, ans);
+      const cScore = AECollector.computeResponseScore(scoredSurvey, ans);
+      assert.deepStrictEqual(cScore, aScore, `Score mismatch on case #${idx}`);
+    });
+    const disabledSurvey = Object.assign({}, scoredSurvey, { scoring: { enabled: false } });
+    assert.strictEqual(AECollector.computeResponseScore(disabledSurvey, cases[0]), null);
+    assert.strictEqual(AEAnalytics.computeResponseScore(disabledSurvey, cases[0]), null);
+  });
+
+  // 17. (e) report-export.js buildBlankQuestionnaireHTML nested translations & _computeQuestionBreakdown matrix objects
+  await test('report-export.js renders nested translations[lang].questions[q.id] and handles matrix object answers', () => {
+    const bilingualSurvey = {
+      id: 's_bi',
+      title: 'Bilingual Survey',
+      pages: [{
+        id: 'p_main',
+        title: 'Main Section',
+        questions: [
+          { id: 'q_crop', type: 'multiple_choice', title: 'Primary Crop', options: ['Maize', 'Beans'] },
+          { id: 'q_mat', type: 'matrix', title: 'Service Rating', rows: ['Seeds', 'Delivery'], columns: ['Poor', 'Good', 'Excellent'] }
+        ]
+      }],
+      translations: {
+        sw: {
+          title: 'Utafiti wa Wakulima',
+          pages: { p_main: { title: 'Sehemu Kuu' } },
+          questions: {
+            q_crop: { title: 'Zao Kuu', options: ['Mahindi', 'Maharagwe'] },
+            q_mat: { title: 'Kiwango cha Huduma', rows: ['Mbegu', 'Usafirishaji'], columns: ['Mbaya', 'Nzuri', 'Bora Sana'] }
+          }
+        }
+      }
+    };
+
+    const blankSw = AEReportExport.buildBlankQuestionnaireHTML(bilingualSurvey, { lang: 'sw' });
+    assert(blankSw.includes('Sehemu Kuu'), 'Swahili page title must be rendered from translations.sw.pages[p.id]');
+    assert(blankSw.includes('Zao Kuu'), 'Swahili question title must be rendered from translations.sw.questions[q.id]');
+    assert(blankSw.includes('Mahindi') && blankSw.includes('Maharagwe'), 'Swahili options must be rendered');
+    assert(blankSw.includes('Mbegu') && blankSw.includes('Bora Sana'), 'Swahili matrix rows/columns must be rendered');
+
+    const matrixResponses = [
+      { id: 'm1', surveyId: 's_bi', enumerator: 'A', submittedAt: now, answers: { q_crop: 'Maize', q_mat: { Seeds: 'Good', Delivery: 'Excellent' } } },
+      { id: 'm2', surveyId: 's_bi', enumerator: 'B', submittedAt: now, answers: { q_crop: 'Beans', q_mat: { Seeds: 'Good', Delivery: 'Poor' } } },
+      { id: 'm3', surveyId: 's_bi', enumerator: 'C', submittedAt: now, answers: { q_crop: 'Maize', q_mat: {} } }
+    ];
+    const execHtml = AEReportExport.buildExecutiveReportHTML(bilingualSurvey, matrixResponses, {});
+    assert(execHtml.includes('Seeds: Good'), 'Executive report must render matrix row:col breakdown (Seeds: Good)');
+    assert(execHtml.includes('Delivery: Excellent'), 'Executive report must render matrix row:col breakdown (Delivery: Excellent)');
+    assert(!execHtml.includes('[object Object]'), 'Matrix answers must never stringify as [object Object]');
+  });
+
+  // 18. (f) Code.gs calls SpreadsheetApp.flush() before lock.releaseLock() and gates doGet?action=migrate with ScriptLock + admin check
+  await test('Code.gs flushes before releaseLock and gates doGet?action=migrate with ScriptLock + admin check', () => {
+    const propStore = { AE_SYNC_TOKEN: 'ci-secret-token' };
+    const events = [];
+    const mockSs = { getSheets: () => [], getSheetByName: () => null };
+    const gasSandbox = {
+      Logger: { log: () => {} },
+      CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+      LockService: {
+        getScriptLock: () => ({
+          waitLock: () => { events.push('waitLock'); },
+          releaseLock: () => { events.push('releaseLock'); }
+        })
+      },
+      ContentService: {
+        MimeType: { JSON: 'application/json' },
+        createTextOutput: (txt) => ({
+          _text: txt,
+          setMimeType() { return this; },
+          getContent() { return this._text; }
+        })
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({
+          getProperty: (k) => propStore[k] || null,
+          setProperty: (k, v) => { propStore[k] = String(v); }
+        })
+      },
+      SpreadsheetApp: {
+        getActiveSpreadsheet: () => mockSs,
+        flush: () => { events.push('flush'); }
+      }
+    };
+    vm.createContext(gasSandbox);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'Code.gs'), 'utf8'), gasSandbox);
+    gasSandbox.ensureDatabaseInitialized_ = () => {};
+    gasSandbox.migrateResponsesSheetLayout_ = () => ({ migrated: 0 });
+    gasSandbox.bumpDbVersion_ = () => {};
+
+    // 18a. doPost flushes before releaseLock
+    events.length = 0;
+    gasSandbox.doPost({
+      postData: {
+        contents: JSON.stringify({ syncToken: 'ci-secret-token', action: 'UNKNOWN_CHECK', deviceId: 'ci-dev' })
+      }
+    });
+    const postFlushIdx = events.indexOf('flush');
+    const postReleaseIdx = events.indexOf('releaseLock');
+    assert(postFlushIdx !== -1 && postReleaseIdx !== -1 && postFlushIdx < postReleaseIdx,
+      `doPost must call SpreadsheetApp.flush() before releaseLock() (events=${JSON.stringify(events)})`);
+
+    // 18b. doGet?action=migrate rejects unauthorized caller without acquiring ScriptLock
+    events.length = 0;
+    const unauthMigrate = JSON.parse(gasSandbox.doGet({
+      parameter: { action: 'migrate', syncToken: 'ci-secret-token', callerId: 'ENUM-99' }
+    }).getContent());
+    assert.strictEqual(unauthMigrate.ok, false, 'Unauthorized migrate must fail');
+    assert(/unauthorized|admin/i.test(String(unauthMigrate.error || '')), 'Unauthorized migrate must return admin error');
+    assert(!events.includes('waitLock'), 'Unauthorized migrate must not acquire ScriptLock');
+
+    // 18c. doGet?action=migrate with valid admin syncToken + callerId acquires ScriptLock and flushes before releaseLock
+    events.length = 0;
+    const authMigrate = JSON.parse(gasSandbox.doGet({
+      parameter: { action: 'migrate', syncToken: 'ci-secret-token', callerId: 'ADM-01' }
+    }).getContent());
+    assert.strictEqual(authMigrate.ok, true, 'Authorized migrate must succeed');
+    const migWaitIdx = events.indexOf('waitLock');
+    const migFlushIdx = events.indexOf('flush');
+    const migReleaseIdx = events.indexOf('releaseLock');
+    assert(migWaitIdx !== -1 && migFlushIdx > migWaitIdx && migReleaseIdx > migFlushIdx,
+      `Authorized migrate must waitLock -> flush -> releaseLock (events=${JSON.stringify(events)})`);
+  });
+
+  // 19. (g) field-app.js uppercase SUBMIT_RESPONSE/DELETE_SURVEY fallback & ?prefill_/?utm_ parsing
+  await test('field-app.js handles uppercase SUBMIT_RESPONSE/DELETE_SURVEY fallback and ?prefill_/?utm_ parsing', () => {
+    const fieldSandbox = {
+      console, Date, Math, JSON, Object, Array, Set, Map, RegExp, Error, Promise, URLSearchParams,
+      setTimeout: () => 0,
+      clearTimeout: () => {},
+      document: { addEventListener: () => {}, getElementById: () => null },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      navigator: { onLine: true, userAgent: 'Node-CI' },
+      location: {
+        origin: 'https://ae-survey.pages.dev',
+        pathname: '/field.html',
+        search: '?survey=s_ci&utm_source=sms&utm_medium=field&utm_campaign=q4_launch&prefill_q_reg=Nakuru'
+      },
+      aeStore: {
+        getQuestionsForSurvey: (s) => (s.pages || []).flatMap((p) => p.questions || []),
+        isEffectivelyOnline: () => true,
+        syncQueue: [
+          { id: 'q1', action: 'SUBMIT_RESPONSE', recordId: 'r_queued_1', title: 'Resp 1' },
+          { id: 'q2', action: 'DELETE_SURVEY', recordId: 's_del_1', title: 'Deleted Survey' }
+        ],
+        responses: [
+          { id: 'r_queued_1', surveyTitle: 'S1', syncStatus: 'queued', submittedAt: now },
+          { id: 'r_orphan_2', surveyTitle: 'S1', syncStatus: 'queued', submittedAt: now }
+        ]
+      }
+    };
+    fieldSandbox.window = fieldSandbox;
+    vm.createContext(fieldSandbox);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/field-app.js'), 'utf8'), fieldSandbox);
+
+    const app = fieldSandbox.window.AEFieldApp;
+    const pending = app.getPendingSyncItems();
+    const delItem = pending.find((i) => i.recordId === 's_del_1');
+    const orphanItem = pending.find((i) => i.recordId === 'r_orphan_2');
+    const dupCount = pending.filter((i) => i.recordId === 'r_queued_1').length;
+    assert(delItem && delItem.kind === 'deleted_survey', 'DELETE_SURVEY queue item must map to kind=deleted_survey');
+    assert.strictEqual(dupCount, 1, 'SUBMIT_RESPONSE queue item must deduplicate matching queued response');
+    assert(orphanItem && orphanItem.action === 'SUBMIT_RESPONSE', 'Orphan unsynced response must default to uppercase SUBMIT_RESPONSE');
+
+    app.draftAnswers = {};
+    const utm = app.parseCampaignAndPrefillParams(survey);
+    assert.strictEqual(utm.source, 'sms');
+    assert.strictEqual(utm.medium, 'field');
+    assert.strictEqual(utm.campaign, 'q4_launch');
+    assert.strictEqual(app.draftAnswers.q_reg, 'Nakuru');
   });
 
   console.log(`\nALL ${passed} REGRESSION TESTS PASSED.`);

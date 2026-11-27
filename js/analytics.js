@@ -763,40 +763,42 @@ window.AEStats = {
 
   // 17. Geospatial Autocorrelation & Anselin Local LISA Hotspot Engine
   moransI(points, options = {}) {
-    const { distanceBandKm = 450, power = 1 } = options;
-    const valid = points.filter((p) => p && !isNaN(p.lat) && !isNaN(p.lng) && !isNaN(p.value) && p.value > 0);
-    const n = valid.length;
-    if (n < 4) {
-      return { error: `Spatial analysis requires at least 4 valid coordinates (found ${n}).` };
+    const { distanceBandKm = 450, power = 1, maxPoints = 250 } = options;
+    const validAll = points.filter((p) => p && !isNaN(p.lat) && !isNaN(p.lng) && !isNaN(p.value) && p.value > 0);
+    const totalValid = validAll.length;
+    if (totalValid < 4) {
+      return { error: `Spatial analysis requires at least 4 valid coordinates (found ${totalValid}).` };
     }
 
-    const haversineDistKm = (lat1, lon1, lat2, lon2) => {
-      const R = 6371.0;
-      const dLat = ((lat2 - lat1) * Math.PI) / 180.0;
-      const dLon = ((lon2 - lon1) * Math.PI) / 180.0;
-      const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos((lat1 * Math.PI) / 180.0) * Math.cos((lat2 * Math.PI) / 180.0) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      return 2.0 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
-    };
-
-    let maxDist = 0;
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const d = haversineDistKm(valid[i].lat, valid[i].lng, valid[j].lat, valid[j].lng);
-        if (d > maxDist) maxDist = d;
+    // Deterministic stride sampling when N > maxPoints (default 250) to keep O(N^2) spatial matrix < 80ms
+    let valid = validAll;
+    let sampled = false;
+    if (maxPoints > 0 && totalValid > maxPoints) {
+      sampled = true;
+      valid = new Array(maxPoints);
+      const step = totalValid / maxPoints;
+      for (let i = 0; i < maxPoints; i++) {
+        valid[i] = validAll[Math.floor(i * step)];
       }
     }
-    const effectiveBandKm = Math.max(distanceBandKm, maxDist * 1.05);
+    const n = valid.length;
 
-    const values = valid.map((p) => Number(p.value));
-    const meanVal = this.mean(values);
-    const z = values.map((v) => v - meanVal);
+    const values = new Float64Array(n);
+    let sumVal = 0;
+    for (let i = 0; i < n; i++) {
+      const v = Number(valid[i].value);
+      values[i] = v;
+      sumVal += v;
+    }
+    const meanVal = sumVal / n;
+    const z = new Float64Array(n);
 
     let ssTot = 0;
     let s4Tot = 0;
     for (let i = 0; i < n; i++) {
-      const z2 = z[i] * z[i];
+      const zi = values[i] - meanVal;
+      z[i] = zi;
+      const z2 = zi * zi;
       ssTot += z2;
       s4Tot += z2 * z2;
     }
@@ -804,57 +806,91 @@ window.AEStats = {
 
     const b2 = (n * s4Tot) / (ssTot * ssTot);
 
-    const W = Array.from({ length: n }, () => Array(n).fill(0));
-    const rowSums = Array(n).fill(0);
+    // Precompute radians & cosines once (O(n)) and compute symmetric weights in a single upper-triangle Haversine pass
+    const DEG2RAD = Math.PI / 180.0;
+    const latRad = new Float64Array(n);
+    const lngRad = new Float64Array(n);
+    const cosLat = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const la = Number(valid[i].lat) * DEG2RAD;
+      latRad[i] = la;
+      lngRad[i] = Number(valid[i].lng) * DEG2RAD;
+      cosLat[i] = Math.cos(la);
+    }
+
+    const W = new Float64Array(n * n);
+    const rowSums = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        if (i === j) continue;
-        const d = haversineDistKm(valid[i].lat, valid[i].lng, valid[j].lat, valid[j].lng);
-        if (d <= effectiveBandKm) {
-          const w = 1.0 / Math.pow(Math.max(d, 0.1), power);
-          W[i][j] = w;
-          rowSums[i] += w;
-        }
+      const lat1 = latRad[i];
+      const lng1 = lngRad[i];
+      const cos1 = cosLat[i];
+      const rowOffsetI = i * n;
+      for (let j = i + 1; j < n; j++) {
+        const dLat = latRad[j] - lat1;
+        const dLon = lngRad[j] - lng1;
+        const sLat = Math.sin(dLat * 0.5);
+        const sLon = Math.sin(dLon * 0.5);
+        const a = sLat * sLat + cos1 * cosLat[j] * sLon * sLon;
+        const d = 12742.0 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1.0 - a)));
+        const clamped = d > 0.1 ? d : 0.1;
+        const w = power === 1 ? 1.0 / clamped : 1.0 / Math.pow(clamped, power);
+        W[rowOffsetI + j] = w;
+        W[j * n + i] = w;
+        rowSums[i] += w;
+        rowSums[j] += w;
       }
     }
 
     for (let i = 0; i < n; i++) {
-      if (rowSums[i] > 0) {
+      const rs = rowSums[i];
+      if (rs > 0) {
+        const invRs = 1.0 / rs;
+        const rowOffsetI = i * n;
         for (let j = 0; j < n; j++) {
-          W[i][j] /= rowSums[i];
+          W[rowOffsetI + j] *= invRs;
         }
       }
     }
 
     let S0 = 0;
     let S1 = 0;
-    const colSums = Array(n).fill(0);
-    const rSums = Array(n).fill(0);
+    const colSums = new Float64Array(n);
+    const rSums = new Float64Array(n);
 
     for (let i = 0; i < n; i++) {
+      const rowOffsetI = i * n;
       for (let j = 0; j < n; j++) {
-        const wij = W[i][j];
-        const wji = W[j][i];
+        const wij = W[rowOffsetI + j];
+        const wji = W[j * n + i];
         S0 += wij;
-        S1 += 0.5 * Math.pow(wij + wji, 2);
+        const sumW = wij + wji;
+        S1 += 0.5 * sumW * sumW;
         rSums[i] += wij;
         colSums[j] += wij;
       }
     }
 
     let S2 = 0;
-    for (let i = 0; i < n; i++) S2 += Math.pow(rSums[i] + colSums[i], 2);
+    for (let i = 0; i < n; i++) {
+      const rc = rSums[i] + colSums[i];
+      S2 += rc * rc;
+    }
 
     if (S0 === 0) {
       return { error: `No spatial neighbors detected within ${distanceBandKm} km bandwidth. Try widening bandwidth.` };
     }
 
     let spatialCovariance = 0;
+    const lags = new Float64Array(n);
     for (let i = 0; i < n; i++) {
+      const rowOffsetI = i * n;
+      let lag = 0;
       for (let j = 0; j < n; j++) {
-        spatialCovariance += W[i][j] * z[i] * z[j];
+        lag += W[rowOffsetI + j] * z[j];
       }
+      lags[i] = lag;
+      spatialCovariance += z[i] * lag;
     }
 
     const moransI = (n / S0) * (spatialCovariance / ssTot);
@@ -863,18 +899,17 @@ window.AEStats = {
     const A = n * ((n * n - 3 * n + 3) * S1 - n * S2 + 3 * S0 * S0);
     const B = b2 * ((n * n - n) * S1 - 2 * n * S2 + 6 * S0 * S0);
     const C = (n - 1) * (n - 2) * (n - 3) * S0 * S0;
-    const varI = C > 0 ? (A - B) / C - Math.pow(expectedI, 2) : 0.05;
+    const varI = C > 0 ? (A - B) / C - expectedI * expectedI : 0.05;
     const seI = Math.sqrt(Math.max(1e-10, varI));
 
     const zScore = (moransI - expectedI) / seI;
     const pValue = 2.0 * this.normalCdfUpper(Math.abs(zScore));
 
     const m2 = ssTot / n;
-    const classifiedPoints = [];
+    const classifiedPoints = new Array(n);
 
     for (let i = 0; i < n; i++) {
-      let lag = 0;
-      for (let j = 0; j < n; j++) lag += W[i][j] * z[j];
+      const lag = lags[i];
       const localI = (z[i] / m2) * lag;
 
       let quadrant = 'Not Significant';
@@ -894,17 +929,19 @@ window.AEStats = {
         clusterColor = '#D97706';
       }
 
-      classifiedPoints.push({
+      classifiedPoints[i] = {
         ...valid[i],
         localI: parseFloat(localI.toFixed(2)),
         lag: parseFloat(lag.toFixed(1)),
         quadrant,
         clusterColor
-      });
+      };
     }
 
     return {
       n,
+      sampled,
+      totalPoints: totalValid,
       moransI: parseFloat(moransI.toFixed(3)),
       expectedI: parseFloat(expectedI.toFixed(3)),
       standardError: parseFloat(seI.toFixed(3)),
@@ -1354,7 +1391,71 @@ window.AEAnalytics = {
   askSurveyDraft: '',
   chartInstances: {}, // qId -> Chart.js instance
   mapInstances: {}, // qId -> Leaflet map instance
+  _mapTimers: {}, // mapKey -> setTimeout ID for invalidateSize/fitBounds
   _mapFocusBounds: {}, // mapKey -> { countryName, countryBounds, plotBounds, center, zoom }
+  _lastRenderedSurveyId: null,
+  _lastRenderedTab: null,
+  _lastAuditCache: null,
+  _nlpCache: new Map(),
+  _nlpCacheVersion: 0,
+
+  clearQuestionSearchTimers() {
+    if (!this._qSearchTimers) return;
+    Object.keys(this._qSearchTimers).forEach((k) => {
+      clearTimeout(this._qSearchTimers[k]);
+      delete this._qSearchTimers[k];
+    });
+  },
+
+  _invalidateNlpCache() {
+    this._nlpCacheVersion = (this._nlpCacheVersion || 0) + 1;
+    if (this._nlpCache && typeof this._nlpCache.clear === 'function') {
+      this._nlpCache.clear();
+    }
+  },
+
+  _buildNlpCacheKey(kind, survey, responses, qId = 'all', options = {}) {
+    const list = Array.isArray(responses) ? responses : [];
+    const len = list.length;
+    const firstId = len > 0 ? (list[0]?.id || list[0]?.clientResponseId || '') : '';
+    const lastId = len > 0 ? (list[len - 1]?.id || list[len - 1]?.clientResponseId || '') : '';
+    const surveyId = (survey && survey.id) || '';
+    const segQId = options?.segmentQId || 'auto';
+    const transCount = options?.translationsMap ? Object.keys(options.translationsMap).length : 0;
+    return `${kind}::v${this._nlpCacheVersion || 0}::${surveyId}::${qId || 'all'}::${len}::${firstId}::${lastId}::${segQId}::t${transCount}`;
+  },
+
+  _cachedAnalyzeVerbatims(responses, survey, options = {}) {
+    const engine = window.AETeXtEngine;
+    if (!engine || typeof engine.analyzeVerbatims !== 'function') return null;
+    if (!this._nlpCache) this._nlpCache = new Map();
+    const qId = options?.questionId || 'all';
+    const key = this._buildNlpCacheKey('analyze', survey, responses, qId, options);
+    if (this._nlpCache.has(key)) return this._nlpCache.get(key);
+    const result = engine.analyzeVerbatims(responses || [], survey, options);
+    if (this._nlpCache.size >= 80) {
+      const oldestKey = this._nlpCache.keys().next().value;
+      if (oldestKey !== undefined) this._nlpCache.delete(oldestKey);
+    }
+    this._nlpCache.set(key, result);
+    return result;
+  },
+
+  _cachedSynthesizeQuestionInsights(analysis, survey, q, responses) {
+    const engine = window.AETeXtEngine;
+    if (!analysis || !engine || typeof engine.synthesizeQuestionInsights !== 'function') return null;
+    if (!this._nlpCache) this._nlpCache = new Map();
+    const qId = (q && q.id) || 'all';
+    const key = this._buildNlpCacheKey('insights', survey, responses, qId, {});
+    if (this._nlpCache.has(key)) return this._nlpCache.get(key);
+    const result = engine.synthesizeQuestionInsights(analysis, survey, q);
+    if (this._nlpCache.size >= 80) {
+      const oldestKey = this._nlpCache.keys().next().value;
+      if (oldestKey !== undefined) this._nlpCache.delete(oldestKey);
+    }
+    this._nlpCache.set(key, result);
+    return result;
+  },
 
   isOpenEndedTextQuestion(q, survey = null) {
     if (!q) return false;
@@ -1692,6 +1793,12 @@ window.AEAnalytics = {
       });
       this.chartInstances = {};
     }
+    if (this._mapTimers) {
+      Object.keys(this._mapTimers).forEach((k) => {
+        clearTimeout(this._mapTimers[k]);
+        delete this._mapTimers[k];
+      });
+    }
     if (this.mapInstances) {
       Object.keys(this.mapInstances).forEach((qId) => {
         const map = this.mapInstances[qId];
@@ -1797,18 +1904,23 @@ window.AEAnalytics = {
       ? window.aeStore.getSurveyById(surveyId)
       : null;
     const f = this.filterState;
-    const locCfg = this.getLocationFilterConfig(survey, all);
-    const catCfg = this.getPrimaryCategoricalFilterConfig(survey, all, locCfg.question?.id || null);
+    const locCfg = (f.county !== 'all' || f.seedVariety !== 'all')
+      ? this.getLocationFilterConfig(survey, all)
+      : null;
+    const catCfg = f.seedVariety !== 'all'
+      ? this.getPrimaryCategoricalFilterConfig(survey, all, locCfg?.question?.id || null)
+      : null;
 
     const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
       ? window.AESession.getCurrentUser()
       : null;
 
-    let supervisedNames = null;
+    let supervisedNamesArr = null;
     let supervisedIds = null;
     if (currentUser && currentUser.role === 'supervisor') {
       const myStaff = (window.aeStore.personnel || []).filter((p) => p.supervisorId === currentUser.id);
-      supervisedNames = new Set(myStaff.map((p) => p.fullName).concat([currentUser.fullName]));
+      const supervisedNames = new Set(myStaff.map((p) => p.fullName).concat([currentUser.fullName]));
+      supervisedNamesArr = Array.from(supervisedNames).filter(Boolean);
       supervisedIds = new Set(myStaff.map((p) => p.id).concat([currentUser.id]));
     }
 
@@ -1830,10 +1942,10 @@ window.AEAnalytics = {
 
     return all.filter((r) => {
       // Supervisory Team Isolation (Supervisor sees supervised enumerator submissions + self-administered responses on assigned surveys)
-      if (currentUser && currentUser.role === 'supervisor' && supervisedNames && supervisedIds) {
+      if (currentUser && currentUser.role === 'supervisor' && supervisedNamesArr && supervisedIds) {
         const matchesDirectSup = r.supervisorId === currentUser.id;
         const matchesUser = r.submittedByUserId && supervisedIds.has(r.submittedByUserId);
-        const matchesEnumName = Array.from(supervisedNames).some((n) => (r.enumerator || '').includes(n));
+        const matchesEnumName = supervisedNamesArr.some((n) => (r.enumerator || '').includes(n));
         const isSelfRespondentOnAssigned =
           (r.submittedByUserRole === 'respondent' ||
             r.enumeratorId === 'self_respondent' ||
@@ -1942,10 +2054,16 @@ window.AEAnalytics = {
     if (!qId) return;
     this.questionVerbatimSearch[qId] = String(query || '');
     this.questionVerbatimPage[qId] = 1;
+    const expectedTab = this.activeTab;
+    const expectedSurveyId = (window.aeStore && window.aeStore.activeSurveyId) || this._lastRenderedSurveyId || null;
     const doRender = () => {
+      delete this._qSearchTimers[qId];
+      const currentSurveyId = (window.aeStore && window.aeStore.activeSurveyId) || this._lastRenderedSurveyId || null;
+      if (this.activeTab !== expectedTab) return;
+      if (expectedSurveyId && currentSurveyId && currentSurveyId !== expectedSurveyId) return;
       if (window.AEApp && typeof window.AEApp.render === 'function') {
         window.AEApp.render();
-        if (typeof document !== 'undefined') {
+        if (typeof document !== 'undefined' && this.activeTab === expectedTab) {
           const input = document.getElementById(`ae_q_vsearch_${qId}`);
           if (input) {
             input.focus();
@@ -1971,6 +2089,7 @@ window.AEAnalytics = {
       ? window.aeStore.getActiveSurvey()
       : null;
     if (isPublicReportMode && activeSurvey?.reportAccess?.hideOpenEnded) return;
+    this.clearQuestionSearchTimers();
     this.activeTab = 'text';
     this.verbatimQuestionId = qId || 'all';
     this.verbatimThemeFilter = themeId || 'all';
@@ -2023,7 +2142,7 @@ window.AEAnalytics = {
       if (!engine || typeof engine.analyzeVerbatims !== 'function') {
         throw new Error('Text intelligence engine unavailable.');
       }
-      const analysis = engine.analyzeVerbatims(responses, survey, { questionId: qId });
+      const analysis = this._cachedAnalyzeVerbatims(responses, survey, { questionId: qId });
       const res = typeof engine.synthesizeVerbatimsViaGAS === 'function'
         ? await engine.synthesizeVerbatimsViaGAS(analysis, survey)
         : { ok: true, provider: 'offline_fallback', briefing: engine.generateExecutiveBriefing(analysis, survey) };
@@ -2159,6 +2278,7 @@ window.AEAnalytics = {
     window.AETeXtEngine.saveCustomTheme(surveyId, { name, keywords });
     this.verbatimShowCustomThemeForm = false;
     this.verbatimAiBriefing = null;
+    this._invalidateNlpCache();
     if (window.AEApp && typeof window.AEApp.showToast === 'function') {
       window.AEApp.showToast(`Custom theme "${name}" added and applied.`, 'success');
     }
@@ -2170,6 +2290,7 @@ window.AEAnalytics = {
     window.AETeXtEngine.deleteCustomTheme(surveyId, themeId);
     if (this.verbatimThemeFilter === themeId) this.verbatimThemeFilter = 'all';
     this.verbatimAiBriefing = null;
+    this._invalidateNlpCache();
     if (window.AEApp && typeof window.AEApp.showToast === 'function') {
       window.AEApp.showToast('Custom theme removed.', 'info');
     }
@@ -2232,7 +2353,7 @@ window.AEAnalytics = {
     const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
     if (!survey) return '';
     const filtered = this.getFilteredResponses(survey.id);
-    const analysis = window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+    const analysis = this._cachedAnalyzeVerbatims(filtered, survey, {
       questionId: this.verbatimQuestionId || 'all',
       segmentQId: this.verbatimSegmentQId || 'auto',
       translationsMap: this.verbatimTranslations
@@ -2263,7 +2384,7 @@ window.AEAnalytics = {
     const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
     if (!survey || !window.AETeXtEngine) return;
     const filtered = this.getFilteredResponses(survey.id);
-    const analysis = window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+    const analysis = this._cachedAnalyzeVerbatims(filtered, survey, {
       questionId: this.verbatimQuestionId || 'all',
       segmentQId: this.verbatimSegmentQId || 'auto',
       translationsMap: this.verbatimTranslations
@@ -2291,6 +2412,7 @@ window.AEAnalytics = {
           mergedCount++;
         }
       });
+      if (mergedCount > 0) this._invalidateNlpCache();
       if (window.AEApp) {
         if (mergedCount > 0) {
           window.AEApp.showToast(`Translated ${mergedCount} verbatim note${mergedCount === 1 ? '' : 's'} to English.`, 'success');
@@ -2311,7 +2433,7 @@ window.AEAnalytics = {
     const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
     if (!survey || !window.AETeXtEngine) return;
     const filtered = this.getFilteredResponses(survey.id);
-    const analysis = window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+    const analysis = this._cachedAnalyzeVerbatims(filtered, survey, {
       questionId: this.verbatimQuestionId || 'all',
       segmentQId: this.verbatimSegmentQId || 'auto',
       translationsMap: this.verbatimTranslations
@@ -2378,7 +2500,7 @@ window.AEAnalytics = {
     questions.forEach((q) => { qLookup[q.id] = q; });
 
     const analysis = window.AETeXtEngine
-      ? window.AETeXtEngine.analyzeVerbatims(filtered, survey, {
+      ? this._cachedAnalyzeVerbatims(filtered, survey, {
           questionId: 'all',
           segmentQId: this.verbatimSegmentQId || 'auto',
           translationsMap: this.verbatimTranslations
@@ -2592,6 +2714,11 @@ window.AEAnalytics = {
       if ((this.activeTab === 'text' && reportAccess.hideOpenEnded) || (this.activeTab === 'gallery' && reportAccess.hideGallery)) {
         this.activeTab = 'summary';
       }
+    }
+    if (this._lastRenderedSurveyId !== survey.id || this._lastRenderedTab !== this.activeTab) {
+      this.clearQuestionSearchTimers();
+      this._lastRenderedSurveyId = survey.id;
+      this._lastRenderedTab = this.activeTab;
     }
     const safeSurveyIdJs = window.AEApp && typeof window.AEApp.escapeJs === 'function'
       ? window.AEApp.escapeJs(survey.id)
@@ -3134,7 +3261,7 @@ window.AEAnalytics = {
     }
 
     // Algorithmic Discovery 3: Qualitative Verbatim & Risk Sentiment
-    const textAnalysis = window.AETeXtEngine ? window.AETeXtEngine.analyzeVerbatims(responses, survey) : null;
+    const textAnalysis = this._cachedAnalyzeVerbatims(responses, survey, { questionId: 'all' });
     if (textAnalysis && textAnalysis.sentimentSummary && textAnalysis.sentimentSummary.negative > 0) {
       const term0 = AEApp.escapeHtml((textAnalysis.topTerms[0]?.term || 'delay').replace(/"/g, ''));
       const term1 = AEApp.escapeHtml((textAnalysis.topTerms[1]?.term || 'issue').replace(/"/g, ''));
@@ -4297,13 +4424,8 @@ window.AEAnalytics = {
       return '<div class="p-6 text-center text-xs text-[#646E68] bg-[#F8F9F8] rounded-[6px]">No responses recorded for this question yet.</div>';
     }
 
-    const engine = window.AETeXtEngine;
-    const analysis = engine && typeof engine.analyzeVerbatims === 'function'
-      ? engine.analyzeVerbatims(responses || [], survey, { questionId: q.id })
-      : null;
-    const insights = analysis && typeof engine.synthesizeQuestionInsights === 'function'
-      ? engine.synthesizeQuestionInsights(analysis, survey, q)
-      : null;
+    const analysis = this._cachedAnalyzeVerbatims(responses || [], survey, { questionId: q.id });
+    const insights = this._cachedSynthesizeQuestionInsights(analysis, survey, q, responses || []);
 
     const surveyId = (survey && survey.id) || '';
     const cachedAi = this.getCachedQuestionAiSummary(surveyId, q.id, values.length);
@@ -5344,7 +5466,7 @@ window.AEAnalytics = {
       : 'all';
 
     const analysis = engine
-      ? engine.analyzeVerbatims(responses || [], survey, {
+      ? this._cachedAnalyzeVerbatims(responses || [], survey, {
           questionId: activeQId,
           segmentQId: this.verbatimSegmentQId || 'auto',
           translationsMap: this.verbatimTranslations
@@ -7317,13 +7439,13 @@ window.AEAnalytics = {
 
     // Qualitative Theme Evolution via AETeXtEngine
     const w1Text = window.AETeXtEngine
-      ? window.AETeXtEngine.analyzeVerbatims(wave1Responses, survey, {
+      ? this._cachedAnalyzeVerbatims(wave1Responses, survey, {
           questionId: 'all',
           translationsMap: this.verbatimTranslations
         })
       : { totalAnalyzed: 0, sentimentSummary: { positive: 0, negative: 0, neutral: 0 }, themes: [] };
     const w2Text = window.AETeXtEngine
-      ? window.AETeXtEngine.analyzeVerbatims(wave2Responses, wave2Survey, {
+      ? this._cachedAnalyzeVerbatims(wave2Responses, wave2Survey, {
           questionId: 'all',
           translationsMap: this.verbatimTranslations
         })
@@ -8614,9 +8736,21 @@ window.AEAnalytics = {
       };
     }
 
+    const firstR = responses[0];
+    const lastR = responses[responses.length - 1];
+    const auditKey = `${(survey && survey.id) || ''}::${responses.length}::${firstR?.id || firstR?.clientResponseId || ''}::${lastR?.id || lastR?.clientResponseId || ''}::${firstR?.durationSec || 0}::${lastR?.durationSec || 0}`;
+    if (this._lastAuditCache && this._lastAuditCache.key === auditKey) {
+      return this._lastAuditCache.result;
+    }
+
+    const allSurveyQuestions = survey && window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey?.pages || []).flatMap((p) => p.questions || []);
+    const matrixQuestions = allSurveyQuestions.filter((q) => q && q.type === 'matrix');
+
     const totalQuestions = Math.max(
       1,
-      (survey?.pages || []).flatMap((p) => p.questions || []).length ||
+      allSurveyQuestions.length ||
       survey?.questions?.length ||
       (this.currentSurvey?.pages || []).flatMap((p) => p.questions || []).length ||
       10
@@ -8654,9 +8788,6 @@ window.AEAnalytics = {
       }
 
       // Check all matrix questions in survey (plus legacy q_seed_traits / q_trait_matrix) for straight-lining
-      const matrixQuestions = survey && window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
-        ? window.aeStore.getQuestionsForSurvey(survey).filter((q) => q.type === 'matrix')
-        : [];
       const candidateMatrixObjects = [];
       matrixQuestions.forEach((mq) => {
         if (r.answers?.[mq.id] && typeof r.answers[mq.id] === 'object') {
@@ -8750,7 +8881,7 @@ window.AEAnalytics = {
     const penalty = Math.min(60, (flaggedCount / Math.max(1, responses.length)) * 100);
     const healthScore = Math.max(40, Math.round(100 - penalty));
 
-    return {
+    const auditResult = {
       healthScore,
       totalQuestions,
       targetDurationSec,
@@ -8764,6 +8895,8 @@ window.AEAnalytics = {
       enumAudit,
       durations
     };
+    this._lastAuditCache = { key: auditKey, result: auditResult };
+    return auditResult;
   },
 
   renderForensicsTab(survey, responses) {
@@ -8975,7 +9108,7 @@ window.AEAnalytics = {
       badge.innerHTML = `<i class="fa-solid fa-location-dot"></i> Country: ${window.AEApp.escapeHtml(geoFocus.countryName)}`;
     }
 
-    const map = window.L.map('ae_lisa_map', { zoomControl: true, attributionControl: true }).setView(geoFocus.center, geoFocus.zoom);
+    const map = window.L.map('ae_lisa_map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView(geoFocus.center, geoFocus.zoom);
     const cartoApiKey = 'cb1_4xgn_1_43f97061eb6363c0c9241226';
     const tileLayer = window.L.tileLayer(
       `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${cartoApiKey}`,
@@ -9032,14 +9165,17 @@ window.AEAnalytics = {
 
     // Auto-focus map on national boundary of surveyed coordinates
     map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
-    setTimeout(() => {
+    this.mapInstances['lisa'] = map;
+    if (!this._mapTimers) this._mapTimers = {};
+    if (this._mapTimers['lisa']) clearTimeout(this._mapTimers['lisa']);
+    this._mapTimers['lisa'] = setTimeout(() => {
+      delete this._mapTimers['lisa'];
+      if (this.mapInstances['lisa'] !== map) return;
       try {
         map.invalidateSize();
         map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
       } catch (e) {}
     }, 200);
-
-    this.mapInstances['lisa'] = map;
   },
 
   mountGpsLogMap(responses) {
@@ -9075,7 +9211,7 @@ window.AEAnalytics = {
       badge.innerHTML = `<i class="fa-solid fa-location-dot"></i> Country: ${window.AEApp.escapeHtml(geoFocus.countryName)}`;
     }
 
-    const map = window.L.map('ae_gps_log_map', { zoomControl: true, attributionControl: true }).setView(geoFocus.center, geoFocus.zoom);
+    const map = window.L.map('ae_gps_log_map', { preferCanvas: true, zoomControl: true, attributionControl: true }).setView(geoFocus.center, geoFocus.zoom);
     const cartoApiKey = 'cb1_4xgn_1_43f97061eb6363c0c9241226';
     const tileLayer = window.L.tileLayer(
       `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${cartoApiKey}`,
@@ -9119,14 +9255,17 @@ window.AEAnalytics = {
     });
 
     map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
-    setTimeout(() => {
+    this.mapInstances['gps_log'] = map;
+    if (!this._mapTimers) this._mapTimers = {};
+    if (this._mapTimers['gps_log']) clearTimeout(this._mapTimers['gps_log']);
+    this._mapTimers['gps_log'] = setTimeout(() => {
+      delete this._mapTimers['gps_log'];
+      if (this.mapInstances['gps_log'] !== map) return;
       try {
         map.invalidateSize();
         map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
       } catch (e) {}
     }, 200);
-
-    this.mapInstances['gps_log'] = map;
   },
 
   mountPacingChart(responses, survey) {
@@ -9349,6 +9488,7 @@ window.AEAnalytics = {
 
         try {
           const map = window.L.map(mapContainer, {
+            preferCanvas: true,
             zoomControl: true,
             scrollWheelZoom: false
           });
@@ -9418,15 +9558,18 @@ window.AEAnalytics = {
           }
 
           map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
-          setTimeout(() => {
+          if (!this.mapInstances) this.mapInstances = {};
+          this.mapInstances[q.id] = map;
+          if (!this._mapTimers) this._mapTimers = {};
+          if (this._mapTimers[q.id]) clearTimeout(this._mapTimers[q.id]);
+          this._mapTimers[q.id] = setTimeout(() => {
+            delete this._mapTimers[q.id];
+            if (this.mapInstances[q.id] !== map) return;
             try {
               map.invalidateSize();
               map.fitBounds(geoFocus.countryBounds, { padding: [20, 20] });
             } catch (e) {}
           }, 200);
-
-          if (!this.mapInstances) this.mapInstances = {};
-          this.mapInstances[q.id] = map;
         } catch (mapErr) {
           console.warn(`Leaflet mount notice [${q.id}]:`, mapErr);
         }
@@ -10023,7 +10166,7 @@ window.AEAnalytics = {
 
     // Sheet 7: Verbatim_Intelligence
     const verb = window.AETeXtEngine
-      ? window.AETeXtEngine.analyzeVerbatims(responses, survey, {
+      ? this._cachedAnalyzeVerbatims(responses, survey, {
           questionId: 'all',
           segmentQId: this.verbatimSegmentQId || 'auto',
           translationsMap: this.verbatimTranslations
@@ -10106,9 +10249,8 @@ window.AEAnalytics = {
 
     try {
       const engine = window.AETeXtEngine;
-      const analysis = engine && typeof engine.analyzeVerbatims === 'function'
-        ? engine.analyzeVerbatims(responses, survey, { questionId: 'all' })
-        : { totalAnalyzed: 0, records: [], themes: [], sentimentSummary: {} };
+      const analysis = this._cachedAnalyzeVerbatims(responses, survey, { questionId: 'all' })
+        || { totalAnalyzed: 0, records: [], themes: [], sentimentSummary: {} };
 
       const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
         ? window.aeStore.getQuestionsForSurvey(survey)
@@ -10152,8 +10294,8 @@ window.AEAnalytics = {
       }
 
       const isGemini = Boolean(aiRes && aiRes.provider === 'gemini' && aiRes.briefing);
-      const offlineInsights = engine && typeof engine.synthesizeQuestionInsights === 'function' && (analysis.totalAnalyzed || 0) > 0
-        ? engine.synthesizeQuestionInsights(analysis, survey, null)
+      const offlineInsights = (analysis.totalAnalyzed || 0) > 0
+        ? this._cachedSynthesizeQuestionInsights(analysis, survey, null, responses)
         : null;
 
       const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
@@ -10424,11 +10566,15 @@ window.AEAnalytics = {
     const csv = lines.join('\n');
     if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof document !== 'undefined' && typeof document.createElement === 'function') {
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       const slug = String(survey?.title || 'survey').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 32);
       a.download = `AE_FieldOps_${slug}_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+      }, 1000);
       if (window.AEApp && window.AEApp.showToast) window.AEApp.showToast('Enumerator activity CSV exported.', 'success');
     }
     return csv;
@@ -10850,10 +10996,7 @@ window.AEAnalytics = {
     });
 
     const verbatims = [];
-    const engine = window.AETeXtEngine;
-    const analysis = engine && typeof engine.analyzeVerbatims === 'function'
-      ? engine.analyzeVerbatims(responses || [], survey, { questionId: 'all' })
-      : null;
+    const analysis = this._cachedAnalyzeVerbatims(responses || [], survey, { questionId: 'all' });
     if (analysis && Array.isArray(analysis.records)) {
       analysis.records.slice(0, 60).forEach((rec) => {
         const txt = String(rec.translatedText || rec.text || '').trim();
@@ -11230,23 +11373,52 @@ window.AEAnalytics = {
     const numericOutliers = [];
     const gibberishTexts = [];
 
-    // 1. Near-Duplicate Detection (same enumerator + identical core answers within 15 min)
-    const seenByEnum = new Map();
+    // 1. Near-Duplicate Detection (same enumerator + identical core answers or 60-char prefix within 15 min)
+    // O(1) Map lookups replace O(N^2) prevList.find scan
+    const exactSeen = new Map(); // `${enumKey}\0${ansSig}` -> firstId
+    const prefixSeen = new Map(); // `${enumKey}\0${ansSig.slice(0, 60)}` -> [{ id, subMs }]
+    const FIFTEEN_MIN_MS = 15 * 60000;
     list.forEach((r) => {
+      const respId = r.id || r.clientResponseId;
       const enumKey = String(r.enumerator || 'anon').toLowerCase();
       const ansSig = JSON.stringify(r.answers || {});
+      const exactKey = `${enumKey}\0${ansSig}`;
+      let dupId = exactSeen.get(exactKey) || null;
       const subMs = new Date(r.submittedAt || 0).getTime();
-      const prevList = seenByEnum.get(enumKey) || [];
-      const dupMatch = prevList.find((p) => p.ansSig === ansSig || (Math.abs(subMs - p.subMs) <= 15 * 60000 && p.ansSig.slice(0, 60) === ansSig.slice(0, 60) && ansSig.length > 25));
-      if (dupMatch) {
+      const hasPrefix = ansSig.length > 25;
+      const prefixKey = hasPrefix ? `${enumKey}\0${ansSig.slice(0, 60)}` : null;
+
+      if (!dupId && prefixKey) {
+        const bucket = prefixSeen.get(prefixKey);
+        if (bucket) {
+          for (let i = 0; i < bucket.length; i++) {
+            if (Math.abs(subMs - bucket[i].subMs) <= FIFTEEN_MIN_MS) {
+              dupId = bucket[i].id;
+              break;
+            }
+          }
+        }
+      }
+
+      if (dupId) {
         nearDuplicates.push({
-          responseId: r.id || r.clientResponseId,
+          responseId: respId,
           enumerator: r.enumerator || 'Enumerator',
-          reason: `Near-duplicate of ${dupMatch.id} (same enumerator & matching answers)`
+          reason: `Near-duplicate of ${dupId} (same enumerator & matching answers)`
         });
       }
-      prevList.push({ id: r.id || r.clientResponseId, ansSig, subMs });
-      seenByEnum.set(enumKey, prevList);
+
+      if (!exactSeen.has(exactKey)) {
+        exactSeen.set(exactKey, respId);
+      }
+      if (prefixKey) {
+        let bucket = prefixSeen.get(prefixKey);
+        if (!bucket) {
+          bucket = [];
+          prefixSeen.set(prefixKey, bucket);
+        }
+        bucket.push({ id: respId, subMs });
+      }
     });
 
     // 2. Statistical Numeric Outliers (> 3x IQR extreme Tukey fence)
@@ -11269,14 +11441,17 @@ window.AEAnalytics = {
       if (iqr <= 0) return;
       const lo = q1 - 3 * iqr;
       const hi = q3 + 3 * iqr;
+      const cleanQTitle = this.cleanQuestionTitle(q, {}, survey);
+      const shortQTitle40 = cleanQTitle.slice(0, 40);
+      const shortQTitle35 = cleanQTitle.slice(0, 35);
       pairs.forEach(({ r, val }) => {
         if (val < lo || val > hi) {
           numericOutliers.push({
             responseId: r.id || r.clientResponseId,
             enumerator: r.enumerator || 'Enumerator',
-            questionTitle: this.cleanQuestionTitle(q, {}, survey).slice(0, 40),
+            questionTitle: shortQTitle40,
             value: val,
-            reason: `Extreme outlier (${val}) on "${this.cleanQuestionTitle(q, {}, survey).slice(0, 35)}" (expected ${Math.round(lo)}–${Math.round(hi)})`
+            reason: `Extreme outlier (${val}) on "${shortQTitle35}" (expected ${Math.round(lo)}–${Math.round(hi)})`
           });
         }
       });
@@ -11327,23 +11502,86 @@ window.AEAnalytics = {
     const cur = window.AEApp && typeof window.AEApp.getCurrentUser === 'function' ? window.AEApp.getCurrentUser() : null;
     const reviewer = cur ? `${cur.id} (${cur.fullName})` : 'Data Hygiene Audit';
     const seen = new Set();
-    let flagged = 0;
+    const itemsToFlag = [];
 
     pool.forEach((item) => {
       if (!item.responseId || seen.has(item.responseId)) return;
       seen.add(item.responseId);
-      if (window.aeStore && typeof window.aeStore.flagResponse === 'function') {
-        window.aeStore.flagResponse(item.responseId, reviewer, item.reason);
-      }
-      if (window.AEApp && typeof window.AEApp.syncResponseReviewToCloud === 'function') {
-        window.AEApp.syncResponseReviewToCloud(item.responseId, 'flagged', reviewer, item.reason);
-      }
-      flagged++;
+      itemsToFlag.push({
+        responseId: item.responseId,
+        reason: item.reason || 'Flagged by Data Hygiene Audit'
+      });
     });
+
+    let flagged = 0;
+    const store = window.aeStore;
+    if (itemsToFlag.length > 0 && store) {
+      if (typeof store.flagResponsesBatch === 'function') {
+        const res = store.flagResponsesBatch(itemsToFlag, reviewer);
+        flagged = Array.isArray(res) ? res.length : (typeof res === 'number' ? res : itemsToFlag.length);
+      } else if (Array.isArray(store.responses)) {
+        // Batch flag locally with a single scoped save + single background sync (avoids N saves + N HTTP POSTs)
+        const respIndex = new Map();
+        store.responses.forEach((r) => {
+          if (r && r.id) respIndex.set(r.id, r);
+          if (r && r.clientResponseId) respIndex.set(r.clientResponseId, r);
+        });
+        const nowIso = new Date().toISOString();
+        itemsToFlag.forEach(({ responseId, reason }) => {
+          const resp = respIndex.get(responseId);
+          if (!resp) return;
+          const prevHash = (resp.auditTrail && resp.auditTrail.length > 0)
+            ? resp.auditTrail[resp.auditTrail.length - 1].entryHash
+            : resp.recordHash || '';
+          if (window.AESupervisorAuditEngine && typeof window.AESupervisorAuditEngine.createAuditEntry === 'function') {
+            const auditEntry = window.AESupervisorAuditEngine.createAuditEntry(
+              prevHash,
+              'FLAG',
+              reviewer,
+              reason || 'Flagged for re-survey',
+              resp.id
+            );
+            resp.auditTrail = Array.isArray(resp.auditTrail) ? resp.auditTrail : [];
+            resp.auditTrail.push(auditEntry);
+          }
+          resp.reviewStatus = 'flagged';
+          resp.audit = {
+            flaggedBy: reviewer,
+            flaggedAt: nowIso,
+            reason: reason || 'Flagged by supervisor'
+          };
+          resp.updatedAt = nowIso;
+          resp.syncStatus = 'queued';
+          if (typeof store.enqueueSyncItem === 'function') {
+            store.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response Flagged (${reviewer}) -> ${resp.id}`);
+          }
+          flagged++;
+        });
+        if (flagged > 0) {
+          if (typeof store.saveToLocalStorage === 'function') {
+            store.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
+          }
+          if (
+            typeof store.triggerBackgroundSyncNow === 'function' &&
+            typeof store.isEffectivelyOnline === 'function' &&
+            store.isEffectivelyOnline() &&
+            store.settings &&
+            store.settings.gasWebAppUrl
+          ) {
+            store.triggerBackgroundSyncNow(400);
+          }
+        }
+      } else if (typeof store.flagResponse === 'function') {
+        itemsToFlag.forEach(({ responseId, reason }) => {
+          store.flagResponse(responseId, reviewer, reason);
+          flagged++;
+        });
+      }
+    }
 
     if (window.AEApp && typeof window.AEApp.showToast === 'function') {
       window.AEApp.showToast(
-        flagged > 0 ? `Flagged ${flagged} ${flagged === 1 ? 'record' : 'records'} & synced to Sheets.` : 'No new records to flag.',
+        flagged > 0 ? `Flagged ${flagged} ${flagged === 1 ? 'record' : 'records'} & queued batch sync to Sheets.` : 'No new records to flag.',
         flagged > 0 ? 'warning' : 'info'
       );
     }

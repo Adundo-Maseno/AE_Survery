@@ -434,7 +434,7 @@
           <img src="./icons/agri_experience_logo.png" alt="Agri Experience Limited" width="66" height="28"
             style="width: 66px; height: 28px; aspect-ratio: 66/28;"
             class="h-7 w-[66px] object-contain rounded-[4px] bg-white px-1 py-0.5 shrink-0"
-            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+            onerror="this.style.display='none'; var f=this.parentElement&&this.parentElement.nextElementSibling; if(f) f.style.display='flex';" />
         </picture>
         <div class="hidden w-7 h-7 sm:w-8 sm:h-8 rounded-[6px] bg-[#247B50] items-center justify-center shrink-0">
           <i class="fa-solid fa-clipboard-check text-white text-xs sm:text-sm"></i>
@@ -591,6 +591,7 @@
   <script defer src="./js/qrcode.js"></script>
   <script defer src="./js/db.js"></script>
   <script defer src="./js/i18n.js"></script>
+  <script defer src="./js/collector.js"></script>
   <script defer src="./js/field-app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {

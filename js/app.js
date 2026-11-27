@@ -502,6 +502,13 @@ window.AEApp = {
     }
 
     this.currentStage = stage;
+    if (this._autoRedirectTimer) {
+      clearTimeout(this._autoRedirectTimer);
+      this._autoRedirectTimer = null;
+    }
+    if (window.AECollector && (stageChanged || stage !== 'collect')) {
+      window.AECollector.justSubmittedBanner = null;
+    }
     if (stage === 'dashboard' || stage === 'analyze' || stage === 'team') {
       this.hasPendingCloudUpdates = false;
       this.pendingCloudUpdateSummary = '';
@@ -674,10 +681,20 @@ window.AEApp = {
   },
 
   handleLogout() {
+    if (this._autoRedirectTimer) {
+      clearTimeout(this._autoRedirectTimer);
+      this._autoRedirectTimer = null;
+    }
+    if (this._livePulseTimer) {
+      clearInterval(this._livePulseTimer);
+      this._livePulseTimer = null;
+    }
+    this.livePulseAutoRefresh = false;
     if (window.AESession) {
       window.AESession.logout();
     }
     if (window.AECollector) {
+      window.AECollector.justSubmittedBanner = null;
       window.AECollector.enumeratorName = '';
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('ae_active_enumerator');
@@ -5558,41 +5575,70 @@ window.AEApp = {
     const csv = rows.join('\n');
     if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof document !== 'undefined' && typeof document.createElement === 'function') {
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       a.download = `AE_Invites_${s.id}_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       this.showToast('Personalized invite links CSV exported.', 'success');
     }
     return csv;
   },
 
   computePortfolioRollup(surveys, allResponses) {
+    const safeSurveys = Array.isArray(surveys) ? surveys : [];
+    const safeResponses = Array.isArray(allResponses) ? allResponses : [];
     const sevenDaysAgo = Date.now() - 7 * 86400000;
-    return (surveys || []).map((s) => {
-      const sResps = (allResponses || []).filter((r) => r && r.surveyId === s.id);
-      const total = sResps.length;
-      const last7d = sResps.filter((r) => new Date(r.submittedAt || 0).getTime() >= sevenDaysAgo).length;
-      const synced = sResps.filter((r) => r.syncStatus === 'synced' || r.synced === true).length;
-      const approved = sResps.filter((r) => r.reviewStatus === 'approved').length;
-      const syncPct = total > 0 ? Math.round((synced / total) * 100) : 100;
-      const approvedPct = total > 0 ? Math.round((approved / total) * 100) : 0;
+
+    // Pre-index per-survey stats and primary rating/NPS question in O(S)
+    const statsBySurvey = new Map();
+    const ratingQBySurvey = new Map();
+    safeSurveys.forEach((s) => {
+      if (!s || !s.id) return;
+      statsBySurvey.set(s.id, { total: 0, last7d: 0, synced: 0, approved: 0, ratingSum: 0, ratingCount: 0 });
+      const qs = window.aeStore && window.aeStore.getQuestionsForSurvey ? window.aeStore.getQuestionsForSurvey(s) : [];
+      const ratingQ = qs.find((q) => q && (q.type === 'nps' || q.type === 'star_rating'));
+      if (ratingQ) ratingQBySurvey.set(s.id, ratingQ);
+    });
+
+    // Single O(R) grouping pass across all responses
+    for (let i = 0; i < safeResponses.length; i++) {
+      const r = safeResponses[i];
+      if (!r || !r.surveyId) continue;
+      const st = statsBySurvey.get(r.surveyId);
+      if (!st) continue;
+      st.total++;
+      if (new Date(r.submittedAt || 0).getTime() >= sevenDaysAgo) st.last7d++;
+      if (r.syncStatus === 'synced' || r.synced === true) st.synced++;
+      if (r.reviewStatus === 'approved') st.approved++;
+      const ratingQ = ratingQBySurvey.get(r.surveyId);
+      if (ratingQ && r.answers) {
+        const v = r.answers[ratingQ.id];
+        if (v !== null && v !== undefined && String(v).trim() !== '') {
+          const n = Number(v);
+          if (Number.isFinite(n)) {
+            st.ratingSum += n;
+            st.ratingCount++;
+          }
+        }
+      }
+    }
+
+    return safeSurveys.map((s) => {
+      const st = (s && s.id && statsBySurvey.get(s.id)) || { total: 0, last7d: 0, synced: 0, approved: 0, ratingSum: 0, ratingCount: 0 };
+      const total = st.total;
+      const last7d = st.last7d;
+      const syncPct = total > 0 ? Math.round((st.synced / total) * 100) : 100;
+      const approvedPct = total > 0 ? Math.round((st.approved / total) * 100) : 0;
       const quota = s.schedule && s.schedule.maxResponses ? Number(s.schedule.maxResponses) : null;
       const quotaPct = quota ? Math.min(100, Math.round((total / quota) * 100)) : null;
 
-      // Primary rating / NPS average if survey has one
-      const qs = window.aeStore && window.aeStore.getQuestionsForSurvey ? window.aeStore.getQuestionsForSurvey(s) : [];
-      const ratingQ = qs.find((q) => q.type === 'nps' || q.type === 'star_rating');
+      const ratingQ = s && s.id ? ratingQBySurvey.get(s.id) : null;
       let avgRating = '—';
-      if (ratingQ && total > 0) {
-        const nums = sResps
-          .map((r) => (r && r.answers ? r.answers[ratingQ.id] : undefined))
-          .filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
-          .map((v) => Number(v))
-          .filter((n) => Number.isFinite(n));
-        if (nums.length > 0) {
-          avgRating = `${(nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1)}${ratingQ.type === 'star_rating' ? '/5' : '/10'}`;
-        }
+      if (ratingQ && st.ratingCount > 0) {
+        const maxScale = ratingQ.type === 'star_rating' ? (Number(ratingQ.maxStars || ratingQ.max || 5)) : 10;
+        avgRating = `${(st.ratingSum / st.ratingCount).toFixed(1)}/${maxScale}`;
       }
 
       return { id: s.id, title: s.title, status: s.status || 'Active', total, last7d, syncPct, approvedPct, quota, quotaPct, avgRating };
@@ -5672,10 +5718,12 @@ window.AEApp = {
     const csv = lines.join('\n');
     if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof document !== 'undefined' && typeof document.createElement === 'function') {
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      a.href = url;
       a.download = `AE_Portfolio_Rollup_${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       this.showToast('Portfolio Rollup CSV exported.', 'success');
     }
     return csv;
@@ -5796,7 +5844,7 @@ window.AEApp = {
     const mapping = this.importCsvMapping || {};
     const cols = window.aeStore.getCollectorsForSurvey ? window.aeStore.getCollectorsForSurvey(survey.id) : [];
     const defaultColId = cols[0] ? cols[0].id : 'col_csv_import';
-    let imported = 0;
+    const batch = [];
 
     this.importCsvRows.forEach((row, rIdx) => {
       const answers = {};
@@ -5816,7 +5864,7 @@ window.AEApp = {
       });
       if (Object.keys(answers).length === 0) return;
       const respId = 'resp_csv_' + Date.now().toString(36) + '_' + rIdx + '_' + Math.random().toString(36).slice(2, 5);
-      const resp = {
+      batch.push({
         id: respId,
         clientResponseId: respId,
         surveyId: survey.id,
@@ -5831,14 +5879,31 @@ window.AEApp = {
         _preserveMeta: true,
         utm: { source: 'csv_import' },
         answers
-      };
-      if (typeof window.aeStore.submitResponse === 'function') {
-        const saved = window.aeStore.submitResponse(resp);
-        if (saved && !saved.utm) saved.utm = resp.utm;
+      });
+    });
+
+    let imported = batch.length;
+    if (batch.length > 0) {
+      if (typeof window.aeStore.submitResponsesBatch === 'function') {
+        const savedList = window.aeStore.submitResponsesBatch(batch);
+        if (Array.isArray(savedList)) {
+          savedList.forEach((saved, idx) => {
+            if (saved && !saved.utm && batch[idx]) saved.utm = batch[idx].utm;
+          });
+          imported = savedList.length;
+        }
+      } else if (typeof window.aeStore.submitResponse === 'function') {
+        batch.forEach((resp) => {
+          const saved = window.aeStore.submitResponse(resp);
+          if (saved && !saved.utm) saved.utm = resp.utm;
+        });
       } else if (Array.isArray(window.aeStore.responses)) {
-        window.aeStore.responses.unshift(resp);
-        if (typeof window.aeStore.enqueueSyncItem === 'function') {
-          window.aeStore.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response (${resp.enumerator}) -> ${String(resp.surveyTitle || '').substring(0, 38)}`);
+        for (let i = batch.length - 1; i >= 0; i--) {
+          const resp = batch[i];
+          window.aeStore.responses.unshift(resp);
+          if (typeof window.aeStore.enqueueSyncItem === 'function') {
+            window.aeStore.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response (${resp.enumerator}) -> ${String(resp.surveyTitle || '').substring(0, 38)}`);
+          }
         }
         if (typeof window.aeStore.saveToLocalStorage === 'function') {
           window.aeStore.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
@@ -5847,8 +5912,7 @@ window.AEApp = {
           window.aeStore.triggerBackgroundSyncNow(250);
         }
       }
-      imported++;
-    });
+    }
 
     this.showImportCsvModal = false;
     this.importCsvHeaders = [];
@@ -5866,8 +5930,18 @@ window.AEApp = {
     }
     if (this.livePulseAutoRefresh) {
       this._livePulseTimer = setInterval(() => {
-        if (this.currentStage === 'dashboard' && typeof this.triggerPullFromSheets === 'function' && !this.isSyncing) {
-          this.triggerPullFromSheets();
+        if (this.currentStage !== 'dashboard' || this.isSyncing || !window.aeStore) return;
+        if (typeof window.aeStore.isSyncLeader === 'function' && !window.aeStore.isSyncLeader()) return;
+        if (typeof window.aeStore.pullFreshDataIfStale === 'function') {
+          window.aeStore.pullFreshDataIfStale({ minAgeMs: 45000, reason: 'live_pulse' })
+            .then((res) => {
+              if (res && res.changed) this.render();
+            })
+            .catch(() => {});
+        } else if (typeof window.aeStore.pullFromGoogleSheets === 'function') {
+          window.aeStore.pullFromGoogleSheets({ background: true })
+            .then(() => { this.render(); })
+            .catch(() => {});
         }
       }, 60000);
       this.showToast('Live Field Pulse auto-refresh enabled (every 60s).', 'success');
@@ -7390,6 +7464,10 @@ window.AEApp = {
         }
       });
 
+      const campaignMeta = (window.AECollector && window.AECollector.campaignMeta && typeof window.AECollector.campaignMeta === 'object' && Object.keys(window.AECollector.campaignMeta).length > 0)
+        ? { ...window.AECollector.campaignMeta }
+        : undefined;
+
       const saved = window.aeStore.submitResponse({
         surveyId: survey.id,
         surveyTitle: survey.title,
@@ -7402,8 +7480,12 @@ window.AEApp = {
         durationSec,
         qaFlags,
         gps: gpsMeta,
+        utm: campaignMeta,
         answers: canonicalAnswers
       });
+      if (saved && campaignMeta && !saved.utm) {
+        saved.utm = campaignMeta;
+      }
 
       window.aeStore.clearRunnerDraft(survey.id);
       window.AECollector.initRunnerForSurvey(survey, true);
@@ -7426,6 +7508,10 @@ window.AEApp = {
       };
 
       // Optional Auto-Redirect (Completion Workflow) when enabled and safe redirectUrl is configured
+      if (this._autoRedirectTimer) {
+        clearTimeout(this._autoRedirectTimer);
+        this._autoRedirectTimer = null;
+      }
       if (
         survey &&
         survey.completionWorkflow &&
@@ -7436,8 +7522,9 @@ window.AEApp = {
         const safeUrl = window.AECollector.getSafeRedirectUrl(survey);
         if (safeUrl) {
           window.AECollector.justSubmittedBanner.autoRedirectUrl = safeUrl;
-          setTimeout(() => {
-            if (window.AECollector.justSubmittedBanner && window.AECollector.justSubmittedBanner.autoRedirectUrl === safeUrl) {
+          this._autoRedirectTimer = setTimeout(() => {
+            this._autoRedirectTimer = null;
+            if (window.AECollector && window.AECollector.justSubmittedBanner && window.AECollector.justSubmittedBanner.autoRedirectUrl === safeUrl) {
               window.location.href = safeUrl;
             }
           }, 3000);
@@ -7458,6 +7545,13 @@ window.AEApp = {
     const answeredCount = Object.keys(window.AECollector.draftAnswers || {}).length;
     if (answeredCount > 1 && !window.confirm('Clear all current draft answers and restart this form?')) {
       return;
+    }
+    if (this._autoRedirectTimer) {
+      clearTimeout(this._autoRedirectTimer);
+      this._autoRedirectTimer = null;
+    }
+    if (window.AECollector) {
+      window.AECollector.justSubmittedBanner = null;
     }
     window.aeStore.clearRunnerDraft(surveyId);
     window.AECollector.initRunnerForSurvey(s, true);
@@ -7638,32 +7732,27 @@ window.AEApp = {
       reason: String(reason || '').trim()
     });
     r.answers[qId] = newVal;
+    r.updatedAt = new Date().toISOString();
+    r.syncStatus = 'queued';
 
-    if (typeof window.aeStore.saveToLocalStorage === 'function') {
-      window.aeStore.saveToLocalStorage({ stores: ['responses'] });
+    if (typeof window.aeStore.enqueueSyncItem === 'function') {
+      window.aeStore.enqueueSyncItem(
+        'SUBMIT_RESPONSE',
+        r.id || r.clientResponseId,
+        `Answer Edit (${editedBy}) -> ${r.id || r.clientResponseId}`
+      );
     }
-
-    const settings = window.aeStore.settings || {};
-    const gasUrl = String(settings.gasWebAppUrl || '').trim();
-    if (gasUrl && /^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl) && typeof fetch === 'function') {
-      fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: 'UPDATE_RESPONSE_ANSWER',
-          syncToken: settings.syncToken || '',
-          deviceId: settings.deviceId || '',
-          callerId: cur ? cur.id : '',
-          responseId: r.id || r.clientResponseId,
-          questionId: qId,
-          newValue: newVal,
-          editedBy,
-          reason: String(reason || '').trim()
-        }),
-        redirect: 'follow'
-      })
-        .then((res) => (res && res.ok ? res.json().catch(() => null) : null))
-        .catch(() => {});
+    if (typeof window.aeStore.saveToLocalStorage === 'function') {
+      window.aeStore.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
+    }
+    if (
+      typeof window.aeStore.isEffectivelyOnline === 'function' &&
+      window.aeStore.isEffectivelyOnline() &&
+      window.aeStore.settings &&
+      window.aeStore.settings.gasWebAppUrl &&
+      typeof window.aeStore.triggerBackgroundSyncNow === 'function'
+    ) {
+      window.aeStore.triggerBackgroundSyncNow(400);
     }
     return r;
   },
@@ -7687,8 +7776,7 @@ window.AEApp = {
     const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Supervisor)';
     const note = 'Verified and signed off by supervisor';
     window.aeStore.approveResponse(respId, userSup, note);
-    this.syncResponseReviewToCloud(respId, 'approved', userSup, note);
-    this.showToast('Response approved & synced to Google Sheets.', 'success');
+    this.showToast('Response approved & queued for sync to Google Sheets.', 'success');
     this.render();
   },
 
@@ -7698,8 +7786,7 @@ window.AEApp = {
     const cur = this.getCurrentUser();
     const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Supervisor)';
     window.aeStore.flagResponse(respId, userSup, reason);
-    this.syncResponseReviewToCloud(respId, 'flagged', userSup, reason);
-    this.showToast('Response flagged & synced to Google Sheets.', 'warning');
+    this.showToast('Response flagged & queued for sync to Google Sheets.', 'warning');
     this.render();
   },
 
@@ -7987,10 +8074,12 @@ window.AEApp = {
             payload: { survey: window.AE_SURVEY, responses: savedList }
           };
           const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
+          a.href = url;
           a.download = window.AE_SURVEY.id + '_airgap_pack.json';
           a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
         };
         notice.appendChild(expBtn);
       }

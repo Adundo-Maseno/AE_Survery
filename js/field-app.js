@@ -17,6 +17,12 @@ window.AEFieldApp = {
   startedAtMs: 0,
   draftAnswers: {},
   validationErrors: {},
+  campaignMeta: {},
+  _draftEpoch: 0,
+  _autoRedirectTimer: null,
+  _focusAdvanceTimer: null,
+  _lastSubmitAt: 0,
+  isSyncing: false,
   isSubmitting: false,
   justSubmittedReceipt: null,
   currentLang: 'en',
@@ -424,7 +430,87 @@ window.AEFieldApp = {
     this.showToast('Survey updated with the latest changes.', 'success');
   },
 
+  clearAutoRedirectTimer() {
+    if (this._autoRedirectTimer) {
+      clearTimeout(this._autoRedirectTimer);
+      this._autoRedirectTimer = null;
+    }
+  },
+
+  cancelAutoRedirect() {
+    this.clearAutoRedirectTimer();
+    if (this.justSubmittedReceipt && this.justSubmittedReceipt.autoRedirectUrl) {
+      this.justSubmittedReceipt.autoRedirectUrl = '';
+      this.showToast('Auto-redirect cancelled.', 'info');
+      this.render();
+    }
+  },
+
+  clearFocusAdvanceTimer() {
+    if (this._focusAdvanceTimer) {
+      clearTimeout(this._focusAdvanceTimer);
+      this._focusAdvanceTimer = null;
+    }
+  },
+
+  stopActiveAudioCapture() {
+    if (this._audioInterval) {
+      clearInterval(this._audioInterval);
+      this._audioInterval = null;
+    }
+    if (this._audioRecorder && this._audioRecorder.state !== 'inactive') {
+      try {
+        this._audioRecorder.onstop = null;
+        this._audioRecorder.stop();
+      } catch (e) {}
+    }
+    if (this._audioStream) {
+      try {
+        this._audioStream.getTracks().forEach((track) => track.stop());
+      } catch (e) {}
+      this._audioStream = null;
+    }
+    this._audioRecorder = null;
+    this._audioChunks = [];
+    this._audioStartTime = null;
+    this.recordingAudioQId = null;
+  },
+
+  parseCampaignAndPrefillParams(survey) {
+    const utm = {};
+    if (typeof window === 'undefined' || !window.location || !window.location.search) return utm;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const src = params.get('utm_source');
+      const med = params.get('utm_medium');
+      const cmp = params.get('utm_campaign');
+      if (src) utm.source = src.trim().slice(0, 80);
+      if (med) utm.medium = med.trim().slice(0, 80);
+      if (cmp) utm.campaign = cmp.trim().slice(0, 100);
+
+      const qIds = new Set(
+        (window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+          ? window.aeStore.getQuestionsForSurvey(survey)
+          : (survey?.pages || []).flatMap((p) => (p && p.questions) || [])
+        ).map((q) => q.id)
+      );
+
+      params.forEach((val, key) => {
+        if (key.startsWith('prefill_')) {
+          const qId = key.slice('prefill_'.length);
+          if (qId && qIds.has(qId) && val !== '' && this.draftAnswers[qId] === undefined) {
+            this.draftAnswers[qId] = val;
+          }
+        }
+      });
+    } catch (e) {}
+    return utm;
+  },
+
   initRunnerForActiveSurvey(forceReset = false) {
+    this._draftEpoch = (this._draftEpoch || 0) + 1;
+    this.clearFocusAdvanceTimer();
+    this.capturingGpsId = null;
     let survey = this.activeSurveyId ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
 
     if (this.isRespondentMode) {
@@ -479,6 +565,7 @@ window.AEFieldApp = {
         this.startedAtMs = savedDraft.startedAtMs || Date.now();
         this.draftAnswers = { ...savedDraft.draftAnswers };
         this.validationErrors = {};
+        this.campaignMeta = this.parseCampaignAndPrefillParams(survey);
         return;
       }
     }
@@ -488,6 +575,7 @@ window.AEFieldApp = {
     this.startedAtMs = Date.now();
     this.draftAnswers = {};
     this.validationErrors = {};
+    this.campaignMeta = this.parseCampaignAndPrefillParams(survey);
     if (forceReset) {
       window.aeStore.clearRunnerDraft(survey.id);
     }
@@ -1344,9 +1432,9 @@ window.AEFieldApp = {
 
   renderSurveyRunner(rawSurvey) {
     const survey = window.AEI18n ? window.AEI18n.localizeSurvey(rawSurvey, this.currentLang) : rawSurvey;
-    const pages = survey.pages || [];
+    const pages = Array.isArray(survey.pages) ? survey.pages.filter(Boolean) : [];
     if (this.currentPageIndex >= pages.length) this.currentPageIndex = 0;
-    const page = pages[this.currentPageIndex];
+    const page = pages[this.currentPageIndex] || null;
     const progressPct = Math.round(((this.currentPageIndex + 1) / Math.max(1, pages.length)) * 100);
     const resolvedTheme = window.AEThemePresets
       ? window.AEThemePresets.resolve(survey.theme)
@@ -1371,14 +1459,52 @@ window.AEFieldApp = {
 
     const brandLogo = this.getSafeBrandLogo(rawSurvey);
     const safeRedirectUrl = this.getSafeRedirectUrl(rawSurvey);
-    const customThankYouTitle =
+    let customThankYouTitle =
       rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouTitle && String(rawSurvey.branding.thankYouTitle).trim()
         ? String(rawSurvey.branding.thankYouTitle).trim()
         : '';
-    const customThankYouMsg =
+    let customThankYouMsg =
       rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouMessage && String(rawSurvey.branding.thankYouMessage).trim()
         ? String(rawSurvey.branding.thankYouMessage).trim()
         : '';
+
+    // Evaluate Conditional Thank-You Rule (Completion Workflow)
+    if (this.justSubmittedReceipt && rawSurvey && rawSurvey.completionWorkflow && rawSurvey.completionWorkflow.conditionalEnabled) {
+      const cw = rawSurvey.completionWorkflow;
+      const ans = this.justSubmittedReceipt.submittedAnswers ? this.justSubmittedReceipt.submittedAnswers[cw.condQuestionId] : undefined;
+      if (ans !== undefined && ans !== null && ans !== '') {
+        let matched = false;
+        const op = cw.condOperator || 'equals';
+        if (op === 'lte') {
+          const n = Number(ans), t = Number(cw.condValue);
+          matched = Number.isFinite(n) && Number.isFinite(t) && n <= t;
+        } else if (op === 'gte') {
+          const n = Number(ans), t = Number(cw.condValue);
+          matched = Number.isFinite(n) && Number.isFinite(t) && n >= t;
+        } else {
+          matched = String(ans).trim().toLowerCase() === String(cw.condValue || '').trim().toLowerCase();
+        }
+        if (matched) {
+          if (cw.condTitle) customThankYouTitle = cw.condTitle;
+          if (cw.condMessage) customThankYouMsg = cw.condMessage;
+        }
+      }
+    }
+
+    if (!page) {
+      return `
+        <div class="space-y-4">
+          ${this.isRespondentMode ? '' : this.renderShiftPacingBar()}
+          <div class="bg-white border border-[#E4E7E4] rounded-[12px] p-8 text-center space-y-3">
+            <div class="w-11 h-11 rounded-full bg-[#F4F6F4] text-[#525B56] mx-auto flex items-center justify-center text-lg">
+              <i class="fa-solid fa-clipboard-list"></i>
+            </div>
+            <h2 class="text-base font-semibold text-[#111613]">${this.escapeHtml(survey.title || 'Empty Survey')}</h2>
+            <p class="text-xs text-[#525B56] max-w-md mx-auto">This survey does not have any sections or questions configured yet.</p>
+          </div>
+        </div>
+      `;
+    }
 
     return `
       <div class="space-y-4">
@@ -1409,6 +1535,22 @@ window.AEFieldApp = {
                       <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">
                         ${this.escapeHtml(customThankYouMsg || this.justSubmittedReceipt.subtitle)}
                       </div>
+                      ${
+                        this.justSubmittedReceipt.scoreResult && rawSurvey?.scoring?.showScoreToRespondent !== false && this.justSubmittedReceipt.scoreResult.maxPossible > 0
+                          ? `<div class="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded-[5px] bg-white border border-[#247B50]/35 text-xs text-[#04250E] font-semibold tabular-nums">
+                              <i class="fa-solid fa-award text-[#247B50]"></i>
+                              <span>Score: ${this.justSubmittedReceipt.scoreResult.earned}/${this.justSubmittedReceipt.scoreResult.maxPossible} (${this.justSubmittedReceipt.scoreResult.pct}%) &middot; ${this.escapeHtml(this.justSubmittedReceipt.scoreResult.tier)}</span>
+                            </div>`
+                          : ''
+                      }
+                      ${
+                        this.justSubmittedReceipt.autoRedirectUrl
+                          ? `<div class="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-[#247B50] font-medium">
+                              <span><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Redirecting automatically in 3 seconds…</span>
+                              <button type="button" onclick="AEFieldApp.cancelAutoRedirect()" class="underline text-[#04250E] hover:text-[#831C1E] font-semibold">Cancel</button>
+                            </div>`
+                          : ''
+                      }
                     </div>
                   </div>
                   <div class="flex flex-wrap items-center gap-2 shrink-0">
@@ -1458,7 +1600,7 @@ window.AEFieldApp = {
                   ? `<img src="${this.escapeAttr(brandLogo)}"
                       alt="${this.escapeAttr(survey.title)} Logo"
                       class="h-8 w-auto max-w-[160px] object-contain shrink-0"
-                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />`
+                      onerror="this.style.display='none'; var f=this.nextElementSibling; if(f) f.style.display='flex';" />`
                   : `<picture>
                       <source srcset="./icons/agri_experience_logo.webp" type="image/webp" />
                       <img src="./icons/agri_experience_logo.png"
@@ -1466,7 +1608,7 @@ window.AEFieldApp = {
                         width="76" height="32"
                         fetchpriority="high"
                         class="h-7 w-auto max-w-[124px] object-contain shrink-0"
-                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                        onerror="this.style.display='none'; var f=this.parentElement&&this.parentElement.nextElementSibling; if(f) f.style.display='flex';" />
                     </picture>`
               }
               <div class="w-7 h-7 rounded-[6px] bg-[#247B50] text-white hidden items-center justify-center font-bold text-xs shrink-0">
@@ -2276,11 +2418,17 @@ window.AEFieldApp = {
       return;
     }
 
+    const expectedSurveyId = this.activeSurveyId;
+    const expectedEpoch = this._draftEpoch;
     this.capturingGpsId = questionId;
     this.render();
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) {
+          if (this.capturingGpsId === questionId) this.capturingGpsId = null;
+          return;
+        }
         const coords = {
           lat: Number(pos.coords.latitude.toFixed(6)),
           lng: Number(pos.coords.longitude.toFixed(6)),
@@ -2302,6 +2450,10 @@ window.AEFieldApp = {
         this.render();
       },
       (err) => {
+        if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) {
+          if (this.capturingGpsId === questionId) this.capturingGpsId = null;
+          return;
+        }
         this.capturingGpsId = null;
         const msg =
           err.code === 1
@@ -2457,7 +2609,9 @@ window.AEFieldApp = {
   nextPage() {
     const survey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!survey) return;
-    const page = survey.pages[this.currentPageIndex];
+    const pages = Array.isArray(survey.pages) ? survey.pages.filter(Boolean) : [];
+    const page = pages[this.currentPageIndex];
+    if (!page) return;
     if (!this.validatePage(page)) {
       this.showToast('Please review the highlighted required questions.', 'error');
       this.render();
@@ -2518,9 +2672,16 @@ window.AEFieldApp = {
   },
 
   submitResponse(bypassValidation = false) {
-    if (this.isSubmitting) return;
+    this.clearFocusAdvanceTimer();
+    const nowMs = Date.now();
+    if (this.isSubmitting || (this._lastSubmitAt && nowMs - this._lastSubmitAt < 1200)) return;
     const survey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!survey) return;
+    const pages = Array.isArray(survey.pages) ? survey.pages.filter(Boolean) : [];
+    if (pages.length === 0) {
+      this.showToast('This survey has no sections to submit.', 'warning');
+      return;
+    }
     if (!bypassValidation) {
       if (this.runnerMode === 'focus') {
         const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
@@ -2532,7 +2693,7 @@ window.AEFieldApp = {
           const firstErrId = Object.keys(this.validationErrors)[0];
           const errIdx = allQuestions.findIndex((q) => q.id === firstErrId);
           if (errIdx >= 0) this.focusQuestionIndex = errIdx;
-          const errPageIdx = (survey.pages || []).findIndex((p) => (p.questions || []).some((q) => q.id === firstErrId));
+          const errPageIdx = pages.findIndex((p) => (p.questions || []).some((q) => q.id === firstErrId));
           if (errPageIdx >= 0) this.currentPageIndex = errPageIdx;
           this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
           this.render();
@@ -2540,7 +2701,8 @@ window.AEFieldApp = {
           return;
         }
       } else {
-        const page = survey.pages[this.currentPageIndex];
+        const page = pages[this.currentPageIndex];
+        if (!page) return;
         if (!this.validatePage(page)) {
           this.showToast(this.t('completeRequiredBeforeSubmit'), 'error');
           this.render();
@@ -2575,8 +2737,10 @@ window.AEFieldApp = {
     }
 
     this.recomputeCalculatedFields(false);
+    this.stopActiveAudioCapture();
 
     this.isSubmitting = true;
+    this._lastSubmitAt = nowMs;
     try {
       let gpsMeta = null;
       Object.values(this.draftAnswers).forEach((ans) => {
@@ -2613,6 +2777,8 @@ window.AEFieldApp = {
         }
       });
 
+      const utmMeta = this.campaignMeta && Object.keys(this.campaignMeta).length > 0 ? { ...this.campaignMeta } : null;
+
       const saved = window.aeStore.submitResponse({
         surveyId: survey.id,
         surveyTitle: survey.title,
@@ -2625,8 +2791,16 @@ window.AEFieldApp = {
         durationSec,
         qaFlags,
         gps: gpsMeta,
+        ...(utmMeta ? { utm: utmMeta } : {}),
         answers: canonicalAnswers
       });
+
+      if (utmMeta && saved) {
+        saved.utm = utmMeta;
+        if (window.aeStore && typeof window.aeStore.saveToLocalStorage === 'function') {
+          window.aeStore.saveToLocalStorage({ stores: ['responses'], broadcast: false });
+        }
+      }
 
       if (window.aeStore && typeof window.aeStore.markDeviceSubmittedSurvey === 'function') {
         window.aeStore.markDeviceSubmittedSurvey(survey.id, saved.id);
@@ -2648,13 +2822,50 @@ window.AEFieldApp = {
         ? 'Saved & synced'
         : (window.aeStore.isEffectivelyOnline() ? 'Saved — syncing now…' : this.t('storedLocallyPending'));
 
-      const customThankYouTitle =
+      const submittedAnswers = saved.answers || canonicalAnswers;
+      const scoreResult =
+        (window.AECollector && typeof window.AECollector.computeResponseScore === 'function')
+          ? window.AECollector.computeResponseScore(survey, submittedAnswers)
+          : (window.AEAnalytics && typeof window.AEAnalytics.computeResponseScore === 'function')
+          ? window.AEAnalytics.computeResponseScore(survey, submittedAnswers)
+          : null;
+
+      let customThankYouTitle =
         survey.branding && survey.branding.thankYouTitle && String(survey.branding.thankYouTitle).trim()
           ? String(survey.branding.thankYouTitle).trim()
           : '';
-      const customThankYouMsg =
+      let customThankYouMsg =
         survey.branding && survey.branding.thankYouMessage && String(survey.branding.thankYouMessage).trim()
           ? String(survey.branding.thankYouMessage).trim()
+          : '';
+
+      if (survey.completionWorkflow && survey.completionWorkflow.conditionalEnabled) {
+        const cw = survey.completionWorkflow;
+        const ans = submittedAnswers ? submittedAnswers[cw.condQuestionId] : undefined;
+        if (ans !== undefined && ans !== null && ans !== '') {
+          let matched = false;
+          const op = cw.condOperator || 'equals';
+          if (op === 'lte') {
+            const n = Number(ans), t = Number(cw.condValue);
+            matched = Number.isFinite(n) && Number.isFinite(t) && n <= t;
+          } else if (op === 'gte') {
+            const n = Number(ans), t = Number(cw.condValue);
+            matched = Number.isFinite(n) && Number.isFinite(t) && n >= t;
+          } else {
+            matched = String(ans).trim().toLowerCase() === String(cw.condValue || '').trim().toLowerCase();
+          }
+          if (matched) {
+            if (cw.condTitle) customThankYouTitle = cw.condTitle;
+            if (cw.condMessage) customThankYouMsg = cw.condMessage;
+          }
+        }
+      }
+
+      this.clearAutoRedirectTimer();
+      const safeRedirectUrl = this.getSafeRedirectUrl(survey);
+      const autoRedirectUrl =
+        survey.completionWorkflow && survey.completionWorkflow.autoRedirect && safeRedirectUrl
+          ? safeRedirectUrl
           : '';
 
       this.justSubmittedReceipt = {
@@ -2664,7 +2875,10 @@ window.AEFieldApp = {
         subtitle: customThankYouMsg || (this.isRespondentMode
           ? 'Your response has been recorded safely. You can close this page or submit another response below.'
           : `${this.t('enumerator')}: ${saved.enumerator} · ${this.t('interviewLoggedSub')}`),
-        redirectUrl: this.getSafeRedirectUrl(survey),
+        submittedAnswers,
+        scoreResult,
+        redirectUrl: safeRedirectUrl,
+        autoRedirectUrl,
         receiptId: saved.id,
         syncStatus: saved.syncStatus || 'pending',
         syncBadge: initialSyncBadge,
@@ -2672,6 +2886,15 @@ window.AEFieldApp = {
         gps: gpsLabel,
         receiptText
       };
+
+      if (autoRedirectUrl) {
+        this._autoRedirectTimer = setTimeout(() => {
+          this._autoRedirectTimer = null;
+          if (this.justSubmittedReceipt && this.justSubmittedReceipt.autoRedirectUrl === autoRedirectUrl) {
+            window.location.href = autoRedirectUrl;
+          }
+        }, 3000);
+      }
 
       this.showToast(this.t('interviewRecordedSuccess'), 'success');
       this.render();
@@ -2693,6 +2916,9 @@ window.AEFieldApp = {
   },
 
   startNextInterview() {
+    this.clearAutoRedirectTimer();
+    this.clearFocusAdvanceTimer();
+    this.stopActiveAudioCapture();
     this.justSubmittedReceipt = null;
     this.initRunnerForActiveSurvey(true);
     this.render();
@@ -2701,6 +2927,10 @@ window.AEFieldApp = {
 
   resetCurrentDraft() {
     if (!window.confirm(this.t('clearFormConfirm'))) return;
+    this.clearAutoRedirectTimer();
+    this.clearFocusAdvanceTimer();
+    this.stopActiveAudioCapture();
+    this.justSubmittedReceipt = null;
     this.initRunnerForActiveSurvey(true);
     this.showToast(this.t('formResetSuccess'), 'success');
     this.render();
@@ -2739,11 +2969,12 @@ window.AEFieldApp = {
     for (const q of queue) {
       if (!q) continue;
       const recId = q.recordId || q.id || '';
-      if (q.action === 'submit_response' && recId) seenResponseIds.add(recId);
+      const actUpper = String(q.action || '').toUpperCase();
+      if (actUpper === 'SUBMIT_RESPONSE' && recId) seenResponseIds.add(recId);
       items.push({
         key: q.key || `queue:${q.id || `${q.action || 'item'}:${recId}`}`,
-        kind: q.action === 'delete_survey' ? 'deleted_survey' : 'queue',
-        action: q.action || 'sync_item',
+        kind: actUpper === 'DELETE_SURVEY' ? 'deleted_survey' : 'queue',
+        action: q.action || 'SYNC_ITEM',
         recordId: recId,
         title: q.title || recId || q.action || 'Queued change',
         createdAt: q.createdAt || q.timestamp || '',
@@ -2758,7 +2989,7 @@ window.AEFieldApp = {
       items.push({
         key: `response:${recId}`,
         kind: 'response',
-        action: 'submit_response',
+        action: 'SUBMIT_RESPONSE',
         recordId: recId,
         title: r.surveyTitle || `Response ${recId}`,
         createdAt: r.submittedAt || '',
@@ -2904,6 +3135,7 @@ window.AEFieldApp = {
   },
 
   async triggerCloudSync(showToast = true) {
+    if (this.isSyncing) return;
     if (!window.aeStore.isEffectivelyOnline()) {
       if (showToast) {
         this.showToast('You’re offline — we’ll sync as soon as you reconnect.', 'warning');
@@ -3035,6 +3267,9 @@ window.AEFieldApp = {
         return;
       }
     }
+    this.clearAutoRedirectTimer();
+    this.clearFocusAdvanceTimer();
+    this.stopActiveAudioCapture();
     this.activeSurveyId = surveyId;
     this.justSubmittedReceipt = null;
     this.showSurveyPickerModal = false;
@@ -3087,6 +3322,10 @@ window.AEFieldApp = {
   },
 
   handoverTabletToEnumerator() {
+    this.clearAutoRedirectTimer();
+    this.clearFocusAdvanceTimer();
+    this.stopActiveAudioCapture();
+    this.justSubmittedReceipt = null;
     if (window.AESession) {
       window.AESession.logout();
     }
@@ -3552,6 +3791,7 @@ window.AEFieldApp = {
   },
 
   nextFocusQuestion() {
+    this.clearFocusAdvanceTimer();
     const rawSurvey = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!rawSurvey) return;
     const allQuestions = window.aeStore.getQuestionsForSurvey(rawSurvey).filter((q) =>
@@ -3583,6 +3823,7 @@ window.AEFieldApp = {
   },
 
   prevFocusQuestion() {
+    this.clearFocusAdvanceTimer();
     if (this.focusQuestionIndex > 0) {
       this.focusQuestionIndex--;
       this.render();
@@ -3591,8 +3832,13 @@ window.AEFieldApp = {
   },
 
   setAnswerAndAutoAdvance(questionId, value) {
+    this.clearFocusAdvanceTimer();
     this.setAnswerSilent(questionId, value);
-    setTimeout(() => {
+    const expectedEpoch = this._draftEpoch;
+    const expectedSurveyId = this.activeSurveyId;
+    this._focusAdvanceTimer = setTimeout(() => {
+      this._focusAdvanceTimer = null;
+      if (this.isSubmitting || this._draftEpoch !== expectedEpoch || this.activeSurveyId !== expectedSurveyId) return;
       this.nextFocusQuestion();
     }, 240);
   },
@@ -3751,33 +3997,62 @@ window.AEFieldApp = {
   },
 
   handlePhotoProofUpload(questionId, inputEl) {
-    const file = inputEl.files && inputEl.files[0];
+    const file = inputEl && inputEl.files && inputEl.files[0];
     if (!file) return;
 
+    const expectedSurveyId = this.activeSurveyId;
+    const expectedEpoch = this._draftEpoch;
     this.showToast('Compressing photo for offline storage…', 'info');
     const reader = new FileReader();
+    reader.onerror = () => {
+      if (inputEl) inputEl.value = '';
+      if (this.activeSurveyId === expectedSurveyId && this._draftEpoch === expectedEpoch) {
+        this.showToast('Could not read the selected photo file. Please try again.', 'error');
+      }
+    };
     reader.onload = (e) => {
+      if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) return;
+      const rawDataUrl = e && e.target ? e.target.result : '';
+      if (!rawDataUrl || !String(rawDataUrl).startsWith('data:image/')) {
+        if (inputEl) inputEl.value = '';
+        this.showToast('Selected file is not a valid image.', 'error');
+        return;
+      }
       const img = new Image();
-      img.onload = () => {
-        const maxDimension = 1024;
-        let width = img.width;
-        let height = img.height;
-        if (width > maxDimension || height > maxDimension) {
-          if (width > height) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          } else {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
+      img.onerror = () => {
+        if (inputEl) inputEl.value = '';
+        if (this.activeSurveyId === expectedSurveyId && this._draftEpoch === expectedEpoch) {
+          this.showToast('Photo could not be decoded. Please choose another image.', 'error');
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.75);
-        const sizeKb = Math.round((compressedDataUrl.length * 3 / 4) / 1024);
+      };
+      img.onload = async () => {
+        if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) return;
+        const maxDimension = 1024;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+        if (width > maxDimension || height > maxDimension) {
+          const scale = maxDimension / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        let compressedDataUrl = rawDataUrl;
+        try {
+          if (window.AECollector && typeof window.AECollector.compressFieldPhotoDataUrl === 'function') {
+            compressedDataUrl = await window.AECollector.compressFieldPhotoDataUrl(rawDataUrl, maxDimension, 0.75);
+          } else {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const jpegUrl = canvas.toDataURL('image/jpeg', 0.75);
+            compressedDataUrl = jpegUrl.length < rawDataUrl.length ? jpegUrl : rawDataUrl;
+          }
+        } catch (err) {
+          compressedDataUrl = rawDataUrl;
+        }
+        if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) return;
+        const sizeKb = Math.max(1, Math.round((compressedDataUrl.length * 3 / 4) / 1024));
 
         this.setAnswer(questionId, {
           dataUrl: compressedDataUrl,
@@ -3788,7 +4063,7 @@ window.AEFieldApp = {
         });
         this.showToast(`Photo compressed (${sizeKb} KB) and saved.`, 'success');
       };
-      img.src = e.target.result;
+      img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);
   },
@@ -4081,11 +4356,12 @@ window.AEFieldApp = {
   },
 
   async startAudioRecording(questionId) {
-    if (this._audioRecorder && this._audioRecorder.state !== 'inactive') {
-      try { this._audioRecorder.stop(); } catch (e) {}
-    }
-    if (this._audioInterval) clearInterval(this._audioInterval);
+    this.stopActiveAudioCapture();
 
+    const expectedSurveyId = this.activeSurveyId;
+    const expectedEpoch = this._draftEpoch;
+    this._audioSurveyId = expectedSurveyId;
+    this._audioEpoch = expectedEpoch;
     this.recordingAudioQId = questionId;
     this._audioChunks = [];
     this._audioStartTime = Date.now();
@@ -4094,6 +4370,10 @@ window.AEFieldApp = {
     try {
       if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch || this.recordingAudioQId !== questionId) {
+          try { stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+          return;
+        }
         this._audioStream = stream;
 
         const mimeTypes = [
@@ -4126,12 +4406,19 @@ window.AEFieldApp = {
         this.showToast('Audio recording hardware not supported on this browser. Voice memo timer started.', 'info');
       }
     } catch (err) {
+      if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) return;
       console.warn('[AE Audio] Microphone access denied or unavailable:', err);
       this.showToast('Microphone access unavailable or denied. Standby timer active.', 'warning');
     }
 
+    if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch || this.recordingAudioQId !== questionId) return;
+
     let elapsed = 0;
     this._audioInterval = setInterval(() => {
+      if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) {
+        this.stopActiveAudioCapture();
+        return;
+      }
       elapsed++;
       const el = document.getElementById(`audio_timer_${questionId}`);
       if (el) {
@@ -4148,6 +4435,9 @@ window.AEFieldApp = {
   },
 
   async stopAudioRecording(questionId) {
+    const expectedSurveyId = this._audioSurveyId || this.activeSurveyId;
+    const expectedEpoch = this._audioEpoch !== undefined ? this._audioEpoch : this._draftEpoch;
+
     if (this._audioInterval) {
       clearInterval(this._audioInterval);
       this._audioInterval = null;
@@ -4182,6 +4472,11 @@ window.AEFieldApp = {
     }
     this._audioRecorder = null;
 
+    if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) {
+      this._audioChunks = [];
+      return;
+    }
+
     if (this._audioChunks && this._audioChunks.length > 0) {
       const audioBlob = new Blob(this._audioChunks, { type: mimeType });
       blobSize = audioBlob.size;
@@ -4198,6 +4493,8 @@ window.AEFieldApp = {
         console.warn('[AE Audio] Failed to convert blob to data URL:', e);
       }
 
+      if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) return;
+
       if (window.aeStore && typeof window.aeStore.saveMediaBlob === 'function') {
         await window.aeStore.saveMediaBlob(mediaId, dataUrl || audioBlob, mimeType);
       }
@@ -4207,6 +4504,8 @@ window.AEFieldApp = {
         await window.aeStore.saveMediaBlob(mediaId, dataUrl, 'audio/wav');
       }
     }
+
+    if (this.activeSurveyId !== expectedSurveyId || this._draftEpoch !== expectedEpoch) return;
 
     this.setAnswer(questionId, {
       mediaId,

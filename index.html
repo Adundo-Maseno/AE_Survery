@@ -551,7 +551,7 @@
                   fetchpriority="high"
                   style="width: 95px; height: 40px; aspect-ratio: 95/40;"
                   class="h-10 w-[95px] object-contain"
-                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';" />
+                  onerror="this.style.display='none'; var f=this.parentElement&&this.parentElement.nextElementSibling; if(f) f.style.display='inline-flex';" />
               </picture>
               <div class="hidden w-10 h-10 rounded-[8px] bg-[#247B50] text-white items-center justify-center text-lg font-bold">
                 <i class="fa-solid fa-seedling"></i>
@@ -629,7 +629,7 @@
               alt="Agri Experience Limited" width="57" height="24" loading="lazy"
               style="width: 57px; height: 24px; aspect-ratio: 57/24;"
               class="h-6 w-[57px] object-contain shrink-0"
-              onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';" />
+              onerror="this.style.display='none'; var f=this.parentElement&&this.parentElement.nextElementSibling; if(f) f.style.display='inline-block';" />
           </picture>
           <span class="hidden w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
           <strong class="font-medium text-[#111613]">Agri Experience Limited</strong>

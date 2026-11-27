@@ -225,6 +225,98 @@ window.AECollector = {
     });
   },
 
+  computeResponseScore(survey, answers) {
+    if (!survey || !survey.scoring || !survey.scoring.enabled) return null;
+    const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey.pages || []).flatMap((p) => (p && p.questions) || []);
+
+    let earned = 0;
+    let maxPossible = 0;
+    questions.forEach((q) => {
+      if (!q || !q.optionPoints || typeof q.optionPoints !== 'object') return;
+      const ptsMap = q.optionPoints;
+      const vals = Object.values(ptsMap).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+      if (vals.length === 0) return;
+
+      if (q.type === 'checkboxes') {
+        maxPossible += vals.reduce((a, b) => a + b, 0);
+        const ans = answers ? answers[q.id] : [];
+        if (Array.isArray(ans)) {
+          ans.forEach((v) => {
+            const p = Number(ptsMap[String(v)]);
+            if (Number.isFinite(p)) earned += p;
+          });
+        }
+      } else {
+        maxPossible += Math.max(...vals);
+        const ans = answers ? answers[q.id] : undefined;
+        if (ans !== undefined && ans !== null && ans !== '') {
+          const p = Number(ptsMap[String(ans)]);
+          if (Number.isFinite(p)) earned += p;
+        }
+      }
+    });
+
+    const pct = maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0;
+    const tiers = Array.isArray(survey.scoring.tiers) && survey.scoring.tiers.length > 0
+      ? [...survey.scoring.tiers].sort((a, b) => Number(b.minPct || 0) - Number(a.minPct || 0))
+      : [
+          { label: 'Gold / Pass', minPct: 80 },
+          { label: 'Silver / Moderate', minPct: 50 },
+          { label: 'Needs Support', minPct: 0 }
+        ];
+    const matchedTier = tiers.find((t) => pct >= Number(t.minPct || 0)) || tiers[tiers.length - 1];
+    return {
+      earned,
+      maxPossible,
+      pct,
+      tier: matchedTier ? matchedTier.label : 'Scored'
+    };
+  },
+
+  handleRunnerPhotoUpload(questionId, inputEl) {
+    const file = inputEl && inputEl.files && inputEl.files[0];
+    if (!file) return;
+    const expectedSurveyId = this.activeSurveyId;
+    const reader = new FileReader();
+    reader.onerror = () => {
+      if (inputEl) inputEl.value = '';
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('Could not read the selected photo file. Please try again.', 'error');
+      }
+    };
+    reader.onload = async (e) => {
+      if (this.activeSurveyId !== expectedSurveyId) return;
+      const rawDataUrl = e && e.target ? e.target.result : '';
+      if (!rawDataUrl || !String(rawDataUrl).startsWith('data:image/')) {
+        if (inputEl) inputEl.value = '';
+        if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+          window.AEApp.showToast('Selected file is not a valid image.', 'error');
+        }
+        return;
+      }
+      const compressedDataUrl = await this.compressFieldPhotoDataUrl(rawDataUrl, 1280, 0.72);
+      if (this.activeSurveyId !== expectedSurveyId) return;
+      const sizeKb = Math.max(1, Math.round((compressedDataUrl.length * 3 / 4) / 1024));
+      const payload = {
+        dataUrl: compressedDataUrl,
+        summary: 'Photo proof attached',
+        sizeKb,
+        capturedAt: new Date().toISOString()
+      };
+      if (window.AEApp && typeof window.AEApp.setRunnerAnswer === 'function') {
+        window.AEApp.setRunnerAnswer(questionId, payload);
+      } else {
+        this.setRunnerAnswer(questionId, payload);
+      }
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast(`Photo compressed (${sizeKb} KB) and attached.`, 'success');
+      }
+    };
+    reader.readAsDataURL(file);
+  },
+
   buildPrefilledCampaignUrl(surveyId, opts = {}) {
     const base = (typeof window !== 'undefined' && window.location)
       ? `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}field.html`
@@ -613,9 +705,20 @@ window.AECollector = {
 
     const lang = (window.AEApp && window.AEApp.runnerLang) || (window.AEI18n ? window.AEI18n.getLanguage() : 'en');
     const survey = window.AEI18n ? window.AEI18n.localizeSurvey(rawSurvey, lang) : rawSurvey;
-    const pages = survey.pages || [];
+    const pages = Array.isArray(survey.pages) ? survey.pages.filter(Boolean) : [];
+    if (pages.length === 0) {
+      return `
+        <div class="max-w-3xl mx-auto bg-white border border-[#E4E7E4] rounded-[12px] p-8 text-center space-y-3">
+          <div class="w-11 h-11 rounded-full bg-[#F4F6F4] text-[#525B56] mx-auto flex items-center justify-center text-lg">
+            <i class="fa-solid fa-clipboard-list"></i>
+          </div>
+          <h3 class="text-base font-semibold text-[#111613]">${AEApp.escapeHtml(survey.title || 'Empty Survey')}</h3>
+          <p class="text-xs text-[#525B56] max-w-md mx-auto">This survey does not have any sections or questions configured yet.</p>
+        </div>
+      `;
+    }
     if (this.currentPageIndex >= pages.length) this.currentPageIndex = 0;
-    const page = pages[this.currentPageIndex];
+    const page = pages[this.currentPageIndex] || pages[0];
     const progressPct = Math.round(((this.currentPageIndex + 1) / Math.max(1, pages.length)) * 100);
     const resolvedTheme = window.AEThemePresets ? window.AEThemePresets.resolve(survey.theme) : null;
     const accent = (resolvedTheme && resolvedTheme.accentColor) || (survey.theme && survey.theme.accentColor) || '#247B50';
@@ -1306,16 +1409,21 @@ window.AECollector = {
         <div class="bg-[#F8F9F8] border border-[#E4E7E4] rounded-[8px] p-4 space-y-2.5">
           <div class="flex items-center justify-between text-xs text-[#525B56]">
             <span>Camera photo proof (Auto-compressed to &le;150KB JPEG)</span>
-            ${hasPhoto ? `<span class="text-[#247B50] font-medium"><i class="fa-solid fa-circle-check"></i> Image attached</span>` : ''}
+            ${hasPhoto ? `<span class="text-[#247B50] font-medium"><i class="fa-solid fa-circle-check"></i> Image attached${val && val.sizeKb ? ` (${val.sizeKb} KB)` : ''}</span>` : ''}
           </div>
-          <div class="flex items-center justify-between gap-2 bg-white rounded-[6px] border border-[#CFD5D0] p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 bg-white rounded-[6px] border border-[#CFD5D0] p-3">
             ${hasPhoto && val.dataUrl
               ? `<img src="${AEApp.escapeAttr(val.dataUrl)}" alt="Photo Proof" class="max-h-24 object-contain rounded-[4px]" />`
               : `<span class="text-xs text-[#525B56]"><i class="fa-solid fa-camera mr-1.5 text-[#247B50]"></i> ${hasPhoto ? 'Photo reference recorded' : 'Attach field photo or open in Field App'}</span>`}
-            <button type="button" onclick="AEApp.setRunnerAnswer('${q.id}', { summary: 'Photo proof attached', sizeKb: 95, capturedAt: new Date().toISOString() })"
-              class="h-8 px-3 rounded-[5px] border border-[#CFD5D0] bg-[#F8F9F8] hover:bg-[#EAECE9] text-xs font-medium text-[#111613] ae-press shrink-0">
-              ${hasPhoto ? 'Update Photo' : 'Attach Sample Proof'}
-            </button>
+            <div class="flex items-center gap-2 shrink-0">
+              <label for="runner_photo_${q.id}"
+                class="h-8 px-3 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer ae-press">
+                <i class="fa-solid fa-camera text-[11px] text-[#3FC07A]"></i>
+                <span>${hasPhoto ? 'Replace Photo' : 'Upload Photo'}</span>
+              </label>
+              <input type="file" id="runner_photo_${q.id}" accept="image/*" capture="environment" class="sr-only"
+                onchange="AECollector.handleRunnerPhotoUpload('${q.id}', this)" />
+            </div>
           </div>
         </div>
       `;

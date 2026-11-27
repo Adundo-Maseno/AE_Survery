@@ -162,6 +162,25 @@ var CACHE_TTL_DB_INIT_SEC_ = 21600; // 6 hours
 var CACHE_TTL_SURVEY_SEC_ = 300;    // 5 minutes
 var CACHE_MAX_BYTES_ = 95000;       // Safe margin under GAS 100KB CacheService limit
 
+/**
+ * Fixed-window 60s rate limit helper using CacheService with minute-bucket keys
+ * so repeated hits never reset the window TTL indefinitely.
+ */
+function checkRateLimit_(prefix, identifier, maxPerMinute) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var minuteBucket = Math.floor(Date.now() / 60000);
+    var safeId = String(identifier || 'anon').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'anon';
+    var rateKey = prefix + '_' + safeId + '_' + minuteBucket;
+    var count = Number(cache.get(rateKey) || 0);
+    if (count >= maxPerMinute) {
+      return false;
+    }
+    cache.put(rateKey, String(count + 1), 65);
+  } catch (cacheErr) {}
+  return true;
+}
+
 function getDbVersion_() {
   try {
     var cached = CacheService.getScriptCache().get('AE_DB_VERSION');
@@ -246,6 +265,11 @@ function doGet(e) {
         ok: false,
         error: 'Unauthorized: Invalid or missing AE_SYNC_TOKEN.'
       });
+    }
+
+    var getRateId = params.deviceId || params.callerId || action || 'get';
+    if (!checkRateLimit_('rate_get', getRateId, 120)) {
+      return jsonResponse_({ ok: false, error: 'Rate limit exceeded: Too many requests in 60s window.' });
     }
 
     if (action === 'pullAll') {
@@ -380,17 +404,32 @@ function doGet(e) {
     }
 
     if (action === 'migrate') {
-      ensureDatabaseInitialized_();
-      var migResult = migrateResponsesSheetLayout_();
-      if (migResult && migResult.migrated > 0) {
-        bumpDbVersion_();
+      if (!isAuthorizedAdmin_(params.callerId || '', params.syncToken || '')) {
+        return jsonResponse_({
+          ok: false,
+          error: 'Unauthorized: Migration requires Admin role.'
+        });
       }
-      return jsonResponse_({
-        ok: true,
-        action: 'migrate',
-        result: migResult,
-        serverTime: new Date().toISOString()
-      });
+      var migLock = LockService.getScriptLock();
+      migLock.waitLock(25000);
+      try {
+        ensureDatabaseInitialized_();
+        var migResult = migrateResponsesSheetLayout_();
+        if (migResult && migResult.migrated > 0) {
+          bumpDbVersion_();
+        }
+        return jsonResponse_({
+          ok: true,
+          action: 'migrate',
+          result: migResult,
+          serverTime: new Date().toISOString()
+        });
+      } finally {
+        try {
+          SpreadsheetApp.flush();
+        } catch (flushErr) {}
+        migLock.releaseLock();
+      }
     }
 
     // Optional: if hosted inside Apps Script HtmlService with an index.html file
@@ -455,16 +494,10 @@ function doPost(e) {
     var action = String(payload.action || 'BATCH_SYNC').trim();
     var deviceId = sanitizeSheetCell_(payload.deviceId || 'unknown-device');
 
-    // Sliding-window rate limit guard (max 60 sync operations per minute per device) — runs outside ScriptLock
-    try {
-      var cache = CacheService.getScriptCache();
-      var rateKey = 'rate_' + String(deviceId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
-      var count = Number(cache.get(rateKey) || 0);
-      if (count > 60) {
-        return jsonResponse_({ ok: false, error: 'Rate limit exceeded: Too many requests in 60s window.' });
-      }
-      cache.put(rateKey, String(count + 1), 60);
-    } catch (cacheErr) {}
+    // Fixed-window 60s rate limit guard (max 60 sync operations per minute per device) — runs outside ScriptLock
+    if (!checkRateLimit_('rate_post', deviceId, 60)) {
+      return jsonResponse_({ ok: false, error: 'Rate limit exceeded: Too many requests in 60s window.' });
+    }
 
     // Media Upload Endpoint -> Google Drive (runs outside ScriptLock)
     if (action === 'UPLOAD_MEDIA') {
@@ -873,6 +906,9 @@ function doPost(e) {
         });
       }
     } finally {
+      try {
+        SpreadsheetApp.flush();
+      } catch (flushErr) {}
       lock.releaseLock();
     }
 
@@ -1402,22 +1438,56 @@ function appendResponsesIdempotent_(responses, surveyMap) {
     var calcJson = JSON.stringify(calcPayload);
 
     if (existingRowMap[clientRespId] || pendingNewIndex[clientRespId] !== undefined) {
-      var qaUpdateCols = [
-        sanitizeSheetCell_(String(r.reviewStatus || 'pending_review')),
-        sanitizeSheetCell_(qaFlagsStr),
-        sanitizeSheetCell_(supervisorId),
-        sanitizeSheetCell_(npsCat),
-        sanitizeSheetCell_(String(r.recordHash || '')),
-        sanitizeSheetCell_(calcJson)
-      ];
+      var mergeReviewStatus_ = function(existingSt, incomingSt) {
+        var ex = String(existingSt || '').trim().toLowerCase();
+        var inc = String(incomingSt || 'pending_review').trim().toLowerCase();
+        var isFinalExisting = (ex === 'approved' || ex === 'flagged' || ex === 'rejected');
+        var isPendingIncoming = (!inc || inc === 'pending_review' || inc === 'pending');
+        if (isFinalExisting && isPendingIncoming) {
+          return ex;
+        }
+        return inc || 'pending_review';
+      };
+      var mergeAuditTagsIntoFlags_ = function(existingFlagsStr, incomingFlagsStr) {
+        var existingText = String(existingFlagsStr || '').trim();
+        var mergedText = String(incomingFlagsStr || '').trim();
+        var tagMatches = existingText.match(/\[(?:Review:|Edit\s)[^\]]*\]/g) || [];
+        for (var tIdx = 0; tIdx < tagMatches.length; tIdx++) {
+          var tag = tagMatches[tIdx];
+          if (mergedText.indexOf(tag) === -1) {
+            mergedText = mergedText ? (mergedText + ' ' + tag) : tag;
+          }
+        }
+        return mergedText;
+      };
+
       if (existingRowMap[clientRespId] > 1) {
-        respSheet.getRange(existingRowMap[clientRespId], 12, 1, 6).setValues([qaUpdateCols]);
-        respSheet.getRange(existingRowMap[clientRespId], 19).setValue(nowIso);
+        var existingRowNum = existingRowMap[clientRespId];
+        var existingRange = respSheet.getRange(existingRowNum, 12, 1, 8);
+        var existingSlice = existingRange.getValues()[0];
+        var safeStatus = mergeReviewStatus_(existingSlice[0], r.reviewStatus);
+        var safeFlags = mergeAuditTagsIntoFlags_(existingSlice[1], qaFlagsStr);
+        var safeSupervisor = supervisorId || String(existingSlice[2] || '').trim();
+        existingSlice[0] = sanitizeSheetCell_(safeStatus);
+        existingSlice[1] = sanitizeSheetCell_(safeFlags);
+        existingSlice[2] = sanitizeSheetCell_(safeSupervisor);
+        existingSlice[3] = sanitizeSheetCell_(npsCat);
+        existingSlice[4] = sanitizeSheetCell_(String(r.recordHash || existingSlice[4] || ''));
+        existingSlice[5] = sanitizeSheetCell_(calcJson);
+        // existingSlice[6] is Col 18 (AnswersJSON) — preserved intact
+        existingSlice[7] = nowIso;
+        existingRange.setValues([existingSlice]);
       } else if (pendingNewIndex[clientRespId] !== undefined) {
         var pendingRow = newMasterRows[pendingNewIndex[clientRespId]];
-        for (var cIdx = 0; cIdx < 6; cIdx++) {
-          pendingRow[11 + cIdx] = qaUpdateCols[cIdx];
-        }
+        var pendingSafeStatus = mergeReviewStatus_(pendingRow[11], r.reviewStatus);
+        var pendingSafeFlags = mergeAuditTagsIntoFlags_(pendingRow[12], qaFlagsStr);
+        var pendingSafeSup = supervisorId || String(pendingRow[13] || '').trim();
+        pendingRow[11] = sanitizeSheetCell_(pendingSafeStatus);
+        pendingRow[12] = sanitizeSheetCell_(pendingSafeFlags);
+        pendingRow[13] = sanitizeSheetCell_(pendingSafeSup);
+        pendingRow[14] = sanitizeSheetCell_(npsCat);
+        pendingRow[15] = sanitizeSheetCell_(String(r.recordHash || pendingRow[15] || ''));
+        pendingRow[16] = sanitizeSheetCell_(calcJson);
         pendingRow[18] = nowIso;
       }
       var existingSurvey = surveyMap[r.surveyId] || null;
@@ -3214,16 +3284,19 @@ function updateResponseReviewStatus_(responseId, reviewStatus, reviewedBy, revie
     if (String(ids[i][0] || '').trim() === targetId) {
       var rowNum = i + 2;
       var nowIso = new Date().toISOString();
-      sheet.getRange(rowNum, 12).setValue(sanitizeSheetCell_(cleanStatus));
-      if (reviewedBy) {
-        sheet.getRange(rowNum, 14).setValue(sanitizeSheetCell_(String(reviewedBy).substring(0, 120)));
-      }
+      var rowRange = sheet.getRange(rowNum, 12, 1, 8);
+      var rowVals = rowRange.getValues()[0];
+      rowVals[0] = sanitizeSheetCell_(cleanStatus);
       if (reviewNote) {
-        var existingFlags = String(sheet.getRange(rowNum, 13).getValue() || '').trim();
+        var existingFlags = String(rowVals[1] || '').trim();
         var noteTag = '[Review: ' + String(reviewNote).substring(0, 180) + ']';
-        sheet.getRange(rowNum, 13).setValue(sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + noteTag) : noteTag));
+        rowVals[1] = sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + noteTag) : noteTag);
       }
-      sheet.getRange(rowNum, 19).setValue(nowIso);
+      if (reviewedBy) {
+        rowVals[2] = sanitizeSheetCell_(String(reviewedBy).substring(0, 120));
+      }
+      rowVals[7] = nowIso;
+      rowRange.setValues([rowVals]);
       return { ok: true, responseId: targetId, reviewStatus: cleanStatus };
     }
   }
@@ -3387,7 +3460,9 @@ function updateResponseAnswerWithAudit_(responseId, questionId, newValue, edited
   for (var i = 0; i < ids.length; i++) {
     if (String(ids[i][0] || '').trim() === targetId) {
       var rowNum = i + 2;
-      var rawAnswers = String(sheet.getRange(rowNum, 18).getValue() || '{}').trim();
+      var rowRange = sheet.getRange(rowNum, 13, 1, 7);
+      var rowVals = rowRange.getValues()[0];
+      var rawAnswers = String(rowVals[5] || '{}').trim();
       if (rawAnswers.charAt(0) === "'") rawAnswers = rawAnswers.replace(/^'+/, '').trim();
       var answersObj = {};
       try { answersObj = JSON.parse(rawAnswers) || {}; } catch (e) { answersObj = {}; }
@@ -3398,12 +3473,12 @@ function updateResponseAnswerWithAudit_(responseId, questionId, newValue, edited
         return { ok: false, error: 'Updated AnswersJSON exceeds 48,000-character cell size limit.' };
       }
       var nowIso = new Date().toISOString();
-      sheet.getRange(rowNum, 18).setValue(updatedAnswersJson);
-
-      var existingFlags = String(sheet.getRange(rowNum, 13).getValue() || '').trim();
+      var existingFlags = String(rowVals[0] || '').trim();
       var auditTag = '[Edit ' + qId + ': ' + String(oldVal === undefined ? '' : oldVal).substring(0, 40) + ' -> ' + String(newValue === undefined ? '' : newValue).substring(0, 40) + ' by ' + String(editedBy || 'Supervisor').substring(0, 40) + (reason ? (' (' + String(reason).substring(0, 80) + ')') : '') + ']';
-      sheet.getRange(rowNum, 13).setValue(sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + auditTag) : auditTag));
-      sheet.getRange(rowNum, 19).setValue(nowIso);
+      rowVals[0] = sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + auditTag) : auditTag);
+      rowVals[5] = updatedAnswersJson;
+      rowVals[6] = nowIso;
+      rowRange.setValues([rowVals]);
       return { ok: true, responseId: targetId, questionId: qId };
     }
   }

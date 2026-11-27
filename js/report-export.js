@@ -94,7 +94,78 @@
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
-  function _computeQuestionBreakdown(q, responses) {
+  function _isAnsweredValue(v) {
+    if (v === undefined || v === null) return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'object') {
+      return Object.values(v).some((val) => val !== undefined && val !== null && String(val).trim() !== '');
+    }
+    return String(v).trim() !== '';
+  }
+
+  function _sliceAnalysisForQuestion(fullAnalysis, qId) {
+    if (!fullAnalysis || !Array.isArray(fullAnalysis.records)) return null;
+    const qRecords = fullAnalysis.records.filter((rec) => rec && rec.questionId === qId);
+    const totalAnalyzed = qRecords.length;
+    let positive = 0;
+    let neutral = 0;
+    let negative = 0;
+    let scoreSum = 0;
+    const themeMap = Object.create(null);
+
+    qRecords.forEach((rec) => {
+      const sent = rec.sentiment || 'neutral';
+      if (sent === 'positive') positive++;
+      else if (sent === 'negative') negative++;
+      else neutral++;
+      scoreSum += Number(rec.sentimentScore || 0);
+
+      const tIds = Array.isArray(rec.themeIds) ? rec.themeIds : [];
+      const tNames = Array.isArray(rec.themeNames) ? rec.themeNames : [];
+      tIds.forEach((tid, idx) => {
+        if (!tid) return;
+        if (!themeMap[tid]) {
+          themeMap[tid] = {
+            id: tid,
+            name: tNames[idx] || tid,
+            count: 0,
+            positive: 0,
+            neutral: 0,
+            negative: 0,
+            topQuote: rec.translatedText || rec.text || ''
+          };
+        }
+        const entry = themeMap[tid];
+        entry.count++;
+        if (sent === 'positive') entry.positive++;
+        else if (sent === 'negative') entry.negative++;
+        else entry.neutral++;
+      });
+    });
+
+    const themes = Object.values(themeMap)
+      .map((t) => ({
+        ...t,
+        pct: totalAnalyzed > 0 ? Math.round((t.count / totalAnalyzed) * 100) : 0,
+        netSentiment: t.count > 0 ? Math.round(((t.positive - t.negative) / t.count) * 100) : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      totalAnalyzed,
+      records: qRecords,
+      themes,
+      topTerms: Array.isArray(fullAnalysis.topTerms) ? fullAnalysis.topTerms : [],
+      sentimentSummary: {
+        positive,
+        neutral,
+        negative,
+        avgScore: totalAnalyzed > 0 ? Number((scoreSum / totalAnalyzed).toFixed(2)) : 0
+      }
+    };
+  }
+
+  function _computeQuestionBreakdown(q, responses, fullAnalysis = null) {
     const qType = String(q.type || '').toLowerCase();
     const totalN = responses.length;
     let answered = 0;
@@ -112,9 +183,22 @@
         }
       });
       nums.sort((a, b) => a - b);
-      const mean = nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+      if (nums.length === 0) {
+        return {
+          kind: 'numeric',
+          answered: 0,
+          totalN,
+          unit: q.unit || '',
+          mean: null,
+          median: null,
+          min: null,
+          max: null,
+          stdDev: null
+        };
+      }
+      const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
       const mid = Math.floor(nums.length / 2);
-      const median = nums.length === 0 ? 0 : (nums.length % 2 !== 0 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2);
+      const median = nums.length % 2 !== 0 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
       const variance = nums.length > 1 ? nums.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / (nums.length - 1) : 0;
       return {
         kind: 'numeric',
@@ -123,8 +207,8 @@
         unit: q.unit || '',
         mean: Number(mean.toFixed(2)),
         median: Number(median.toFixed(2)),
-        min: nums.length > 0 ? nums[0] : 0,
-        max: nums.length > 0 ? nums[nums.length - 1] : 0,
+        min: nums[0],
+        max: nums[nums.length - 1],
         stdDev: Number(Math.sqrt(variance).toFixed(2))
       };
     }
@@ -142,10 +226,16 @@
         }
       });
       let insights = null;
-      if (answered > 0 && globalScope.AETeXtEngine && typeof globalScope.AETeXtEngine.analyzeVerbatims === 'function' && typeof globalScope.AETeXtEngine.synthesizeQuestionInsights === 'function') {
+      if (answered > 0 && globalScope.AETeXtEngine && typeof globalScope.AETeXtEngine.synthesizeQuestionInsights === 'function') {
         try {
-          const qAnalysis = globalScope.AETeXtEngine.analyzeVerbatims(responses, { id: 'export', questions: [q] }, { questionId: q.id });
-          insights = globalScope.AETeXtEngine.synthesizeQuestionInsights(qAnalysis, { id: 'export', questions: [q] }, q);
+          const qAnalysis = fullAnalysis
+            ? _sliceAnalysisForQuestion(fullAnalysis, q.id)
+            : (typeof globalScope.AETeXtEngine.analyzeVerbatims === 'function'
+                ? globalScope.AETeXtEngine.analyzeVerbatims(responses, { id: 'export', questions: [q] }, { questionId: q.id })
+                : null);
+          if (qAnalysis && qAnalysis.totalAnalyzed > 0) {
+            insights = globalScope.AETeXtEngine.synthesizeQuestionInsights(qAnalysis, { id: 'export', questions: [q] }, q);
+          }
         } catch (e) {}
       }
       return { kind: 'text', answered, totalN, sampleQuotes, insights };
@@ -163,7 +253,7 @@
         }
       });
     } else if (qType === 'star_rating' || qType === 'rating') {
-      const maxS = Number(q.max || 5);
+      const maxS = Number(q.maxStars || q.max || 5);
       for (let s = maxS; s >= 1; s--) {
         const lbl = String(s);
         counts[lbl] = 0;
@@ -191,14 +281,41 @@
           counts[v]++;
         });
       } else if (typeof raw === 'object') {
-        const v = String(raw.label || raw.level1 || raw.name || raw.value || '').trim();
-        if (!v) return;
-        answered++;
-        if (counts[v] === undefined) {
-          counts[v] = 0;
-          orderedLabels.push(v);
+        if (qType === 'matrix') {
+          const entries = Object.entries(raw).filter(([, cv]) => cv !== undefined && cv !== null && String(cv).trim() !== '');
+          if (entries.length === 0) return;
+          answered++;
+          entries.forEach(([rk, cv]) => {
+            const lbl = `${rk}: ${String(cv).trim()}`;
+            if (counts[lbl] === undefined) {
+              counts[lbl] = 0;
+              orderedLabels.push(lbl);
+            }
+            counts[lbl]++;
+          });
+          return;
         }
-        counts[v]++;
+        const v = String(raw.label || raw.level1 || raw.name || raw.value || '').trim();
+        if (v) {
+          answered++;
+          if (counts[v] === undefined) {
+            counts[v] = 0;
+            orderedLabels.push(v);
+          }
+          counts[v]++;
+        } else {
+          const entries = Object.entries(raw).filter(([, cv]) => cv !== undefined && cv !== null && String(cv).trim() !== '');
+          if (entries.length === 0) return;
+          answered++;
+          entries.forEach(([rk, cv]) => {
+            const lbl = `${rk}: ${String(cv).trim()}`;
+            if (counts[lbl] === undefined) {
+              counts[lbl] = 0;
+              orderedLabels.push(lbl);
+            }
+            counts[lbl]++;
+          });
+        }
       } else {
         const v = String(raw).trim();
         if (!v) return;
@@ -301,8 +418,8 @@
       safeResponses.forEach((r) => {
         if (!r || !r.answers) return;
         questions.forEach((q) => {
-          const v = r.answers[q.id];
-          if (v !== undefined && v !== null && String(v).trim() !== '' && (!Array.isArray(v) || v.length > 0)) {
+          if (!q || !q.id) return;
+          if (_isAnsweredValue(r.answers[q.id])) {
             answeredCells++;
           }
         });
@@ -365,12 +482,13 @@
       const questionBlocksHtml = questions.map((q, idx) => {
         const cleanTitle = _cleanTitle(q, safeSurvey);
         const qCode = q.code || `Q${idx + 1}`;
-        const bd = _computeQuestionBreakdown(q, safeResponses);
+        const bd = _computeQuestionBreakdown(q, safeResponses, analysis);
         const respPct = totalN > 0 ? Math.round((bd.answered / totalN) * 100) : 0;
 
         let bodyHtml = '';
         if (bd.kind === 'numeric') {
           const unitSuffix = bd.unit ? ` ${_esc(bd.unit)}` : '';
+          const fmtNum = (val, withUnit) => (bd.answered > 0 && val !== null && val !== undefined ? `${_esc(val)}${withUnit ? unitSuffix : ''}` : '—');
           bodyHtml = `
             <table cellpadding="8" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; font-size:12px; margin-top:10px;">
               <tr style="background-color:#F8F9F8; color:#525B56; font-weight:600;">
@@ -381,11 +499,11 @@
                 <td style="border-top:1px solid #E4E7E4; border-bottom:1px solid #CFD5D0; text-align:center;">Std Dev</td>
               </tr>
               <tr style="color:#111613; font-weight:600;">
-                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.mean)}${unitSuffix}</td>
-                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.median)}${unitSuffix}</td>
-                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.min)}${unitSuffix}</td>
-                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.max)}${unitSuffix}</td>
-                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${_esc(bd.stdDev)}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${fmtNum(bd.mean, true)}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${fmtNum(bd.median, true)}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${fmtNum(bd.min, true)}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${fmtNum(bd.max, true)}</td>
+                <td style="border-bottom:1px solid #EFEFEF; text-align:center;">${fmtNum(bd.stdDev, false)}</td>
               </tr>
             </table>
           `;
@@ -575,10 +693,11 @@
         ? `
           <h3 style="font-family:Georgia, 'Times New Roman', serif; font-size:14px; font-weight:600; color:#111613; margin:20px 0 8px 0;">Selected Respondent Quotes</h3>
           ${pinnedRecords.slice(0, 10).map((pq) => {
-            const txt = typeof pq === 'string' ? pq : (pq.translatedText || pq.text || '');
-            const qCode = typeof pq === 'object' && pq && pq.questionCode ? pq.questionCode : 'Quote';
-            const sentiment = typeof pq === 'object' && pq && pq.sentiment ? pq.sentiment : 'neutral';
-            const seg = typeof pq === 'object' && pq && pq.segment ? pq.segment : '';
+            const txt = typeof pq === 'string' ? pq : String((pq && (pq.translatedText ?? pq.text)) ?? '');
+            const qCode = typeof pq === 'object' && pq && pq.questionCode ? String(pq.questionCode) : 'Quote';
+            const rawSent = typeof pq === 'object' && pq && pq.sentiment !== undefined && pq.sentiment !== null ? String(pq.sentiment).trim() : '';
+            const sentiment = rawSent || 'neutral';
+            const seg = typeof pq === 'object' && pq && pq.segment ? String(pq.segment) : '';
             const borderCol = sentiment === 'positive' ? '#247B50' : (sentiment === 'negative' ? '#C4242A' : '#9CA3AF');
             return `
               <div style="padding:10px 14px; margin-bottom:10px; background-color:#FAFBF9; border-left:3px solid ${borderCol}; border-top:1px solid #EFEFEF; border-right:1px solid #EFEFEF; border-bottom:1px solid #EFEFEF; page-break-inside:avoid;">
@@ -870,8 +989,8 @@ ${htmlTag}
       safeResponses.forEach((r) => {
         if (!r || !r.answers) return;
         questions.forEach((q) => {
-          const v = r.answers[q.id];
-          if (v !== undefined && v !== null && String(v).trim() !== '' && (!Array.isArray(v) || v.length > 0)) {
+          if (!q || !q.id) return;
+          if (_isAnsweredValue(r.answers[q.id])) {
             answeredCells++;
           }
         });
@@ -907,6 +1026,9 @@ ${htmlTag}
         ? opts.pinnedQuotes
         : (analysis.records || []).filter((rec) => rec && (rec.isPinned || pinnedKeySet.has(String(rec.key || rec.recordKey || ''))));
 
+      // Pre-compute question breakdowns once and reuse for KPI 3 fallback & Quantitative slides
+      const allBreakdowns = questions.map((q, idx) => ({ q, idx, bd: _computeQuestionBreakdown(q, safeResponses, analysis) }));
+
       // KPI 3: Primary Score Mean
       let kpi3Label = 'Primary Score Mean';
       let kpi3Value = '—';
@@ -918,10 +1040,10 @@ ${htmlTag}
         kpi3Sub = `Scale: ${themeImpact.metricScale || 'numeric'} (n = ${themeImpact.totalScored})`;
       } else {
         // Fallback: first numeric/rating/NPS question with a mean
-        for (let i = 0; i < questions.length; i++) {
-          const bd = _computeQuestionBreakdown(questions[i], safeResponses);
+        for (let i = 0; i < allBreakdowns.length; i++) {
+          const { q, bd } = allBreakdowns[i];
           if (bd.mean !== null && bd.mean !== undefined && bd.answered > 0) {
-            const lbl = _cleanTitle(questions[i], safeSurvey);
+            const lbl = _cleanTitle(q, safeSurvey);
             kpi3Label = lbl.length > 36 ? lbl.slice(0, 33) + '...' : lbl;
             kpi3Value = bd.unit ? `${bd.mean} ${bd.unit}` : String(bd.mean);
             kpi3Sub = `Mean across n = ${bd.answered}`;
@@ -1027,11 +1149,10 @@ ${htmlTag}
 
       // SLIDES 3..K: Key Quantitative Findings (up to 6 top questions, 2 per slide max)
       const textTypes = new Set(['long_text', 'short_text', 'textarea', 'text', 'audio_note']);
-      const quantCandidates = questions
-        .map((q, idx) => ({ q, idx, bd: _computeQuestionBreakdown(q, safeResponses) }))
-        .filter((item) => !textTypes.has(String(item.q.type || '').toLowerCase()));
+      const quantCandidates = allBreakdowns.filter((item) => !textTypes.has(String(item.q.type || '').toLowerCase()));
 
-      const selectedFindings = (quantCandidates.length > 0 ? quantCandidates : questions.map((q, idx) => ({ q, idx, bd: _computeQuestionBreakdown(q, safeResponses) })))
+      const selectedFindings = (quantCandidates.length > 0 ? quantCandidates : allBreakdowns)
+        .slice()
         .sort((a, b) => (b.bd.answered - a.bd.answered) || (a.idx - b.idx))
         .slice(0, 6)
         .sort((a, b) => a.idx - b.idx);
@@ -1049,13 +1170,14 @@ ${htmlTag}
           let contentHtml = '';
           if (bd.kind === 'numeric') {
             const u = bd.unit ? ` ${_esc(bd.unit)}` : '';
+            const fmtNum = (val, withUnit) => (bd.answered > 0 && val !== null && val !== undefined ? `${_esc(val)}${withUnit ? u : ''}` : '—');
             contentHtml = `
               <div class="num-grid">
-                <div class="num-box"><div class="num-lbl">Mean</div><div class="num-val">${_esc(bd.mean)}${u}</div></div>
-                <div class="num-box"><div class="num-lbl">Median</div><div class="num-val">${_esc(bd.median)}${u}</div></div>
-                <div class="num-box"><div class="num-lbl">Min</div><div class="num-val">${_esc(bd.min)}${u}</div></div>
-                <div class="num-box"><div class="num-lbl">Max</div><div class="num-val">${_esc(bd.max)}${u}</div></div>
-                <div class="num-box"><div class="num-lbl">Std Dev</div><div class="num-val">${_esc(bd.stdDev)}</div></div>
+                <div class="num-box"><div class="num-lbl">Mean</div><div class="num-val">${fmtNum(bd.mean, true)}</div></div>
+                <div class="num-box"><div class="num-lbl">Median</div><div class="num-val">${fmtNum(bd.median, true)}</div></div>
+                <div class="num-box"><div class="num-lbl">Min</div><div class="num-val">${fmtNum(bd.min, true)}</div></div>
+                <div class="num-box"><div class="num-lbl">Max</div><div class="num-val">${fmtNum(bd.max, true)}</div></div>
+                <div class="num-box"><div class="num-lbl">Std Dev</div><div class="num-val">${fmtNum(bd.stdDev, false)}</div></div>
               </div>
             `;
           } else if (bd.kind === 'text') {
@@ -1246,11 +1368,12 @@ ${htmlTag}
 
       const quotesHtml = quotePool.length > 0
         ? quotePool.map((pq) => {
-            const txt = typeof pq === 'string' ? pq : (pq.translatedText || pq.text || '');
+            const txt = typeof pq === 'string' ? pq : String((pq && (pq.translatedText ?? pq.text)) ?? '');
             const clipped = txt.length > 180 ? txt.slice(0, 177) + '...' : txt;
-            const qCode = typeof pq === 'object' && pq && pq.questionCode ? pq.questionCode : 'Respondent';
-            const sentiment = typeof pq === 'object' && pq && pq.sentiment ? pq.sentiment : 'neutral';
-            const seg = typeof pq === 'object' && pq && pq.segment ? pq.segment : '';
+            const qCode = typeof pq === 'object' && pq && pq.questionCode ? String(pq.questionCode) : 'Respondent';
+            const rawSent = typeof pq === 'object' && pq && pq.sentiment !== undefined && pq.sentiment !== null ? String(pq.sentiment).trim() : '';
+            const sentiment = rawSent || 'neutral';
+            const seg = typeof pq === 'object' && pq && pq.segment ? String(pq.segment) : '';
             const borderCol = sentiment === 'positive' ? accent : (sentiment === 'negative' ? '#C4242A' : '#94A3B8');
             return `
               <blockquote class="quote-card" style="border-left-color:${borderCol};">
@@ -1853,13 +1976,16 @@ ${htmlTag}
       const safeSurvey = survey || { title: 'Questionnaire', pages: [] };
       const lang = String(options.lang || 'en').toLowerCase();
       const transDict = (lang !== 'en' && safeSurvey.translations && safeSurvey.translations[lang]) || {};
+      const qTransMap = (transDict.questions && typeof transDict.questions === 'object') ? transDict.questions : {};
+      const pTransMap = (transDict.pages && typeof transDict.pages === 'object') ? transDict.pages : {};
+      const getQTrans = (q) => (q && q.id ? (qTransMap[q.id] || transDict[q.id] || {}) : {});
       const pages = Array.isArray(safeSurvey.pages) && safeSurvey.pages.length > 0
-        ? safeSurvey.pages
-        : [{ id: 'p1', title: 'Questions', questions: Array.isArray(safeSurvey.questions) ? safeSurvey.questions : [] }];
+        ? safeSurvey.pages.filter(Boolean)
+        : [{ id: 'p1', title: 'Questions', questions: Array.isArray(safeSurvey.questions) ? safeSurvey.questions.filter(Boolean) : [] }];
       const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
       const renderFieldControl = (q) => {
-        const qTrans = transDict[q.id] || {};
+        const qTrans = getQTrans(q);
         const opts = Array.isArray(qTrans.options) && qTrans.options.length > 0
           ? qTrans.options
           : (Array.isArray(q.options) ? q.options : []);
@@ -1869,7 +1995,7 @@ ${htmlTag}
           const sym = type === 'checkboxes' ? '&#9744;' : '&#9711;';
           return `
             <div style="margin-top:8px; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px 16px;">
-              ${opts.map((opt) => `<div style="font-size:11.5px; color:#111613;"><span style="font-size:13px; margin-right:6px;">${sym}</span>${_esc(typeof opt === 'string' ? opt : (opt.label || opt.value || ''))}</div>`).join('')}
+              ${opts.map((opt) => `<div style="font-size:11.5px; color:#111613;"><span style="font-size:13px; margin-right:6px;">${sym}</span>${_esc(typeof opt === 'string' ? opt : (opt && (opt.label || opt.value) || ''))}</div>`).join('')}
             </div>
           `;
         }
@@ -1890,8 +2016,12 @@ ${htmlTag}
           `;
         }
         if (type === 'matrix') {
-          const rows = Array.isArray(q.rows) ? q.rows : ['Item 1', 'Item 2'];
-          const cols = Array.isArray(q.columns) ? q.columns : ['Poor', 'Fair', 'Good', 'Excellent'];
+          const rows = Array.isArray(qTrans.rows) && qTrans.rows.length > 0
+            ? qTrans.rows
+            : (Array.isArray(q.rows) ? q.rows : ['Item 1', 'Item 2']);
+          const cols = Array.isArray(qTrans.columns) && qTrans.columns.length > 0
+            ? qTrans.columns
+            : (Array.isArray(q.columns) ? q.columns : ['Poor', 'Fair', 'Good', 'Excellent']);
           return `
             <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px; font-size:11px;">
               <tr style="background:#F4F6F4;">
@@ -1922,23 +2052,28 @@ ${htmlTag}
         if (type === 'signature' || type === 'photo_proof') {
           return `<div style="margin-top:8px; height:48px; border:1px dashed #9CA3AF; border-radius:4px; padding:6px; font-size:10px; color:#646E68;">${type === 'signature' ? 'Respondent / Enumerator Signature' : 'Photo Reference ID / Notes'}</div>`;
         }
-        return `<div style="margin-top:10px; border-bottom:1px solid #9CA3AF; height:20px; width:85%;">${q.unit ? `<span style="float:right; font-size:10.5px; color:#646E68;">(${_esc(q.unit)})</span>` : ''}</div>`;
+        return `<div style="margin-top:10px; border-bottom:1px solid #9CA3AF; height:20px; width:85%;">${q.unit ? `<span style="float:right; font-size:10.5px; color:#646E68;">(${_esc(qTrans.unit || q.unit)})</span>` : ''}</div>`;
       };
 
       const pagesHtml = pages.map((p, pIdx) => {
-        const qs = Array.isArray(p.questions) ? p.questions : [];
+        if (!p) return '';
+        const pTrans = (p.id && pTransMap[p.id]) || {};
+        const qs = Array.isArray(p.questions) ? p.questions.filter(Boolean) : [];
         const numMap = (globalScope.AEPiping && typeof globalScope.AEPiping.computeQuestionDisplayNumbers === 'function')
           ? globalScope.AEPiping.computeQuestionDisplayNumbers(qs)
           : {};
+        const pageTitle = pTrans.title || p.title || `Page ${pIdx + 1}`;
+        const pageDesc = pTrans.description || p.description || '';
         return `
           <div style="margin-top:18px;">
             <div style="background:#F4F6F4; border-left:3px solid #247B50; padding:8px 12px; margin-bottom:12px;">
-              <div style="font-size:13px; font-weight:700; color:#111613;">Section ${pIdx + 1}: ${_esc(p.title || `Page ${pIdx + 1}`)}</div>
-              ${p.description ? `<div style="font-size:11px; color:#525B56; margin-top:2px;">${_esc(p.description)}</div>` : ''}
+              <div style="font-size:13px; font-weight:700; color:#111613;">Section ${pIdx + 1}: ${_esc(pageTitle)}</div>
+              ${pageDesc ? `<div style="font-size:11px; color:#525B56; margin-top:2px;">${_esc(pageDesc)}</div>` : ''}
             </div>
             ${qs.map((q, qIdx) => {
-              const nInfo = (numMap && numMap[q.id]) || { label: String(qIdx + 1), isSub: false };
-              const qTrans = transDict[q.id] || {};
+              if (!q) return '';
+              const nInfo = (numMap && q.id && numMap[q.id]) || { label: String(qIdx + 1), isSub: false };
+              const qTrans = getQTrans(q);
               const title = qTrans.title || q.title || `Question ${qIdx + 1}`;
               const help = qTrans.helpText || q.helpText || '';
               return `
@@ -1955,6 +2090,8 @@ ${htmlTag}
         `;
       }).join('');
 
+      const surveyTitle = transDict.title || safeSurvey.title || 'Untitled Survey';
+      const surveyDesc = transDict.description || safeSurvey.description || '';
       const tyTitle = safeSurvey.branding?.thankYouTitle || 'Thank you for participating!';
       const tyMsg = safeSurvey.branding?.thankYouMessage || '';
 
@@ -1962,7 +2099,7 @@ ${htmlTag}
 <html lang="${_esc(lang)}">
 <head>
   <meta charset="UTF-8" />
-  <title>Blank Form — ${_esc(safeSurvey.title || 'Survey')}</title>
+  <title>Blank Form — ${_esc(surveyTitle)}</title>
   <style>
     @page { size: A4 portrait; margin: 16mm 16mm; }
     body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color:#111613; margin:0; padding:20px; line-height:1.45; }
@@ -1977,8 +2114,8 @@ ${htmlTag}
     </div>
     <div style="border-top:3px solid #141A17; border-bottom:1px solid #CFD5D0; padding:12px 0; margin-bottom:14px;">
       <div style="font-size:10.5px; font-weight:700; color:#247B50; text-transform:uppercase;">AE Survey &middot; Printable Questionnaire (${_esc(lang.toUpperCase())})</div>
-      <h1 style="font-size:21px; margin:4px 0 4px 0;">${_esc(safeSurvey.title || 'Untitled Survey')}</h1>
-      ${safeSurvey.description ? `<p style="font-size:12px; color:#525B56; margin:0;">${_esc(safeSurvey.description)}</p>` : ''}
+      <h1 style="font-size:21px; margin:4px 0 4px 0;">${_esc(surveyTitle)}</h1>
+      ${surveyDesc ? `<p style="font-size:12px; color:#525B56; margin:0;">${_esc(surveyDesc)}</p>` : ''}
       <div style="margin-top:10px; display:flex; gap:18px; flex-wrap:wrap; font-size:11px; color:#525B56;">
         <span>Enumerator: ______________________</span>
         <span>Date: _______________</span>
