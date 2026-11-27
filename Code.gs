@@ -510,6 +510,14 @@ function doPost(e) {
       return jsonResponse_(testSurveyWebhook_(payload));
     }
 
+    // Discover Available Gemini Models for configured API key (Admin-only) — runs outside ScriptLock
+    if (action === 'LIST_GEMINI_MODELS') {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+      }
+      return jsonResponse_(listAvailableGeminiModels(Boolean(payload.forceRefresh)));
+    }
+
     // Daily Digest Email Endpoint (Admin-only) — runs outside ScriptLock
     if (action === 'SEND_DAILY_DIGEST') {
       if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
@@ -2161,14 +2169,135 @@ var GEMINI_CONFIG = {
     'gemini-3.8-flash'
   ],
   DEFAULT_MODEL: 'gemini-3.5-flash-lite',
-  LAST_WORKING_MODEL_PROP: 'GEMINI_LAST_WORKING_MODEL'
+  LAST_WORKING_MODEL_PROP: 'GEMINI_LAST_WORKING_MODEL',
+  DISCOVERED_MODELS_PROP: 'GEMINI_DISCOVERED_MODELS_CACHE',
+  DISCOVERY_TTL_MS: 6 * 60 * 60 * 1000 // 6 hours
 };
 
 /**
- * Calls Gemini generateContent using the configured model fallback chain.
- * Prioritizes the last working model saved in Script Properties, falls back
- * through GEMINI_MODEL_FALLBACK_CHAIN on availability/quota errors, and
- * persists the working model back to Script Properties.
+ * Queries the Gemini REST API (`GET /v1beta/models`) for the active API key,
+ * filters to `generateContent`-capable Gemini models, ranks Flash models first,
+ * and caches the list in Script Properties for 6 hours.
+ */
+function discoverAvailableGeminiModels_(geminiKey, forceRefresh) {
+  if (!geminiKey) return [];
+  var props = null;
+  var now = Date.now();
+
+  try {
+    props = PropertiesService.getScriptProperties();
+    if (!forceRefresh) {
+      var cachedRaw = props.getProperty(GEMINI_CONFIG.DISCOVERED_MODELS_PROP);
+      if (cachedRaw) {
+        var cached = JSON.parse(cachedRaw);
+        if (cached && Array.isArray(cached.models) && cached.models.length > 0 && (now - Number(cached.fetchedAt || 0)) < GEMINI_CONFIG.DISCOVERY_TTL_MS) {
+          return cached.models;
+        }
+      }
+    }
+  } catch (cacheErr) {}
+
+  try {
+    var listUrl = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100';
+    var res = UrlFetchApp.fetch(listUrl, {
+      method: 'get',
+      headers: { 'x-goog-api-key': geminiKey },
+      muteHttpExceptions: true
+    });
+    if (res.getResponseCode() < 200 || res.getResponseCode() >= 300) {
+      return [];
+    }
+    var data = JSON.parse(res.getContentText() || '{}');
+    var rawModels = Array.isArray(data.models) ? data.models : [];
+    var discovered = [];
+
+    for (var i = 0; i < rawModels.length; i++) {
+      var m = rawModels[i];
+      if (!m || !m.name) continue;
+      var methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+      if (methods.indexOf('generateContent') === -1) continue;
+      var id = String(m.name).replace(/^models\//i, '').trim();
+      // Keep general Gemini text/multimodal models; skip embeddings, TTS, audio-only, image-gen, robotics, vision-only
+      if (!/^gemini-/i.test(id)) continue;
+      if (/embedding|imagen|veo|tts|audio|live|robotics|computer-use|image-generation/i.test(id)) continue;
+      discovered.push(id);
+    }
+
+    // Rank: flash-lite & flash first (newest version first), then pro models
+    var rankModel = function(name) {
+      var lower = name.toLowerCase();
+      var score = 0;
+      if (lower.indexOf('flash-lite') !== -1) score += 300;
+      else if (lower.indexOf('flash') !== -1) score += 250;
+      else if (lower.indexOf('pro') !== -1) score += 150;
+      else score += 100;
+      var verMatch = lower.match(/gemini-(\d+)(?:\.(\d+))?/);
+      if (verMatch) {
+        score += (parseInt(verMatch[1], 10) || 0) * 20 + (parseInt(verMatch[2], 10) || 0) * 2;
+      }
+      if (lower.indexOf('exp') !== -1 || lower.indexOf('preview') !== -1) score -= 15;
+      if (lower.indexOf('latest') !== -1) score += 5;
+      return score;
+    };
+
+    discovered.sort(function(a, b) {
+      return rankModel(b) - rankModel(a);
+    });
+
+    if (props && discovered.length > 0) {
+      try {
+        props.setProperty(GEMINI_CONFIG.DISCOVERED_MODELS_PROP, JSON.stringify({
+          fetchedAt: now,
+          models: discovered.slice(0, 20)
+        }));
+      } catch (saveErr) {}
+    }
+
+    return discovered.slice(0, 20);
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Top-level helper you can run directly in the Apps Script Editor toolbar
+ * to inspect all Gemini models available for your configured GEMINI_API_KEY.
+ */
+function listAvailableGeminiModels(forceRefresh) {
+  var geminiKey = '';
+  try {
+    geminiKey = String(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
+  } catch (e) {
+    geminiKey = '';
+  }
+  if (!geminiKey) {
+    var noKey = { ok: false, error: 'GEMINI_API_KEY is not set in Script Properties.', models: [] };
+    if (typeof Logger !== 'undefined' && Logger.log) Logger.log(JSON.stringify(noKey, null, 2));
+    return noKey;
+  }
+  var models = discoverAvailableGeminiModels_(geminiKey, forceRefresh !== false);
+  var lastWorking = '';
+  try {
+    lastWorking = String(PropertiesService.getScriptProperties().getProperty(GEMINI_CONFIG.LAST_WORKING_MODEL_PROP) || '').trim();
+  } catch (e) {}
+  var out = {
+    ok: true,
+    lastWorkingModel: lastWorking,
+    configuredChain: GEMINI_CONFIG.GEMINI_MODEL_FALLBACK_CHAIN,
+    discoveredModels: models,
+    count: models.length
+  };
+  if (typeof Logger !== 'undefined' && Logger.log) Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
+
+/**
+ * Calls Gemini generateContent using:
+ *  1) Last working model saved in Script Properties,
+ *  2) Configured DEFAULT_MODEL + GEMINI_MODEL_FALLBACK_CHAIN,
+ *  3) Live discovered models from GET /v1beta/models for this API key
+ *     (with automatic forced refresh if all cached candidates fail).
+ * Persists the first working model back to Script Properties.
  */
 function callGeminiWithFallback_(geminiKey, requestBody) {
   var props = null;
@@ -2182,6 +2311,7 @@ function callGeminiWithFallback_(geminiKey, requestBody) {
   }
 
   var candidates = [];
+  var tried = {};
   var addUnique = function(m) {
     var clean = String(m || '').trim();
     if (clean && candidates.indexOf(clean) === -1) {
@@ -2189,17 +2319,23 @@ function callGeminiWithFallback_(geminiKey, requestBody) {
     }
   };
 
-  // 1. Try last known working model first for lowest latency
+  // 1. Last known working model first
   if (savedModel) addUnique(savedModel);
-  // 2. Then default model, followed by full fallback chain in order
+  // 2. Configured default & static fallback chain
   addUnique(GEMINI_CONFIG.DEFAULT_MODEL);
   for (var i = 0; i < GEMINI_CONFIG.GEMINI_MODEL_FALLBACK_CHAIN.length; i++) {
     addUnique(GEMINI_CONFIG.GEMINI_MODEL_FALLBACK_CHAIN[i]);
   }
+  // 3. Discovered models for this API key (cached 6h)
+  var discovered = discoverAvailableGeminiModels_(geminiKey, false);
+  for (var d = 0; d < discovered.length; d++) {
+    addUnique(discovered[d]);
+  }
 
   var errors = [];
-  for (var idx = 0; idx < candidates.length; idx++) {
-    var model = candidates[idx];
+  var tryModel = function(model) {
+    if (tried[model]) return null;
+    tried[model] = true;
     var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
 
     try {
@@ -2224,7 +2360,7 @@ function callGeminiWithFallback_(geminiKey, requestBody) {
       if (statusCode < 200 || statusCode >= 300) {
         var errExcerpt = responseText.replace(/\s+/g, ' ').trim().substring(0, 140);
         errors.push(model + ' (HTTP ' + statusCode + (errExcerpt ? ': ' + errExcerpt : '') + ')');
-        continue;
+        return null;
       }
 
       var rawResp = JSON.parse(responseText);
@@ -2243,7 +2379,7 @@ function callGeminiWithFallback_(geminiKey, requestBody) {
 
       if (!candidateText) {
         errors.push(model + ' (empty candidate)');
-        continue;
+        return null;
       }
 
       // Persist last working model in Script Properties when it changes
@@ -2264,7 +2400,20 @@ function callGeminiWithFallback_(geminiKey, requestBody) {
         throw callErr;
       }
       errors.push(model + ' (' + msg + ')');
+      return null;
     }
+  };
+
+  for (var idx = 0; idx < candidates.length; idx++) {
+    var hit = tryModel(candidates[idx]);
+    if (hit) return hit;
+  }
+
+  // Last resort: force-refresh live model list from REST API in case cache was stale
+  var freshModels = discoverAvailableGeminiModels_(geminiKey, true);
+  for (var f = 0; f < freshModels.length; f++) {
+    var freshHit = tryModel(freshModels[f]);
+    if (freshHit) return freshHit;
   }
 
   throw new Error('All Gemini models failed: ' + errors.join(' | '));
