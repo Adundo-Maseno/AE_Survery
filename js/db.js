@@ -4910,12 +4910,54 @@ class AESurveyStore {
   upsertSurvey(survey, queueForCloud = true) {
     const cleanSurvey = this.sanitizeSurveyRecord(survey);
     if (!cleanSurvey) return null;
-    cleanSurvey.updatedAt = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    cleanSurvey.updatedAt = nowIso;
     this._surveysDirty = true;
     const idx = this.surveys.findIndex((s) => s.id === cleanSurvey.id);
+
+    // Automatic Survey Version Snapshots (Feature 3: Safe Live-Edit & Version History)
+    const buildSchemaSig = (s) => {
+      try {
+        return JSON.stringify({ title: s.title || '', pages: s.pages || [] });
+      } catch (e) {
+        return String(s.title || '');
+      }
+    };
+    const countQs = (s) => (s.pages || []).reduce((acc, p) => acc + ((p && Array.isArray(p.questions)) ? p.questions.length : 0), 0);
+    const currentUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    const editorName = (currentUser && currentUser.fullName) || 'Research Lead';
+
     if (idx >= 0) {
+      const prev = this.surveys[idx];
+      const history = Array.isArray(cleanSurvey.versionHistory)
+        ? cleanSurvey.versionHistory.slice()
+        : (Array.isArray(prev.versionHistory) ? prev.versionHistory.slice() : []);
+      const prevVer = Number(cleanSurvey.schemaVersion || prev.schemaVersion || 1);
+      if (buildSchemaSig(prev) !== buildSchemaSig(cleanSurvey)) {
+        // Snapshot the previous schema before applying the new version
+        const alreadySnapshotted = history.some((h) => h && h.version === prevVer);
+        if (!alreadySnapshotted) {
+          history.push({
+            version: prevVer,
+            savedAt: prev.updatedAt || nowIso,
+            savedBy: editorName,
+            title: prev.title || 'Untitled Survey',
+            questionCount: countQs(prev),
+            pages: JSON.parse(JSON.stringify(prev.pages || []))
+          });
+        }
+        cleanSurvey.schemaVersion = prevVer + 1;
+        cleanSurvey.versionHistory = history.slice(-15);
+      } else {
+        cleanSurvey.schemaVersion = prevVer;
+        cleanSurvey.versionHistory = history.slice(-15);
+      }
       this.surveys[idx] = cleanSurvey;
     } else {
+      cleanSurvey.schemaVersion = Number(cleanSurvey.schemaVersion || 1);
+      cleanSurvey.versionHistory = Array.isArray(cleanSurvey.versionHistory) ? cleanSurvey.versionHistory.slice(-15) : [];
       this.surveys.unshift(cleanSurvey);
       // Ensure at least one default collector exists for new surveys
       if (this.getCollectorsForSurvey(cleanSurvey.id).length === 0) {
@@ -4927,7 +4969,7 @@ class AESurveyStore {
           status: 'Open',
           pinCode: '1234',
           enumeratorDefault: '',
-          createdAt: new Date().toISOString()
+          createdAt: nowIso
         });
       }
     }
@@ -4940,6 +4982,17 @@ class AESurveyStore {
     }
     this.saveToLocalStorage({ stores: ['surveys', 'collectors', 'syncQueue'] });
     return cleanSurvey;
+  }
+
+  restoreSurveyVersion(surveyId, targetVersion) {
+    const survey = this.getSurveyById(surveyId);
+    if (!survey || !Array.isArray(survey.versionHistory)) return null;
+    const snap = survey.versionHistory.find((h) => Number(h.version) === Number(targetVersion));
+    if (!snap) return null;
+    const restored = JSON.parse(JSON.stringify(survey));
+    restored.title = snap.title || restored.title;
+    restored.pages = JSON.parse(JSON.stringify(snap.pages || []));
+    return this.upsertSurvey(restored, true);
   }
 
   deleteSurvey(surveyId) {

@@ -299,6 +299,11 @@ window.AEBuilder = {
     const totalQuestions = window.aeStore.getQuestionsForSurvey(survey).length;
     const currentPage = survey.pages[this.activePageIndex];
     const allSurveys = window.aeStore.surveys || [];
+    const schemaVer = Number(survey.schemaVersion || 1);
+    const historyCount = Array.isArray(survey.versionHistory) ? survey.versionHistory.length : 0;
+    const existingResponseCount = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+      ? window.aeStore.getResponsesForSurvey(survey.id).length
+      : 0;
 
     return `
       <div class="space-y-5">
@@ -311,6 +316,13 @@ window.AEBuilder = {
                 <span class="w-1.5 h-1.5 rounded-full bg-[#247B50]"></span>
                 <span>Saved automatically</span>
               </span>
+              ${
+                existingResponseCount > 0
+                  ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[11px] font-medium tabular-nums" title="Destructive edits are guarded and option renames automatically unify existing answers">
+                      <i class="fa-solid fa-shield-halved text-[10px]"></i> Live guard &middot; ${existingResponseCount} ${existingResponseCount === 1 ? 'response' : 'responses'}
+                    </span>`
+                  : ''
+              }
             </div>
             <p class="text-sm text-[#525B56] mt-1">
               Build multi-page surveys with branching rules, translations, and offline field controls.
@@ -318,6 +330,13 @@ window.AEBuilder = {
           </div>
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <!-- Version History -->
+            <button onclick="AEApp.openVersionHistoryModal()"
+              title="Inspect or restore previous survey versions"
+              class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press tabular-nums">
+              <i class="fa-solid fa-clock-rotate-left text-[#247B50]"></i> v${schemaVer}${historyCount > 0 ? ` (${historyCount})` : ''}
+            </button>
+
             <!-- Assign Field Team -->
             <button onclick="AEApp.openAssignTeamModal('${survey.id}')"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">

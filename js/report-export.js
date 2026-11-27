@@ -653,6 +653,30 @@ ${htmlTag}
       </div>
     ` : ''}
 
+    ${safeSurvey.publishedAiBrief && safeSurvey.publishedAiBrief.headline ? `
+      <div style="background-color:#F3FBF6; border:1px solid #C8E6C9; border-left:3px solid #247B50; border-radius:6px; padding:14px 16px; margin-bottom:22px; page-break-inside:avoid;">
+        <div style="font-size:10.5px; font-weight:700; color:#247B50; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px;">
+          ${safeSurvey.publishedAiBrief.provider === 'gemini' ? 'Published Gemini Executive Brief' : 'Published Executive Brief'} (n = ${Number(safeSurvey.publishedAiBrief.responseCount) || totalN})
+        </div>
+        <div style="font-size:13px; font-weight:600; color:#111613; line-height:1.5; margin-bottom:8px;">
+          ${_esc(safeSurvey.publishedAiBrief.headline)}
+        </div>
+        ${Array.isArray(safeSurvey.publishedAiBrief.summaryBullets) && safeSurvey.publishedAiBrief.summaryBullets.length > 0 ? `
+          <ul style="margin:0 0 6px 0; padding-left:18px; font-size:11.5px; color:#2C3530; line-height:1.5;">
+            ${safeSurvey.publishedAiBrief.summaryBullets.slice(0, 5).map((b) => `<li style="margin-bottom:3px;">${_esc(b)}</li>`).join('')}
+          </ul>
+        ` : ''}
+        ${Array.isArray(safeSurvey.publishedAiBrief.recommendations) && safeSurvey.publishedAiBrief.recommendations.length > 0 ? `
+          <div style="margin-top:8px; padding-top:8px; border-top:1px solid #D5ECE0;">
+            <div style="font-size:10.5px; font-weight:700; color:#04250E; margin-bottom:4px;">Recommended Actions</div>
+            <ul style="margin:0; padding-left:18px; font-size:11.5px; color:#2C3530; line-height:1.45;">
+              ${safeSurvey.publishedAiBrief.recommendations.slice(0, 4).map((r) => `<li style="margin-bottom:2px;">${_esc(r)}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
+      </div>
+    ` : ''}
+
     <!-- 2. DIVIDED EXECUTIVE KPI STRIP -->
     <table cellpadding="12" cellspacing="0" border="0" style="width:100%; margin-bottom:26px; border-collapse:collapse; border:1px solid #E4E7E4; background-color:#FFFFFF;">
       <tr>

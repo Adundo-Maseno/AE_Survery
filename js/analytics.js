@@ -1291,7 +1291,9 @@ window.AEAnalytics = {
     syncStatus: 'all', // 'all' | 'synced' | 'queued'
     reviewStatus: 'all', // 'all' | 'approved' | 'flagged' | 'pending'
     npsSegment: 'all', // 'all' | 'promoter' | 'passive' | 'detractor'
-    seedVariety: 'all'
+    seedVariety: 'all',
+    answerQId: 'all',
+    answerValue: 'all'
   },
 
   // Backwards compatibility aliases for app.js legacy references
@@ -1339,6 +1341,13 @@ window.AEAnalytics = {
   questionVerbatimPage: {}, // qId -> 1-based page number (10 per page)
   questionVerbatimSearch: {}, // qId -> search query string
   _qSearchTimers: {},
+  surveyBriefBusy: false,
+  fieldOpsDailyTarget: 10,
+  galleryMediaFilter: 'all', // 'all' | 'photo' | 'audio'
+  galleryQuestionId: 'all',
+  galleryPinnedOnly: false,
+  galleryLightboxKey: null,
+  _galleryItemsByKey: {},
   chartInstances: {}, // qId -> Chart.js instance
   mapInstances: {}, // qId -> Leaflet map instance
   _mapFocusBounds: {}, // mapKey -> { countryName, countryBounds, plotBounds, center, zoom }
@@ -1729,7 +1738,9 @@ window.AEAnalytics = {
       syncStatus: 'all',
       reviewStatus: 'all',
       npsSegment: 'all',
-      seedVariety: 'all'
+      seedVariety: 'all',
+      answerQId: 'all',
+      answerValue: 'all'
     };
     this.individualIndex = 0;
     this.verbatimSearchQuery = '';
@@ -1741,6 +1752,39 @@ window.AEAnalytics = {
     this.verbatimSegmentQId = 'auto';
     this.verbatimImpactMetricQId = 'auto';
     window.AEApp.render();
+  },
+
+  setAnswerFilterQuestion(qId) {
+    this.filterState.answerQId = qId || 'all';
+    this.filterState.answerValue = 'all';
+    this.individualIndex = 0;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  setAnswerFilterValue(val) {
+    this.filterState.answerValue = val || 'all';
+    this.individualIndex = 0;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  buildFilteredReportUrl(surveyId) {
+    const base = window.AEApp && typeof window.AEApp.getLiveReportUrl === 'function'
+      ? window.AEApp.getLiveReportUrl(surveyId)
+      : `${window.location.origin}${window.location.pathname}?view=report&survey=${encodeURIComponent(surveyId)}`;
+    const qId = this.filterState.answerQId;
+    const val = this.filterState.answerValue;
+    if (qId && qId !== 'all' && val && val !== 'all') {
+      return `${base}&fq=${encodeURIComponent(`${qId}::${val}`)}`;
+    }
+    return base;
+  },
+
+  copyFilteredReportUrl(surveyId) {
+    const url = this.buildFilteredReportUrl(surveyId);
+    if (window.AEApp && typeof window.AEApp.copyText === 'function') {
+      window.AEApp.copyText(url, 'Filtered report link copied!');
+    }
+    return url;
   },
 
   getFilteredResponses(surveyId) {
@@ -1845,6 +1889,21 @@ window.AEAnalytics = {
         if (!catStr.toLowerCase().includes(f.seedVariety.toLowerCase())) return false;
       }
 
+      // 9. Universal "Slice by Any Answer" Filter (works in Studio & Shareable ?view=report&fq=...)
+      if (f.answerQId && f.answerQId !== 'all' && f.answerValue && f.answerValue !== 'all') {
+        const rawAns = r.answers ? r.answers[f.answerQId] : undefined;
+        if (rawAns === undefined || rawAns === null || rawAns === '') return false;
+        const targetLower = String(f.answerValue).trim().toLowerCase();
+        if (Array.isArray(rawAns)) {
+          if (!rawAns.some((v) => String(v || '').trim().toLowerCase() === targetLower)) return false;
+        } else if (typeof rawAns === 'object') {
+          const objLabel = String(rawAns.level1 || rawAns.label || rawAns.name || rawAns.value || '').trim().toLowerCase();
+          if (objLabel !== targetLower) return false;
+        } else {
+          if (String(rawAns).trim().toLowerCase() !== targetLower) return false;
+        }
+      }
+
       return true;
     });
   },
@@ -1914,17 +1973,16 @@ window.AEAnalytics = {
   async runQuestionAiSummary(surveyId, qId, forceRefresh = false) {
     if (!surveyId || !qId) return null;
     if (this.questionAiBusy[qId]) return null;
-    const survey = window.aeStore && typeof window.aeStore.getSurvey === 'function'
-      ? window.aeStore.getSurvey(surveyId)
-      : null;
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : (window.aeStore && typeof window.aeStore.getSurvey === 'function' ? window.aeStore.getSurvey(surveyId) : null);
     if (!survey) return null;
 
-    const allResponses = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
-      ? window.aeStore.getResponsesForSurvey(surveyId)
-      : [];
     const responses = typeof this.getFilteredResponses === 'function'
-      ? this.getFilteredResponses(allResponses, survey)
-      : allResponses;
+      ? this.getFilteredResponses(surveyId)
+      : (window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+          ? window.aeStore.getResponsesForSurvey(surveyId)
+          : []);
 
     let answeredCount = 0;
     responses.forEach((r) => {
@@ -2659,6 +2717,9 @@ window.AEAnalytics = {
         <!-- 2. Dynamic Multi-Dimensional Filter Bar -->
         ${this.renderMultiDimensionalFilterBar(survey, allResponses, filtered, collectors)}
 
+        <!-- 2b. Published Whole-Survey Executive AI Brief (Synced to Live Report & Exports) -->
+        ${this.renderPublishedExecutiveBrief(survey, filtered, isPublicReportMode)}
+
         <!-- 3. Automated Executive Survey Insights Callout -->
         ${this.renderAutomatedInsightsBanner(survey, filtered)}
 
@@ -2690,6 +2751,10 @@ window.AEAnalytics = {
                 ? this.renderVariableCorrelationsTab(survey, filtered)
                 : this.activeTab === 'pacing'
                 ? this.renderPacingForecastTab(survey, filtered)
+                : this.activeTab === 'field_ops' && !isPublicReportMode
+                ? this.renderFieldOpsTab(survey, filtered)
+                : this.activeTab === 'gallery'
+                ? this.renderMediaGalleryTab(survey, filtered, isPublicReportMode)
                 : this.activeTab === 'forensics' && !isPublicReportMode
                 ? this.renderForensicsTab(survey, filtered)
                 : this.activeTab === 'text'
@@ -2822,6 +2887,79 @@ window.AEAnalytics = {
         </div>
 
         <!-- Active Filter Dismissable Chips Strip -->
+        <!-- Universal "Slice by Any Answer" Cohort Filter Bar (Studio & Live Report) -->
+        ${(() => {
+          const sliceQuestions = this.getCategoricalQuestions(survey);
+          if (!sliceQuestions || sliceQuestions.length === 0) return '';
+          const activeSliceQ = sliceQuestions.find((q) => q.id === f.answerQId) || null;
+          const answerOptions = [];
+          if (activeSliceQ) {
+            const seen = new Set();
+            (allResponses || []).forEach((r) => {
+              const raw = r.answers ? r.answers[activeSliceQ.id] : undefined;
+              if (raw === undefined || raw === null || raw === '') return;
+              if (Array.isArray(raw)) {
+                raw.forEach((v) => {
+                  const s = String(v || '').trim();
+                  if (s && !seen.has(s)) { seen.add(s); answerOptions.push(s); }
+                });
+              } else if (typeof raw === 'object') {
+                const s = String(raw.level1 || raw.label || raw.name || raw.value || '').trim();
+                if (s && !seen.has(s)) { seen.add(s); answerOptions.push(s); }
+              } else {
+                const s = String(raw).trim();
+                if (s && !seen.has(s)) { seen.add(s); answerOptions.push(s); }
+              }
+            });
+            answerOptions.sort();
+          }
+          const isSliced = Boolean(activeSliceQ && f.answerValue && f.answerValue !== 'all');
+          const safeSid = AEApp.escapeJs(survey.id);
+          return `
+            <div class="pt-2.5 border-t border-[#EFEFEF] flex flex-wrap items-center gap-2 text-xs">
+              <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#525B56] shrink-0">
+                <i class="fa-solid fa-filter text-[10px] text-[#247B50]"></i> Slice by Answer:
+              </span>
+              <select onchange="AEAnalytics.setAnswerFilterQuestion(this.value)"
+                aria-label="Select question to slice by"
+                class="h-7 px-2 text-xs bg-[#F8F9F8] border border-[#CFD5D0] rounded-[5px] text-[#111613] max-w-[240px] truncate focus:outline-none focus:border-[#247B50]">
+                <option value="all">Choose any question…</option>
+                ${sliceQuestions
+                  .map((sq, idx) => {
+                    const label = this.cleanQuestionTitle(sq, {}, survey);
+                    return `<option value="${AEApp.escapeAttr(sq.id)}" ${f.answerQId === sq.id ? 'selected' : ''}>Q${idx + 1}: ${AEApp.escapeHtml(label.slice(0, 46))}${label.length > 46 ? '…' : ''}</option>`;
+                  })
+                  .join('')}
+              </select>
+              ${
+                activeSliceQ
+                  ? `<select onchange="AEAnalytics.setAnswerFilterValue(this.value)"
+                      aria-label="Select answer value to filter by"
+                      class="h-7 px-2 text-xs bg-white border border-[#247B50]/50 rounded-[5px] text-[#111613] max-w-[220px] truncate focus:outline-none focus:border-[#247B50]">
+                      <option value="all">All answers (${answerOptions.length})</option>
+                      ${answerOptions
+                        .map((opt) => `<option value="${AEApp.escapeAttr(opt)}" ${f.answerValue === opt ? 'selected' : ''}>${AEApp.escapeHtml(opt)}</option>`)
+                        .join('')}
+                    </select>`
+                  : ''
+              }
+              ${
+                isSliced
+                  ? `<button type="button" onclick="AEAnalytics.copyFilteredReportUrl('${safeSid}')"
+                      title="Copy a live stakeholder report link pre-filtered to this exact cohort"
+                      class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/40 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold inline-flex items-center gap-1.5 ae-press">
+                      <i class="fa-solid fa-link text-[10px] text-[#247B50]"></i> Copy Sliced Report Link
+                    </button>
+                    <button type="button" onclick="AEAnalytics.setAnswerFilterQuestion('all')"
+                      class="text-[11px] text-[#525B56] hover:text-[#C4242A] font-medium px-1.5">
+                      Clear slice
+                    </button>`
+                  : ''
+              }
+            </div>
+          `;
+        })()}
+
         ${
           activeFilters.length > 0
             ? `<div class="pt-2 border-t border-[#EFEFEF] flex flex-wrap items-center gap-1.5 text-xs">
@@ -3141,7 +3279,8 @@ window.AEAnalytics = {
           { id: 'summary', label: 'Summaries' },
           { id: 'individual', label: `Responses (${filteredCount})` },
           { id: 'gps', label: 'GPS Plots' },
-          { id: 'text', label: 'Open-Ended' }
+          { id: 'text', label: 'Open-Ended' },
+          { id: 'gallery', label: 'Evidence Gallery', icon: 'fa-photo-film' }
         ]
       },
       {
@@ -3159,6 +3298,7 @@ window.AEAnalytics = {
       {
         name: 'Field Quality',
         tabs: [
+          { id: 'field_ops', label: 'Field Ops', icon: 'fa-users-viewfinder' },
           { id: 'pacing', label: 'Pacing & Quotas' },
           { id: 'forensics', label: 'Data Quality' },
           { id: 'spatial', label: 'Spatial Clusters' }
@@ -3171,7 +3311,7 @@ window.AEAnalytics = {
       .map((group) => ({
         ...group,
         tabs: isPublicReportMode
-          ? group.tabs.filter((t) => t.id !== 'individual' && t.id !== 'forensics')
+          ? group.tabs.filter((t) => t.id !== 'individual' && t.id !== 'forensics' && t.id !== 'field_ops')
           : group.tabs
       }))
       .filter((group) => group.tabs.length > 0);
@@ -9828,6 +9968,729 @@ window.AEAnalytics = {
     window.AEApp.downloadBlob(xml, `${survey.id}_enterprise_analytics.xls`, 'application/vnd.ms-excel');
     window.AEApp.showToast('Exported multi-sheet Enterprise Excel Workbook (.xls).', 'success');
     return xml;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE 1: PUBLISHABLE WHOLE-SURVEY AI EXECUTIVE BRIEF (SYNCED TO REPORT)
+  // --------------------------------------------------------------------------
+  async generateAndPublishAiBrief(surveyId) {
+    if (!surveyId || this.surveyBriefBusy) return null;
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    if (!survey) return null;
+
+    const responses = this.getFilteredResponses(surveyId);
+    if (!responses || responses.length === 0) {
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast('Collect at least one response before publishing an Executive Brief.', 'info');
+      }
+      return null;
+    }
+
+    this.surveyBriefBusy = true;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+
+    try {
+      const engine = window.AETeXtEngine;
+      const analysis = engine && typeof engine.analyzeVerbatims === 'function'
+        ? engine.analyzeVerbatims(responses, survey, { questionId: 'all' })
+        : { totalAnalyzed: 0, records: [], themes: [], sentimentSummary: {} };
+
+      const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+        ? window.aeStore.getQuestionsForSurvey(survey)
+        : (survey.questions || []);
+
+      // Build quantitative highlights to blend with qualitative synthesis
+      const quantHighlights = [];
+      questions.slice(0, 8).forEach((q) => {
+        if (this.isOpenEndedTextQuestion(q, survey)) return;
+        const vals = responses
+          .map((r) => r.answers?.[q.id])
+          .filter((v) => v !== undefined && v !== null && v !== '' && (!Array.isArray(v) || v.length > 0));
+        if (vals.length === 0) return;
+        const title = this.cleanQuestionTitle(q, {}, survey).slice(0, 60);
+        if (q.type === 'nps' || q.type === 'star_rating' || q.type === 'number_yield' || q.type === 'calculated') {
+          const nums = vals.map(Number).filter((n) => Number.isFinite(n));
+          if (nums.length > 0) {
+            const avg = (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1);
+            quantHighlights.push(`${title}: average ${avg}${q.unit ? ' ' + q.unit : ''} (n=${nums.length}).`);
+          }
+        } else {
+          const counts = {};
+          vals.forEach((v) => {
+            const arr = Array.isArray(v) ? v : [typeof v === 'object' ? (v.level1 || v.label || v.value || '') : String(v)];
+            arr.forEach((item) => {
+              const s = String(item || '').trim();
+              if (s) counts[s] = (counts[s] || 0) + 1;
+            });
+          });
+          const topEntry = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+          if (topEntry) {
+            const pct = Math.round((topEntry[1] / vals.length) * 100);
+            quantHighlights.push(`${title}: "${topEntry[0]}" leads at ${pct}% (${topEntry[1]} of ${vals.length}).`);
+          }
+        }
+      });
+
+      let aiRes = null;
+      if (engine && typeof engine.synthesizeVerbatimsViaGAS === 'function' && (analysis.totalAnalyzed || 0) > 0) {
+        aiRes = await engine.synthesizeVerbatimsViaGAS(analysis, survey);
+      }
+
+      const isGemini = Boolean(aiRes && aiRes.provider === 'gemini' && aiRes.briefing);
+      const offlineInsights = engine && typeof engine.synthesizeQuestionInsights === 'function' && (analysis.totalAnalyzed || 0) > 0
+        ? engine.synthesizeQuestionInsights(analysis, survey, null)
+        : null;
+
+      const currentUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
+        ? window.AESession.getCurrentUser()
+        : null;
+
+      const brief = {
+        headline: isGemini
+          ? String(aiRes.briefing.headline || '').trim()
+          : (offlineInsights && offlineInsights.narrative
+              ? offlineInsights.narrative
+              : `Across ${responses.length} responses, ${quantHighlights[0] || 'key survey metrics have been compiled below.'}`),
+        summaryBullets: isGemini
+          ? (Array.isArray(aiRes.briefing.summaryBullets) ? aiRes.briefing.summaryBullets.slice(0, 5) : [])
+          : [
+              ...quantHighlights.slice(0, 2),
+              ...(offlineInsights && Array.isArray(offlineInsights.keyTakeaways)
+                ? offlineInsights.keyTakeaways.slice(0, 3).map((t) => `${t.label}: ${t.text}`)
+                : [])
+            ].slice(0, 5),
+        recommendations: isGemini
+          ? (Array.isArray(aiRes.briefing.aiRecommendations || aiRes.briefing.recommendations)
+              ? (aiRes.briefing.aiRecommendations || aiRes.briefing.recommendations).slice(0, 4)
+              : [])
+          : (offlineInsights && Array.isArray(offlineInsights.recommendations) ? offlineInsights.recommendations.slice(0, 3) : []),
+        urgentRisks: isGemini
+          ? (Array.isArray(aiRes.briefing.aiUrgentRisks || aiRes.briefing.urgentRisks)
+              ? (aiRes.briefing.aiUrgentRisks || aiRes.briefing.urgentRisks).slice(0, 3)
+              : [])
+          : [],
+        provider: isGemini ? 'gemini' : 'offline_synthesis',
+        model: isGemini ? (aiRes.model || 'gemini-2.5-flash') : 'local-nlp',
+        responseCount: responses.length,
+        publishedAt: new Date().toISOString(),
+        publishedBy: (currentUser && currentUser.fullName) || 'Research Lead'
+      };
+
+      survey.publishedAiBrief = brief;
+      if (window.aeStore && typeof window.aeStore.upsertSurvey === 'function') {
+        window.aeStore.upsertSurvey(survey, true);
+      }
+
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast(
+          isGemini
+            ? 'Gemini Executive Brief published to live report & exports.'
+            : 'Executive Brief published to live report & exports (set GEMINI_API_KEY in GAS for Gemini AI).',
+          'success'
+        );
+      }
+      return brief;
+    } catch (err) {
+      if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+        window.AEApp.showToast((err && err.message) || 'Could not publish Executive Brief.', 'error');
+      }
+      return null;
+    } finally {
+      this.surveyBriefBusy = false;
+      if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    }
+  },
+
+  clearPublishedAiBrief(surveyId) {
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    if (!survey) return;
+    delete survey.publishedAiBrief;
+    if (window.aeStore && typeof window.aeStore.upsertSurvey === 'function') {
+      window.aeStore.upsertSurvey(survey, true);
+    }
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast('Published Executive Brief removed.', 'info');
+    }
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  renderPublishedExecutiveBrief(survey, filtered, isPublicReportMode) {
+    const brief = survey && survey.publishedAiBrief && typeof survey.publishedAiBrief === 'object'
+      ? survey.publishedAiBrief
+      : null;
+    const safeSid = AEApp.escapeJs(survey?.id || '');
+
+    if (!brief) {
+      if (isPublicReportMode || !filtered || filtered.length === 0) return '';
+      return `
+        <div class="bg-[#FAFBF9] border border-dashed border-[#CFD5D0] rounded-[8px] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-7 h-7 rounded-[6px] bg-[#F3FBF6] border border-[#247B50]/25 text-[#247B50] flex items-center justify-center shrink-0">
+              <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+            </span>
+            <div class="min-w-0">
+              <div class="text-xs font-semibold text-[#111613]">Publish an Executive Brief to your Live Report &amp; Exports</div>
+              <div class="text-[11px] text-[#525B56]">Synthesizes quantitative KPIs and all open-ended feedback into one stakeholder-ready summary synced to Google Sheets.</div>
+            </div>
+          </div>
+          <button type="button"
+            ${this.surveyBriefBusy ? 'disabled' : ''}
+            onclick="AEAnalytics.generateAndPublishAiBrief('${safeSid}')"
+            class="h-8 px-3 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-60 ae-press shrink-0">
+            <i class="fa-solid ${this.surveyBriefBusy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[11px] text-[#3FC07A]"></i>
+            <span>${this.surveyBriefBusy ? 'Publishing Brief…' : 'Generate & Publish AI Brief'}</span>
+          </button>
+        </div>
+      `;
+    }
+
+    const isGemini = brief.provider === 'gemini';
+    const isStale = filtered && brief.responseCount && filtered.length > brief.responseCount;
+    const pubDate = brief.publishedAt ? new Date(brief.publishedAt).toISOString().replace('T', ' ').slice(0, 16) : '';
+
+    return `
+      <div class="bg-white border border-[#247B50]/35 rounded-[8px] p-5 space-y-3.5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#EFEFEF]">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold">
+              <i class="fa-solid ${isGemini ? 'fa-sparkles' : 'fa-file-lines'} text-[10px]"></i>
+              ${isGemini ? 'Published Gemini Executive Brief' : 'Published Executive Brief'}
+            </span>
+            <span class="text-[11px] text-[#646E68] tabular-nums">
+              Based on n=${Number(brief.responseCount) || 0}${pubDate ? ` &middot; Published ${AEApp.escapeHtml(pubDate)}` : ''}
+            </span>
+            ${isStale && !isPublicReportMode ? `<span class="px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A] text-[10.5px] font-medium">New responses available — Refresh</span>` : ''}
+          </div>
+          ${
+            !isPublicReportMode
+              ? `<div class="flex items-center gap-1.5">
+                  <button type="button"
+                    ${this.surveyBriefBusy ? 'disabled' : ''}
+                    onclick="AEAnalytics.generateAndPublishAiBrief('${safeSid}')"
+                    class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/35 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-60 ae-press">
+                    <i class="fa-solid ${this.surveyBriefBusy ? 'fa-spinner fa-spin' : 'fa-rotate'} text-[10px]"></i>
+                    <span>${this.surveyBriefBusy ? 'Updating…' : 'Refresh Brief'}</span>
+                  </button>
+                  <button type="button"
+                    onclick="AEAnalytics.clearPublishedAiBrief('${safeSid}')"
+                    title="Remove published brief"
+                    class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] text-[#525B56] hover:text-[#C4242A] text-xs ae-press">
+                    <i class="fa-solid fa-trash-can text-[10px]"></i>
+                  </button>
+                </div>`
+              : ''
+          }
+        </div>
+
+        <p class="text-[14px] font-semibold text-[#111613] leading-relaxed">${AEApp.escapeHtml(brief.headline || '')}</p>
+
+        ${
+          Array.isArray(brief.summaryBullets) && brief.summaryBullets.length > 0
+            ? `<ul class="space-y-1.5 text-xs text-[#2C3530] leading-relaxed list-disc pl-5">
+                ${brief.summaryBullets.map((b) => `<li>${AEApp.escapeHtml(b)}</li>`).join('')}
+              </ul>`
+            : ''
+        }
+
+        ${
+          Array.isArray(brief.recommendations) && brief.recommendations.length > 0
+            ? `<div class="pt-2.5 border-t border-[#EFEFEF] space-y-1">
+                <div class="text-[11px] font-semibold text-[#04250E]">Recommended Actions</div>
+                <ul class="space-y-1 text-xs text-[#2C3530] list-disc pl-5">
+                  ${brief.recommendations.map((r) => `<li>${AEApp.escapeHtml(r)}</li>`).join('')}
+                </ul>
+              </div>`
+            : ''
+        }
+      </div>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE 4: FIELD OPS & ENUMERATOR PERFORMANCE SCOREBOARD
+  // --------------------------------------------------------------------------
+  setFieldOpsDailyTarget(val) {
+    const n = Math.max(1, Math.min(500, parseInt(val, 10) || 10));
+    this.fieldOpsDailyTarget = n;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  _computeFieldOpsMetrics(responses) {
+    const now = Date.now();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayMs = todayStart.getTime();
+    const byEnum = new Map();
+    const allDurations = [];
+
+    (responses || []).forEach((r) => {
+      const name = String(r.enumerator || 'Unassigned / Self-Administered').trim();
+      if (!byEnum.has(name)) {
+        byEnum.set(name, {
+          name,
+          total: 0,
+          today: 0,
+          synced: 0,
+          queued: 0,
+          gpsCount: 0,
+          lastMs: 0,
+          durations: []
+        });
+      }
+      const row = byEnum.get(name);
+      row.total++;
+      const subMs = new Date(r.submittedAt || r.startedAt || 0).getTime();
+      if (subMs > row.lastMs) row.lastMs = subMs;
+      if (subMs >= todayMs) row.today++;
+      if (r.syncStatus === 'synced' || r.synced === true) row.synced++;
+      else row.queued++;
+      if (r.gps && r.gps.lat !== undefined && r.gps.lng !== undefined) row.gpsCount++;
+      const dur = Number(r.durationSeconds || r.durationSec || (r.startedAt && r.submittedAt ? Math.round((new Date(r.submittedAt) - new Date(r.startedAt)) / 1000) : NaN));
+      if (Number.isFinite(dur) && dur > 0 && dur < 14400) {
+        row.durations.push(dur);
+        allDurations.push(dur);
+      }
+    });
+
+    const median = (arr) => {
+      if (!arr || arr.length === 0) return 0;
+      const s = [...arr].sort((a, b) => a - b);
+      const mid = Math.floor(s.length / 2);
+      return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
+    };
+
+    const teamMedianDur = median(allDurations);
+    const rows = Array.from(byEnum.values())
+      .map((row) => {
+        const medDur = median(row.durations);
+        const hoursSince = row.lastMs > 0 ? (now - row.lastMs) / 3600000 : Infinity;
+        const freshness = hoursSince <= 6 ? 'Active' : hoursSince <= 24 ? 'Recent' : 'Stale';
+        const isSpeeding = teamMedianDur >= 30 && medDur > 0 && medDur < teamMedianDur * 0.4;
+        const gpsPct = row.total > 0 ? Math.round((row.gpsCount / row.total) * 100) : 0;
+        return {
+          ...row,
+          medianDurationSec: medDur,
+          hoursSince,
+          freshness,
+          isSpeeding,
+          gpsPct
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+
+    return { rows, teamMedianDur };
+  },
+
+  exportFieldOpsCsv(surveyId) {
+    const survey = window.aeStore && window.aeStore.getSurveyById ? window.aeStore.getSurveyById(surveyId) : null;
+    const responses = this.getFilteredResponses(surveyId);
+    const { rows } = this._computeFieldOpsMetrics(responses);
+    const target = this.fieldOpsDailyTarget || 10;
+    const header = ['Enumerator', 'Total Responses', 'Today Responses', 'Daily Target', 'Synced', 'Queued', 'GPS Coverage %', 'Median Duration (sec)', 'Status', 'Speeding Flag', 'Last Submission'];
+    const lines = [header.join(',')];
+    rows.forEach((r) => {
+      const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      lines.push([
+        esc(r.name),
+        r.total,
+        r.today,
+        target,
+        r.synced,
+        r.queued,
+        r.gpsPct + '%',
+        r.medianDurationSec,
+        esc(r.freshness),
+        r.isSpeeding ? 'YES' : 'NO',
+        esc(r.lastMs > 0 ? new Date(r.lastMs).toISOString().replace('T', ' ').slice(0, 16) : '')
+      ].join(','));
+    });
+    const csv = lines.join('\n');
+    if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof document !== 'undefined' && typeof document.createElement === 'function') {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const slug = String(survey?.title || 'survey').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 32);
+      a.download = `AE_FieldOps_${slug}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      if (window.AEApp && window.AEApp.showToast) window.AEApp.showToast('Enumerator activity CSV exported.', 'success');
+    }
+    return csv;
+  },
+
+  renderFieldOpsTab(survey, responses) {
+    if (!responses || responses.length === 0) {
+      return '<div class="p-10 text-center text-xs text-[#646E68] bg-white border border-[#E4E7E4] rounded-[8px]">No responses available to build the Field Ops scoreboard yet.</div>';
+    }
+    const { rows, teamMedianDur } = this._computeFieldOpsMetrics(responses);
+    const target = this.fieldOpsDailyTarget || 10;
+    const staleCount = rows.filter((r) => r.freshness === 'Stale').length;
+    const speedingCount = rows.filter((r) => r.isSpeeding).length;
+    const totalToday = rows.reduce((acc, r) => acc + r.today, 0);
+    const safeSid = AEApp.escapeJs(survey.id);
+
+    const fmtDur = (sec) => {
+      if (!sec) return '—';
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    };
+
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#EFEFEF]">
+          <div>
+            <h2 class="text-base font-semibold text-[#111613]">Field Ops &amp; Enumerator Scoreboard</h2>
+            <p class="text-xs text-[#525B56] mt-0.5">Live daily pace, sync freshness, GPS lock coverage, and interview speed flags across ${rows.length} field ${rows.length === 1 ? 'collector' : 'collectors'}.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="inline-flex items-center gap-1.5 text-xs text-[#525B56]">
+              <span>Daily Target:</span>
+              <input type="number" min="1" max="500" value="${target}"
+                onchange="AEAnalytics.setFieldOpsDailyTarget(this.value)"
+                class="w-16 h-7 px-2 text-xs font-semibold text-[#111613] bg-[#F8F9F8] border border-[#CFD5D0] rounded-[5px] tabular-nums" />
+            </label>
+            <button type="button" onclick="AEAnalytics.exportFieldOpsCsv('${safeSid}')"
+              class="h-7 px-3 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-file-csv text-[11px]"></i> Export Activity CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Summary Strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-[#EFEFEF]">
+            <div class="text-[#646E68]">Active Enumerators</div>
+            <div class="text-lg font-semibold text-[#111613] tabular-nums mt-0.5">${rows.length}</div>
+          </div>
+          <div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-[#EFEFEF]">
+            <div class="text-[#646E68]">Collected Today</div>
+            <div class="text-lg font-semibold text-[#247B50] tabular-nums mt-0.5">${totalToday}</div>
+          </div>
+          <div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-[#EFEFEF]">
+            <div class="text-[#646E68]">Team Median Duration</div>
+            <div class="text-lg font-semibold text-[#111613] tabular-nums mt-0.5">${fmtDur(teamMedianDur)}</div>
+          </div>
+          <div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-[#EFEFEF]">
+            <div class="text-[#646E68]">Attention Flags</div>
+            <div class="text-lg font-semibold ${staleCount + speedingCount > 0 ? 'text-[#C4242A]' : 'text-[#247B50]'} tabular-nums mt-0.5">
+              ${staleCount} stale &middot; ${speedingCount} fast
+            </div>
+          </div>
+        </div>
+
+        <!-- Scoreboard Table -->
+        <div class="overflow-x-auto border border-[#E4E7E4] rounded-[6px]">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
+              <tr>
+                <th class="py-2.5 px-3 font-semibold">Enumerator</th>
+                <th class="py-2.5 px-3 font-semibold text-right">Total</th>
+                <th class="py-2.5 px-3 font-semibold">Today vs Target (${target})</th>
+                <th class="py-2.5 px-3 font-semibold">Sync Health</th>
+                <th class="py-2.5 px-3 font-semibold text-right">GPS</th>
+                <th class="py-2.5 px-3 font-semibold text-right">Median Time</th>
+                <th class="py-2.5 px-3 font-semibold">Freshness</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#EFEFEF]">
+              ${rows
+                .map((r) => {
+                  const pct = Math.min(100, Math.round((r.today / target) * 100));
+                  const freshBadge = r.freshness === 'Active'
+                    ? 'bg-[#DCFAE5] text-[#04250E]'
+                    : r.freshness === 'Recent'
+                    ? 'bg-[#FFFBEB] text-[#92400E]'
+                    : 'bg-[#FEE2E2] text-[#831C1E]';
+                  return `
+                    <tr class="hover:bg-[#FAFBF9]">
+                      <td class="py-2.5 px-3 font-medium text-[#111613]">
+                        ${AEApp.escapeHtml(r.name)}
+                        ${r.isSpeeding ? `<span class="ml-1.5 px-1.5 py-0.5 rounded-[4px] bg-[#FEE2E2] text-[#831C1E] text-[10px] font-semibold">Speeding</span>` : ''}
+                      </td>
+                      <td class="py-2.5 px-3 text-right font-semibold text-[#111613] tabular-nums">${r.total}</td>
+                      <td class="py-2.5 px-3 min-w-[140px]">
+                        <div class="flex items-center justify-between text-[11px] tabular-nums mb-1">
+                          <span class="font-medium text-[#111613]">${r.today} / ${target}</span>
+                          <span class="text-[#646E68]">${pct}%</span>
+                        </div>
+                        <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                          <div class="h-full rounded-full ${pct >= 100 ? 'bg-[#247B50]' : 'bg-[#3FC07A]'}" style="width: ${Math.max(pct, 2)}%;"></div>
+                        </div>
+                      </td>
+                      <td class="py-2.5 px-3 tabular-nums text-[11px]">
+                        <span class="text-[#247B50] font-medium">${r.synced} synced</span>${r.queued > 0 ? ` &middot; <span class="text-[#92400E] font-medium">${r.queued} queued</span>` : ''}
+                      </td>
+                      <td class="py-2.5 px-3 text-right tabular-nums text-[#525B56]">${r.gpsPct}%</td>
+                      <td class="py-2.5 px-3 text-right tabular-nums ${r.isSpeeding ? 'text-[#C4242A] font-semibold' : 'text-[#111613]'}">${fmtDur(r.medianDurationSec)}</td>
+                      <td class="py-2.5 px-3">
+                        <span class="px-2 py-0.5 rounded-[4px] text-[10.5px] font-semibold ${freshBadge}">${r.freshness}</span>
+                      </td>
+                    </tr>
+                  `;
+                })
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE 5: MEDIA & FIELD EVIDENCE GALLERY (PHOTOS + AUDIO NOTES)
+  // --------------------------------------------------------------------------
+  getPinnedGalleryItems(surveyId) {
+    try {
+      if (typeof localStorage === 'undefined') return [];
+      const raw = localStorage.getItem(`ae_pinned_media_${surveyId}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  togglePinGalleryItem(surveyId, itemKey) {
+    const list = new Set(this.getPinnedGalleryItems(surveyId));
+    if (list.has(itemKey)) list.delete(itemKey);
+    else list.add(itemKey);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`ae_pinned_media_${surveyId}`, JSON.stringify(Array.from(list)));
+      }
+    } catch (e) {}
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  openGalleryLightbox(itemKey) {
+    this.galleryLightboxKey = itemKey || null;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  closeGalleryLightbox() {
+    this.galleryLightboxKey = null;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  downloadMediaItem(itemKey) {
+    const item = this._galleryItemsByKey[itemKey];
+    if (!item || !item.src || typeof document === 'undefined') return;
+    const a = document.createElement('a');
+    a.href = item.src;
+    const ext = item.kind === 'photo' ? 'jpg' : 'webm';
+    a.download = `AE_Evidence_${item.questionId}_${item.responseId}.${ext}`;
+    a.click();
+  },
+
+  _extractMediaItems(survey, responses) {
+    const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey.questions || []);
+    const mediaQuestions = questions.filter((q) =>
+      q.type === 'photo_proof' || q.type === 'photo_capture' || q.type === 'photo' || q.type === 'audio_note'
+    );
+    const items = [];
+    const byKey = {};
+
+    (responses || []).forEach((r) => {
+      const respId = r.id || r.clientResponseId || 'resp';
+      mediaQuestions.forEach((q) => {
+        const val = r.answers ? r.answers[q.id] : undefined;
+        if (!val) return;
+        const isAudio = q.type === 'audio_note';
+        let src = '';
+        let transcript = '';
+        if (typeof val === 'string') {
+          if (val.startsWith('data:image') || val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:audio')) {
+            src = val;
+          } else if (isAudio) {
+            transcript = val;
+          }
+        } else if (typeof val === 'object') {
+          src = val.dataUrl || val.url || val.audioUrl || val.imageUrl || val.src || '';
+          transcript = val.transcript || val.text || val.caption || '';
+        }
+        if (!src && !transcript) return;
+        const key = `${respId}::${q.id}`;
+        const item = {
+          key,
+          kind: isAudio ? 'audio' : 'photo',
+          src,
+          transcript,
+          questionId: q.id,
+          questionTitle: this.cleanQuestionTitle(q, {}, survey),
+          responseId: respId,
+          enumerator: r.enumerator || 'Field Collector',
+          submittedAt: r.submittedAt || '',
+          location: this._extractResponseLocationValue(r, null)
+        };
+        items.push(item);
+        byKey[key] = item;
+      });
+    });
+
+    this._galleryItemsByKey = byKey;
+    return { items, mediaQuestions };
+  },
+
+  renderMediaGalleryTab(survey, responses, isPublicReportMode = false) {
+    const { items, mediaQuestions } = this._extractMediaItems(survey, responses);
+    const pinnedSet = new Set(this.getPinnedGalleryItems(survey.id));
+    const safeSid = AEApp.escapeJs(survey.id);
+
+    let visible = items.filter((it) => {
+      if (this.galleryMediaFilter !== 'all' && it.kind !== this.galleryMediaFilter) return false;
+      if (this.galleryQuestionId !== 'all' && it.questionId !== this.galleryQuestionId) return false;
+      if (this.galleryPinnedOnly && !pinnedSet.has(it.key)) return false;
+      return true;
+    });
+
+    // In public report mode, if the researcher pinned curated items, show those first
+    if (isPublicReportMode && pinnedSet.size > 0) {
+      const curated = visible.filter((it) => pinnedSet.has(it.key));
+      if (curated.length > 0) visible = curated;
+    }
+
+    const lightboxItem = this.galleryLightboxKey ? this._galleryItemsByKey[this.galleryLightboxKey] : null;
+
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 sm:p-6 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#EFEFEF]">
+          <div>
+            <h2 class="text-base font-semibold text-[#111613]">Media &amp; Field Evidence Gallery</h2>
+            <p class="text-xs text-[#525B56] mt-0.5 tabular-nums">${visible.length} of ${items.length} captured photos &amp; voice testimonies.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <div class="inline-flex rounded-[6px] border border-[#E4E7E4] p-0.5 bg-[#F8F9F8]">
+              ${['all', 'photo', 'audio']
+                .map((m) => `
+                  <button type="button" onclick="AEAnalytics.galleryMediaFilter='${m}'; AEApp.render();"
+                    class="px-2.5 py-1 rounded-[4px] font-medium ${this.galleryMediaFilter === m ? 'bg-[#141A17] text-white' : 'text-[#525B56] hover:text-[#111613]'}">
+                    ${m === 'all' ? 'All' : m === 'photo' ? 'Photos' : 'Audio'}
+                  </button>
+                `)
+                .join('')}
+            </div>
+            ${
+              mediaQuestions.length > 1
+                ? `<select onchange="AEAnalytics.galleryQuestionId=this.value; AEApp.render();"
+                    class="h-7 px-2 text-xs bg-white border border-[#CFD5D0] rounded-[5px] text-[#111613] max-w-[200px] truncate">
+                    <option value="all">All media questions</option>
+                    ${mediaQuestions
+                      .map((mq) => `<option value="${AEApp.escapeAttr(mq.id)}" ${this.galleryQuestionId === mq.id ? 'selected' : ''}>${AEApp.escapeHtml(this.cleanQuestionTitle(mq, {}, survey).slice(0, 40))}</option>`)
+                      .join('')}
+                  </select>`
+                : ''
+            }
+            ${
+              !isPublicReportMode
+                ? `<button type="button" onclick="AEAnalytics.galleryPinnedOnly=!AEAnalytics.galleryPinnedOnly; AEApp.render();"
+                    class="h-7 px-2.5 rounded-[5px] border text-xs font-medium inline-flex items-center gap-1.5 ${
+                      this.galleryPinnedOnly ? 'bg-[#FFFBEB] border-[#FDE68A] text-[#92400E]' : 'bg-white border-[#CFD5D0] text-[#525B56]'
+                    }">
+                    <i class="fa-solid fa-star text-[10px]"></i> Pinned (${pinnedSet.size})
+                  </button>`
+                : ''
+            }
+          </div>
+        </div>
+
+        ${
+          visible.length === 0
+            ? `<div class="p-10 text-center text-xs text-[#646E68] bg-[#FAFBF9] rounded-[6px] border border-[#EFEFEF]">
+                No photos or audio recordings match the current filter. Add a Photo Verification or Voice Testimony question to collect field evidence.
+              </div>`
+            : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                ${visible
+                  .map((it) => {
+                    const isPinned = pinnedSet.has(it.key);
+                    const safeKeyJs = AEApp.escapeJs(it.key);
+                    const dateStr = it.submittedAt ? new Date(it.submittedAt).toISOString().replace('T', ' ').slice(0, 16) : '';
+                    return `
+                      <div class="rounded-[8px] border border-[#E4E7E4] bg-[#FAFBF9] overflow-hidden flex flex-col justify-between">
+                        ${
+                          it.kind === 'photo' && it.src
+                            ? `<button type="button" onclick="AEAnalytics.openGalleryLightbox('${safeKeyJs}')"
+                                class="block w-full h-44 bg-[#EAECE9] overflow-hidden relative group focus:outline-none">
+                                <img src="${AEApp.escapeAttr(it.src)}" alt="${AEApp.escapeAttr(it.questionTitle)}" loading="lazy"
+                                  class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-200" />
+                                <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/65 text-white text-[10px] font-medium">
+                                  <i class="fa-solid fa-magnifying-glass-plus mr-1"></i>Zoom
+                                </span>
+                              </button>`
+                            : `<div class="p-4 bg-[#F3FBF6] border-b border-[#E4E7E4] space-y-2">
+                                <div class="flex items-center gap-2 text-xs font-semibold text-[#04250E]">
+                                  <i class="fa-solid fa-microphone-lines text-[#247B50]"></i>
+                                  <span>Voice Testimony</span>
+                                </div>
+                                ${it.src ? `<audio controls class="w-full h-8" src="${AEApp.escapeAttr(it.src)}"></audio>` : ''}
+                                ${it.transcript ? `<p class="text-xs text-[#2C3530] italic leading-relaxed">&ldquo;${AEApp.escapeHtml(it.transcript.slice(0, 180))}&rdquo;</p>` : ''}
+                              </div>`
+                        }
+                        <div class="p-3 space-y-2">
+                          <div class="text-xs font-semibold text-[#111613] line-clamp-2">${AEApp.escapeHtml(it.questionTitle)}</div>
+                          <div class="text-[11px] text-[#646E68] flex flex-wrap items-center gap-1.5">
+                            ${!isPublicReportMode ? `<span class="font-medium text-[#525B56]">${AEApp.escapeHtml(it.enumerator)}</span><span>&middot;</span>` : ''}
+                            ${it.location ? `<span>${AEApp.escapeHtml(it.location)}</span><span>&middot;</span>` : ''}
+                            <span class="tabular-nums">${AEApp.escapeHtml(dateStr)}</span>
+                          </div>
+                          <div class="flex items-center justify-between pt-1.5 border-t border-[#EFEFEF]">
+                            ${
+                              !isPublicReportMode
+                                ? `<button type="button" onclick="AEAnalytics.togglePinGalleryItem('${safeSid}', '${safeKeyJs}')"
+                                    class="text-[11px] font-medium inline-flex items-center gap-1 ${isPinned ? 'text-[#D97706]' : 'text-[#525B56] hover:text-[#111613]'}">
+                                    <i class="fa-${isPinned ? 'solid' : 'regular'} fa-star"></i>
+                                    <span>${isPinned ? 'Pinned to Report' : 'Pin to Report'}</span>
+                                  </button>`
+                                : `<span class="text-[10.5px] text-[#247B50] font-medium">Verified Field Evidence</span>`
+                            }
+                            ${
+                              it.src
+                                ? `<button type="button" onclick="AEAnalytics.downloadMediaItem('${safeKeyJs}')"
+                                    class="h-6 px-2 rounded-[4px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[11px] text-[#111613] inline-flex items-center gap-1">
+                                    <i class="fa-solid fa-download text-[10px]"></i> Save
+                                  </button>`
+                                : ''
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join('')}
+              </div>`
+        }
+
+        ${
+          lightboxItem && lightboxItem.kind === 'photo' && lightboxItem.src
+            ? `<div onclick="if(event.target===this) AEAnalytics.closeGalleryLightbox()"
+                class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+                <div class="bg-white rounded-[10px] max-w-3xl w-full overflow-hidden shadow-xl">
+                  <div class="px-4 py-3 border-b border-[#EFEFEF] flex items-center justify-between gap-2">
+                    <div class="text-xs font-semibold text-[#111613] truncate">${AEApp.escapeHtml(lightboxItem.questionTitle)}</div>
+                    <button type="button" onclick="AEAnalytics.closeGalleryLightbox()" class="w-7 h-7 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                  <div class="bg-[#111613] flex items-center justify-center max-h-[70vh] overflow-hidden">
+                    <img src="${AEApp.escapeAttr(lightboxItem.src)}" alt="${AEApp.escapeAttr(lightboxItem.questionTitle)}" class="max-h-[70vh] w-auto object-contain" />
+                  </div>
+                  <div class="px-4 py-2.5 bg-[#FAFBF9] flex items-center justify-between text-xs text-[#525B56]">
+                    <span>${!isPublicReportMode ? AEApp.escapeHtml(lightboxItem.enumerator) + ' · ' : ''}${AEApp.escapeHtml(lightboxItem.location || '')}</span>
+                    <button type="button" onclick="AEAnalytics.downloadMediaItem('${AEApp.escapeJs(lightboxItem.key)}')"
+                      class="h-7 px-3 rounded-[5px] bg-[#141A17] text-white text-xs font-semibold inline-flex items-center gap-1.5">
+                      <i class="fa-solid fa-download text-[10px]"></i> Download Photo
+                    </button>
+                  </div>
+                </div>
+              </div>`
+            : ''
+        }
+      </div>
+    `;
   },
 
   // --------------------------------------------------------------------------

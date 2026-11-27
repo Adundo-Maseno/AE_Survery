@@ -75,8 +75,20 @@ window.AEApp = {
       this.isPublicReportMode = true;
       this.activeSurveyId = linkedSurveyId;
       this.currentStage = 'analyze';
-      if (window.AEAnalytics && (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics')) {
-        window.AEAnalytics.activeTab = 'summary';
+      if (window.AEAnalytics) {
+        if (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics' || window.AEAnalytics.activeTab === 'field_ops') {
+          window.AEAnalytics.activeTab = 'summary';
+        }
+        const fqParam = params.get('fq');
+        if (fqParam && fqParam.includes('::')) {
+          const sepIdx = fqParam.indexOf('::');
+          const fqId = fqParam.slice(0, sepIdx).trim();
+          const fqVal = fqParam.slice(sepIdx + 2).trim();
+          if (fqId && fqVal && window.AEAnalytics.filterState) {
+            window.AEAnalytics.filterState.answerQId = fqId;
+            window.AEAnalytics.filterState.answerValue = fqVal;
+          }
+        }
       }
     } else if (linkedSurveyId || linkedCollectorId) {
       if (!currentUser || linkedMode === 'respondent' || linkedMode === 'self') {
@@ -1019,9 +1031,10 @@ window.AEApp = {
   stripPiiControlsFromReportHtml(html) {
     if (!html || typeof html !== 'string') return '';
     let out = html;
-    // Strip Individual & QA Forensics tab buttons so zero respondent PII or individual inspector is reachable
+    // Strip Individual, QA Forensics, and Field Ops tab buttons so zero respondent/enumerator PII is reachable
     out = out.replace(/<button\b[^>]*onclick="AEApp\.setAnalyticsTab\('individual'\)"[\s\S]*?<\/button>/gi, '');
     out = out.replace(/<button\b[^>]*onclick="AEApp\.setAnalyticsTab\('forensics'\)"[\s\S]*?<\/button>/gi, '');
+    out = out.replace(/<button\b[^>]*onclick="AEApp\.setAnalyticsTab\('field_ops'\)"[\s\S]*?<\/button>/gi, '');
     // Strip raw PII export buttons (CSV, JSON) & Reset Test Data & survey switcher dropdown
     out = out.replace(/<button\b[^>]*onclick="AEApp\.exportSurveyResponsesCSV\([^"]*\)"[\s\S]*?<\/button>/gi, '');
     out = out.replace(/<button\b[^>]*onclick="AEApp\.exportResponsesPackJSON\([^"]*\)"[\s\S]*?<\/button>/gi, '');
@@ -3308,8 +3321,60 @@ window.AEApp = {
     const modalRoot = document.getElementById('ae_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
+    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showVersionHistoryModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
       modalRoot.innerHTML = '';
+      return;
+    }
+
+    if (this.showVersionHistoryModal) {
+      const survey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+      const history = survey && Array.isArray(survey.versionHistory) ? [...survey.versionHistory].reverse() : [];
+      const currentVer = Number(survey?.schemaVersion || 1);
+      const safeSid = this.escapeJs(survey?.id || '');
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEApp.closeVersionHistoryModal()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-center justify-center p-4 overflow-y-auto">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-xl w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
+            <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3 gap-3">
+              <div>
+                <h2 class="text-base font-semibold text-[#111613]">Survey Version History</h2>
+                <p class="text-xs text-[#525B56] mt-0.5">Current version: <strong>v${currentVer}</strong> &middot; Restoring creates a new snapshot so nothing is ever lost.</p>
+              </div>
+              <button type="button" onclick="AEApp.closeVersionHistoryModal()" aria-label="Close" class="w-8 h-8 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            ${
+              history.length === 0
+                ? `<div class="p-6 text-center text-xs text-[#646E68] bg-[#FAFBF9] rounded-[6px] border border-[#EFEFEF]">
+                    No prior snapshots yet. Every structural edit automatically saves a restorable version here.
+                  </div>`
+                : `<div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    ${history
+                      .map((snap) => `
+                        <div class="p-3 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] flex items-center justify-between gap-3 text-xs">
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                              <span class="px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] font-semibold tabular-nums">v${Number(snap.version)}</span>
+                              <span class="font-semibold text-[#111613] truncate">${this.escapeHtml(snap.title || 'Untitled')}</span>
+                            </div>
+                            <div class="text-[11px] text-[#646E68] mt-1 tabular-nums">
+                              ${Number(snap.questionCount || 0)} questions &middot; ${this.escapeHtml(snap.savedBy || 'Editor')} &middot; ${snap.savedAt ? new Date(snap.savedAt).toISOString().replace('T', ' ').slice(0, 16) : ''}
+                            </div>
+                          </div>
+                          <button type="button" onclick="AEApp.restoreSurveyVersion('${safeSid}', ${Number(snap.version)})"
+                            class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#141A17] hover:text-white text-[#111613] text-xs font-semibold shrink-0 ae-press">
+                            Restore
+                          </button>
+                        </div>
+                      `)
+                      .join('')}
+                  </div>`
+            }
+          </div>
+        </div>
+      `;
       return;
     }
 
@@ -5269,15 +5334,69 @@ window.AEApp = {
     this.render();
   },
 
+  openVersionHistoryModal() {
+    this.showVersionHistoryModal = true;
+    this.render();
+  },
+
+  closeVersionHistoryModal() {
+    this.showVersionHistoryModal = false;
+    this.render();
+  },
+
+  restoreSurveyVersion(surveyId, version) {
+    if (!window.confirm(`Restore survey to version v${version}? Your current version will be saved as a snapshot first.`)) {
+      return;
+    }
+    const res = window.aeStore && typeof window.aeStore.restoreSurveyVersion === 'function'
+      ? window.aeStore.restoreSurveyVersion(surveyId, version)
+      : null;
+    if (res) {
+      this.showVersionHistoryModal = false;
+      this.showToast(`Restored to v${version} (now saved as v${res.schemaVersion}).`, 'success');
+      this.render();
+    }
+  },
+
   updateQuestionOption(questionId, optIdx, value) {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx || !Array.isArray(ctx.question.options)) return;
     const oldVal = ctx.question.options[optIdx];
+    const nextVal = String(value ?? '').trim();
     ctx.question.options[optIdx] = value;
     if (ctx.question.logic && ctx.question.logic.value === oldVal) {
       ctx.question.logic.value = value;
     }
+
+    // Live-Edit Safety Guard: unify historical answers when renaming an option on a live survey
+    let remappedCount = 0;
+    if (oldVal && nextVal && oldVal !== nextVal && window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function') {
+      const responses = window.aeStore.getResponsesForSurvey(ctx.survey.id);
+      responses.forEach((r) => {
+        if (!r || !r.answers) return;
+        const ans = r.answers[questionId];
+        if (ans === oldVal) {
+          r.answers[questionId] = nextVal;
+          remappedCount++;
+        } else if (Array.isArray(ans) && ans.includes(oldVal)) {
+          r.answers[questionId] = ans.map((v) => (v === oldVal ? nextVal : v));
+          remappedCount++;
+        }
+      });
+      if (remappedCount > 0) {
+        ctx.survey.optionAliases = ctx.survey.optionAliases || {};
+        ctx.survey.optionAliases[questionId] = ctx.survey.optionAliases[questionId] || {};
+        ctx.survey.optionAliases[questionId][oldVal] = nextVal;
+        if (typeof window.aeStore.saveToLocalStorage === 'function') {
+          window.aeStore.saveToLocalStorage({ stores: ['responses'] });
+        }
+      }
+    }
+
     window.aeStore.upsertSurvey(ctx.survey);
+    if (remappedCount > 0) {
+      this.showToast(`Option renamed & ${remappedCount} existing ${remappedCount === 1 ? 'response' : 'responses'} unified.`, 'success');
+    }
     this.render();
   },
 
@@ -5294,6 +5413,16 @@ window.AEApp = {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx || !Array.isArray(ctx.question.options) || ctx.question.options.length <= 1) return;
     const removedVal = ctx.question.options[optIdx];
+    const existingResponses = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+      ? window.aeStore.getResponsesForSurvey(ctx.survey.id)
+      : [];
+    const matchingCount = existingResponses.filter((r) => {
+      const ans = r?.answers?.[questionId];
+      return ans === removedVal || (Array.isArray(ans) && ans.includes(removedVal));
+    }).length;
+    if (matchingCount > 0 && !window.confirm(`Live-Edit Guard: "${removedVal}" is already selected in ${matchingCount} recorded ${matchingCount === 1 ? 'response' : 'responses'}. Remove this option from future forms?`)) {
+      return;
+    }
     ctx.question.options.splice(optIdx, 1);
     if (ctx.question.logic && ctx.question.logic.value === removedVal) {
       ctx.question.logic.value = ctx.question.options[0] || '';
@@ -5446,7 +5575,17 @@ window.AEApp = {
   deleteQuestion(questionId) {
     const ctx = this.findQuestionContext(questionId);
     if (!ctx) return;
-    if (!window.confirm(`Delete question "${ctx.question.title}"?`)) {
+    const existingResponses = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+      ? window.aeStore.getResponsesForSurvey(ctx.survey.id)
+      : [];
+    const answeredCount = existingResponses.filter((r) => {
+      const v = r?.answers?.[questionId];
+      return v !== undefined && v !== null && v !== '' && (!Array.isArray(v) || v.length > 0);
+    }).length;
+    const promptMsg = answeredCount > 0
+      ? `Live-Edit Safety Guard: "${ctx.question.title}" already has ${answeredCount} recorded ${answeredCount === 1 ? 'response' : 'responses'}. Deleting it will hide those answers from summaries (you can restore it anytime from Version History). Continue?`
+      : `Delete question "${ctx.question.title}"?`;
+    if (!window.confirm(promptMsg)) {
       return;
     }
     // If deleted question had sub-questions, detach them so they are not orphaned
@@ -6184,8 +6323,8 @@ window.AEApp = {
 
   // --- Analytics & Export Actions ---
   setAnalyticsTab(tab) {
-    if (this.isPublicReportMode && (tab === 'individual' || tab === 'forensics')) {
-      this.showToast('Individual respondent records and forensics are hidden in public read-only reports.', 'warning');
+    if (this.isPublicReportMode && (tab === 'individual' || tab === 'forensics' || tab === 'field_ops')) {
+      this.showToast('Individual respondent records, forensics, and enumerator ops are hidden in public read-only reports.', 'warning');
       return;
     }
     window.AEAnalytics.activeTab = tab;
