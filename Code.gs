@@ -2153,6 +2153,123 @@ function sampleVerbatimsForAi_(rawVerbatims, maxCount) {
  * If `GEMINI_API_KEY` is absent in Script Properties or if the API fails,
  * returns a structured `offline_fallback` payload so the client never breaks.
  */
+var GEMINI_CONFIG = {
+  GEMINI_MODEL_FALLBACK_CHAIN: [
+    'gemini-3.5-flash-lite',
+    'gemini-3.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash'
+  ],
+  DEFAULT_MODEL: 'gemini-3.5-flash-lite',
+  LAST_WORKING_MODEL_PROP: 'GEMINI_LAST_WORKING_MODEL'
+};
+
+/**
+ * Calls Gemini generateContent using the configured model fallback chain.
+ * Prioritizes the last working model saved in Script Properties, falls back
+ * through GEMINI_MODEL_FALLBACK_CHAIN on availability/quota errors, and
+ * persists the working model back to Script Properties.
+ */
+function callGeminiWithFallback_(geminiKey, requestBody) {
+  var props = null;
+  var savedModel = '';
+  try {
+    props = PropertiesService.getScriptProperties();
+    savedModel = String(props.getProperty(GEMINI_CONFIG.LAST_WORKING_MODEL_PROP) || '').trim();
+  } catch (e) {
+    props = null;
+    savedModel = '';
+  }
+
+  var candidates = [];
+  var addUnique = function(m) {
+    var clean = String(m || '').trim();
+    if (clean && candidates.indexOf(clean) === -1) {
+      candidates.push(clean);
+    }
+  };
+
+  // 1. Try last known working model first for lowest latency
+  if (savedModel) addUnique(savedModel);
+  // 2. Then default model, followed by full fallback chain in order
+  addUnique(GEMINI_CONFIG.DEFAULT_MODEL);
+  for (var i = 0; i < GEMINI_CONFIG.GEMINI_MODEL_FALLBACK_CHAIN.length; i++) {
+    addUnique(GEMINI_CONFIG.GEMINI_MODEL_FALLBACK_CHAIN[i]);
+  }
+
+  var errors = [];
+  for (var idx = 0; idx < candidates.length; idx++) {
+    var model = candidates[idx];
+    var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+
+    try {
+      var response = UrlFetchApp.fetch(endpoint, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: {
+          'x-goog-api-key': geminiKey
+        },
+        payload: JSON.stringify(requestBody),
+        muteHttpExceptions: true
+      });
+
+      var statusCode = response.getResponseCode();
+      var responseText = response.getContentText() || '';
+
+      if (statusCode === 401 || statusCode === 403) {
+        var authExcerpt = responseText.replace(/\s+/g, ' ').trim().substring(0, 180);
+        throw new Error('Gemini API auth error HTTP ' + statusCode + (authExcerpt ? ': ' + authExcerpt : ''));
+      }
+
+      if (statusCode < 200 || statusCode >= 300) {
+        var errExcerpt = responseText.replace(/\s+/g, ' ').trim().substring(0, 140);
+        errors.push(model + ' (HTTP ' + statusCode + (errExcerpt ? ': ' + errExcerpt : '') + ')');
+        continue;
+      }
+
+      var rawResp = JSON.parse(responseText);
+      var candidateText = '';
+      if (
+        rawResp &&
+        Array.isArray(rawResp.candidates) &&
+        rawResp.candidates.length > 0 &&
+        rawResp.candidates[0] &&
+        rawResp.candidates[0].content &&
+        Array.isArray(rawResp.candidates[0].content.parts) &&
+        rawResp.candidates[0].content.parts.length > 0
+      ) {
+        candidateText = String(rawResp.candidates[0].content.parts[0].text || '').trim();
+      }
+
+      if (!candidateText) {
+        errors.push(model + ' (empty candidate)');
+        continue;
+      }
+
+      // Persist last working model in Script Properties when it changes
+      if (props && model !== savedModel) {
+        try {
+          props.setProperty(GEMINI_CONFIG.LAST_WORKING_MODEL_PROP, model);
+        } catch (saveErr) {}
+      }
+
+      return {
+        ok: true,
+        model: model,
+        text: candidateText
+      };
+    } catch (callErr) {
+      var msg = String(callErr && callErr.message ? callErr.message : callErr);
+      if (msg.indexOf('Gemini API auth error') === 0) {
+        throw callErr;
+      }
+      errors.push(model + ' (' + msg + ')');
+    }
+  }
+
+  throw new Error('All Gemini models failed: ' + errors.join(' | '));
+}
+
 function analyzeVerbatimsWithGemini_(payload) {
   var nowIso = new Date().toISOString();
   var geminiKey = '';
@@ -2184,8 +2301,6 @@ function analyzeVerbatimsWithGemini_(payload) {
     };
   }
 
-  var model = 'gemini-2.5-flash';
-  var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
   var surveyTitle = (payload && payload.surveyTitle) ? String(payload.surveyTitle).trim().substring(0, 140) : 'Survey';
   var numberedList = [];
   for (var i = 0; i < sampled.length; i++) {
@@ -2222,40 +2337,9 @@ function analyzeVerbatimsWithGemini_(payload) {
       }
     };
 
-    var response = UrlFetchApp.fetch(endpoint, {
-      method: 'post',
-      contentType: 'application/json',
-      headers: {
-        'x-goog-api-key': geminiKey
-      },
-      payload: JSON.stringify(requestBody),
-      muteHttpExceptions: true
-    });
-
-    var statusCode = response.getResponseCode();
-    var responseText = response.getContentText() || '';
-    if (statusCode < 200 || statusCode >= 300) {
-      var errExcerpt = responseText.replace(/\s+/g, ' ').trim().substring(0, 200);
-      throw new Error('Gemini API HTTP ' + statusCode + (errExcerpt ? ': ' + errExcerpt : ''));
-    }
-
-    var rawResp = JSON.parse(responseText);
-    var candidateText = '';
-    if (
-      rawResp &&
-      Array.isArray(rawResp.candidates) &&
-      rawResp.candidates.length > 0 &&
-      rawResp.candidates[0] &&
-      rawResp.candidates[0].content &&
-      Array.isArray(rawResp.candidates[0].content.parts) &&
-      rawResp.candidates[0].content.parts.length > 0
-    ) {
-      candidateText = String(rawResp.candidates[0].content.parts[0].text || '').trim();
-    }
-
-    if (!candidateText) {
-      throw new Error('Gemini API returned an empty candidate response.');
-    }
+    var geminiRes = callGeminiWithFallback_(geminiKey, requestBody);
+    var model = geminiRes.model;
+    var candidateText = geminiRes.text;
 
     // Strip optional markdown code fences if present
     var jsonText = candidateText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -2663,28 +2747,12 @@ function askSurveyWithGemini_(payload) {
   ].join('\n');
 
   try {
-    var model = 'gemini-2.5-flash';
-    var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
-    var res = UrlFetchApp.fetch(endpoint, {
-      method: 'post',
-      contentType: 'application/json',
-      headers: { 'x-goog-api-key': geminiKey },
-      payload: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: promptText }] }],
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
-      }),
-      muteHttpExceptions: true
+    var geminiRes = callGeminiWithFallback_(geminiKey, {
+      contents: [{ role: 'user', parts: [{ text: promptText }] }],
+      generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
     });
-
-    var code = res.getResponseCode();
-    var body = res.getContentText() || '';
-    if (code < 200 || code >= 300) {
-      throw new Error('Gemini API HTTP ' + code);
-    }
-    var raw = JSON.parse(body);
-    var cand = raw && raw.candidates && raw.candidates[0] && raw.candidates[0].content && raw.candidates[0].content.parts && raw.candidates[0].content.parts[0]
-      ? String(raw.candidates[0].content.parts[0].text || '').trim()
-      : '';
+    var model = geminiRes.model;
+    var cand = geminiRes.text;
     var jsonText = cand.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     var parsed = JSON.parse(jsonText);
 
