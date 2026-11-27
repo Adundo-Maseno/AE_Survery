@@ -1126,8 +1126,15 @@ window.AEApp = {
       }
     }
 
-    // Privacy guard: never allow Individual, Forensics, or Field Ops tabs in public report mode
-    if (window.AEAnalytics && (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics' || window.AEAnalytics.activeTab === 'field_ops')) {
+    // Privacy guard: never allow Individual, Forensics, Field Ops, or hidden Open-Ended/Gallery tabs in public report mode
+    if (
+      window.AEAnalytics &&
+      (window.AEAnalytics.activeTab === 'individual' ||
+        window.AEAnalytics.activeTab === 'forensics' ||
+        window.AEAnalytics.activeTab === 'field_ops' ||
+        (ra.hideOpenEnded && window.AEAnalytics.activeTab === 'text') ||
+        (ra.hideGallery && window.AEAnalytics.activeTab === 'gallery'))
+    ) {
       window.AEAnalytics.activeTab = 'summary';
     }
 
@@ -3538,7 +3545,12 @@ window.AEApp = {
 
     if (this.showVersionHistoryModal) {
       const survey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
-      const history = survey && Array.isArray(survey.versionHistory) ? [...survey.versionHistory].reverse() : [];
+      const rawHistory = survey
+        ? (typeof window.aeStore.getSurveyVersionHistory === 'function'
+            ? window.aeStore.getSurveyVersionHistory(survey.id)
+            : (survey.versionHistory || []))
+        : [];
+      const history = Array.isArray(rawHistory) ? [...rawHistory].reverse() : [];
       const currentVer = Number(survey?.schemaVersion || 1);
       const safeSid = this.escapeJs(survey?.id || '');
       modalRoot.innerHTML = `
@@ -4549,10 +4561,11 @@ window.AEApp = {
     for (const q of queue) {
       if (!q) continue;
       const recId = q.recordId || q.id || '';
-      if (q.action === 'submit_response' && recId) seenResponseIds.add(recId);
+      const qAction = String(q.action || '').toUpperCase();
+      if (qAction === 'SUBMIT_RESPONSE' && recId) seenResponseIds.add(recId);
       items.push({
         key: q.key || `queue:${q.id || `${q.action || 'item'}:${recId}`}`,
-        kind: q.action === 'delete_survey' ? 'deleted_survey' : 'queue',
+        kind: qAction === 'DELETE_SURVEY' ? 'deleted_survey' : 'queue',
         action: q.action || 'sync_item',
         recordId: recId,
         title: q.title || recId || q.action || 'Queued change',
@@ -4568,7 +4581,7 @@ window.AEApp = {
       items.push({
         key: `response:${recId}`,
         kind: 'response',
-        action: 'submit_response',
+        action: 'SUBMIT_RESPONSE',
         recordId: recId,
         title: r.surveyTitle || `Response ${recId}`,
         createdAt: r.submittedAt || '',
@@ -4853,13 +4866,14 @@ window.AEApp = {
       let generated = null;
       let usedModel = '';
 
-      if (gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl) && typeof fetch === 'function') {
+      if (gasUrl && /^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl) && typeof fetch === 'function') {
         const res = await fetch(gasUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             action: 'GENERATE_SURVEY_AI',
             syncToken: settings.syncToken || '',
+            deviceId: settings.deviceId || '',
             callerId: currentUser ? currentUser.id : '',
             brief,
             title,
@@ -4869,6 +4883,7 @@ window.AEApp = {
           }),
           redirect: 'follow'
         });
+        if (!res.ok) throw new Error(`Cloud AI request failed (HTTP ${res.status})`);
         const data = await res.json();
         if (data && data.ok && data.survey && Array.isArray(data.survey.pages)) {
           generated = data.survey;
@@ -4941,7 +4956,7 @@ window.AEApp = {
     if (this.cloudHealthBusy) return null;
     const settings = (window.aeStore && window.aeStore.settings) || {};
     const gasUrl = String(settings.gasWebAppUrl || '').trim();
-    if (!gasUrl || !/^https:\/\/script\.google\.com\//i.test(gasUrl)) {
+    if (!gasUrl || !/^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl)) {
       this.cloudHealthResult = { ok: false, error: 'Google Apps Script Web App URL is not configured.' };
       this.render();
       return this.cloudHealthResult;
@@ -4957,11 +4972,13 @@ window.AEApp = {
         body: JSON.stringify({
           action: 'LIST_GEMINI_MODELS',
           syncToken: settings.syncToken || '',
+          deviceId: settings.deviceId || '',
           callerId: currentUser ? currentUser.id : '',
           forceRefresh: true
         }),
         redirect: 'follow'
       });
+      if (!res.ok) throw new Error(`Cloud health check failed (HTTP ${res.status})`);
       const data = await res.json();
       this.cloudHealthResult = {
         ...data,
@@ -5568,7 +5585,11 @@ window.AEApp = {
       const ratingQ = qs.find((q) => q.type === 'nps' || q.type === 'star_rating');
       let avgRating = '—';
       if (ratingQ && total > 0) {
-        const nums = sResps.map((r) => Number(r.answers?.[ratingQ.id])).filter((n) => Number.isFinite(n));
+        const nums = sResps
+          .map((r) => (r && r.answers ? r.answers[ratingQ.id] : undefined))
+          .filter((v) => v !== null && v !== undefined && String(v).trim() !== '')
+          .map((v) => Number(v))
+          .filter((n) => Number.isFinite(n));
         if (nums.length > 0) {
           avgRating = `${(nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1)}${ratingQ.type === 'star_rating' ? '/5' : '/10'}`;
         }
@@ -5632,8 +5653,16 @@ window.AEApp = {
   },
 
   exportPortfolioRollupCSV() {
-    const surveys = window.aeStore ? window.aeStore.surveys || [] : [];
-    const allResponses = window.aeStore ? window.aeStore.responses || [] : [];
+    const currentUser = typeof this.getCurrentUser === 'function' ? this.getCurrentUser() : null;
+    const surveys = window.aeStore
+      ? (typeof window.aeStore.getSurveysForUser === 'function'
+          ? window.aeStore.getSurveysForUser(currentUser, { includeArchived: true })
+          : (window.aeStore.surveys || []))
+      : [];
+    const allowedIds = new Set(surveys.map((s) => s && s.id).filter(Boolean));
+    const allResponses = window.aeStore
+      ? (window.aeStore.responses || []).filter((r) => r && allowedIds.has(r.surveyId))
+      : [];
     const rows = this.computePortfolioRollup(surveys, allResponses);
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = ['Survey,Status,Total Responses,Last 7 Days,Sync %,Approved %,Quota Fill,Avg Score'];
@@ -5786,25 +5815,37 @@ window.AEApp = {
         }
       });
       if (Object.keys(answers).length === 0) return;
+      const respId = 'resp_csv_' + Date.now().toString(36) + '_' + rIdx + '_' + Math.random().toString(36).slice(2, 5);
       const resp = {
-        id: 'resp_csv_' + Date.now().toString(36) + '_' + rIdx,
-        clientResponseId: 'resp_csv_' + Date.now().toString(36) + '_' + rIdx,
+        id: respId,
+        clientResponseId: respId,
         surveyId: survey.id,
         surveyTitle: survey.title,
         collectorId: defaultColId,
         enumerator,
         submittedAt,
         startedAt: submittedAt,
-        durationSeconds: 0,
+        durationSec: 0,
         syncStatus: 'queued',
         reviewStatus: 'pending_review',
+        _preserveMeta: true,
         utm: { source: 'csv_import' },
         answers
       };
-      if (typeof window.aeStore.saveResponse === 'function') {
-        window.aeStore.saveResponse(resp, true);
+      if (typeof window.aeStore.submitResponse === 'function') {
+        const saved = window.aeStore.submitResponse(resp);
+        if (saved && !saved.utm) saved.utm = resp.utm;
       } else if (Array.isArray(window.aeStore.responses)) {
         window.aeStore.responses.unshift(resp);
+        if (typeof window.aeStore.enqueueSyncItem === 'function') {
+          window.aeStore.enqueueSyncItem('SUBMIT_RESPONSE', resp.id, `Response (${resp.enumerator}) -> ${String(resp.surveyTitle || '').substring(0, 38)}`);
+        }
+        if (typeof window.aeStore.saveToLocalStorage === 'function') {
+          window.aeStore.saveToLocalStorage({ stores: ['responses', 'syncQueue'] });
+        }
+        if (typeof window.aeStore.triggerBackgroundSyncNow === 'function') {
+          window.aeStore.triggerBackgroundSyncNow(250);
+        }
       }
       imported++;
     });
@@ -5992,7 +6033,7 @@ window.AEApp = {
     }
     const settings = window.aeStore.settings || {};
     const gasUrl = String(settings.gasWebAppUrl || '').trim();
-    if (!gasUrl || !/^https:\/\/script\.google\.com\//i.test(gasUrl)) {
+    if (!gasUrl || !/^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl)) {
       this.showToast('Configure your Google Apps Script Web App URL in Sync Settings first.', 'warning');
       return null;
     }
@@ -6004,6 +6045,7 @@ window.AEApp = {
         body: JSON.stringify({
           action: 'TEST_WEBHOOK',
           syncToken: settings.syncToken || '',
+          deviceId: settings.deviceId || '',
           callerId: currentUser ? currentUser.id : '',
           surveyId: s.id,
           surveyTitle: s.title,
@@ -6012,6 +6054,7 @@ window.AEApp = {
         }),
         redirect: 'follow'
       });
+      if (!res.ok) throw new Error(`Webhook test failed (HTTP ${res.status})`);
       const data = await res.json();
       if (data && data.ok) {
         this.showToast(data.message || 'Webhook test ping succeeded!', 'success');
@@ -6092,7 +6135,7 @@ window.AEApp = {
       return;
     }
     const gasUrl = window.aeStore && window.aeStore.settings ? String(window.aeStore.settings.gasWebAppUrl || '').trim() : '';
-    if (!gasUrl) {
+    if (!gasUrl || !/^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl)) {
       this.showToast('Configure your Google Sheets Web App URL in Sync Settings to send email digests.', 'warning');
       return;
     }
@@ -6104,6 +6147,7 @@ window.AEApp = {
     const user = this.getCurrentUser();
     const callerId = user ? user.id : '';
     const syncToken = (window.aeStore.settings && window.aeStore.settings.syncToken) || '';
+    const deviceId = (window.aeStore.settings && window.aeStore.settings.deviceId) || '';
     const surveyUrl = (typeof window !== 'undefined' && window.location)
       ? `${window.location.origin}${window.location.pathname}`
       : '';
@@ -6117,11 +6161,14 @@ window.AEApp = {
           action: 'SEND_DAILY_DIGEST',
           surveyId: s.id,
           syncToken,
+          deviceId,
           callerId,
           recipients,
           surveyUrl
-        })
+        }),
+        redirect: 'follow'
       });
+      if (!resp.ok) throw new Error(`Digest request failed (HTTP ${resp.status})`);
       const data = await resp.json();
       if (data && data.ok) {
         this.showToast(`Daily digest sent to ${data.recipients || recipients}.`, 'success');
@@ -7464,9 +7511,21 @@ window.AEApp = {
 
   // --- Analytics & Export Actions ---
   setAnalyticsTab(tab) {
-    if (this.isPublicReportMode && (tab === 'individual' || tab === 'forensics' || tab === 'field_ops')) {
-      this.showToast('Individual respondent records, forensics, and enumerator ops are hidden in public read-only reports.', 'warning');
-      return;
+    if (this.isPublicReportMode) {
+      if (tab === 'individual' || tab === 'forensics' || tab === 'field_ops') {
+        this.showToast('Individual respondent records, forensics, and enumerator ops are hidden in public read-only reports.', 'warning');
+        return;
+      }
+      const survey = window.aeStore ? window.aeStore.getSurveyById(this.activeSurveyId) : null;
+      const ra = (survey && survey.reportAccess) || {};
+      if (ra.hideOpenEnded && tab === 'text') {
+        this.showToast('Open-ended verbatims are hidden in this shared report.', 'warning');
+        return;
+      }
+      if (ra.hideGallery && tab === 'gallery') {
+        this.showToast('The evidence gallery is hidden in this shared report.', 'warning');
+        return;
+      }
     }
     window.AEAnalytics.activeTab = tab;
     this.render();
@@ -7483,15 +7542,17 @@ window.AEApp = {
   async syncResponseReviewToCloud(respId, reviewStatus, reviewedBy, reviewNote) {
     const settings = (window.aeStore && window.aeStore.settings) || {};
     const gasUrl = String(settings.gasWebAppUrl || '').trim();
-    if (!gasUrl || !/^https:\/\/script\.google\.com\//i.test(gasUrl) || typeof fetch !== 'function') return;
+    if (!gasUrl || !/^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl) || typeof fetch !== 'function') return;
+    const cur = typeof this.getCurrentUser === 'function' ? this.getCurrentUser() : null;
     try {
-      await fetch(gasUrl, {
+      const res = await fetch(gasUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
           action: 'UPDATE_RESPONSE_REVIEW',
           syncToken: settings.syncToken || '',
           deviceId: settings.deviceId || '',
+          callerId: cur ? cur.id : '',
           responseId: respId,
           reviewStatus,
           reviewedBy,
@@ -7499,6 +7560,14 @@ window.AEApp = {
         }),
         redirect: 'follow'
       });
+      if (!res.ok) {
+        console.warn(`[AEApp] UPDATE_RESPONSE_REVIEW failed (HTTP ${res.status})`);
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      if (data && data.ok === false) {
+        console.warn('[AEApp] UPDATE_RESPONSE_REVIEW rejected:', data.error || data);
+      }
     } catch (e) {}
   },
 
@@ -7576,7 +7645,7 @@ window.AEApp = {
 
     const settings = window.aeStore.settings || {};
     const gasUrl = String(settings.gasWebAppUrl || '').trim();
-    if (gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl) && typeof fetch === 'function') {
+    if (gasUrl && /^https:\/\/script\.google(?:usercontent)?\.com\//i.test(gasUrl) && typeof fetch === 'function') {
       fetch(gasUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -7584,6 +7653,7 @@ window.AEApp = {
           action: 'UPDATE_RESPONSE_ANSWER',
           syncToken: settings.syncToken || '',
           deviceId: settings.deviceId || '',
+          callerId: cur ? cur.id : '',
           responseId: r.id || r.clientResponseId,
           questionId: qId,
           newValue: newVal,
@@ -7591,7 +7661,9 @@ window.AEApp = {
           reason: String(reason || '').trim()
         }),
         redirect: 'follow'
-      }).catch(() => {});
+      })
+        .then((res) => (res && res.ok ? res.json().catch(() => null) : null))
+        .catch(() => {});
     }
     return r;
   },

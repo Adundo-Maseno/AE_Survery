@@ -346,6 +346,20 @@ window.AEBuilder = {
 
   scrollToQuestion(qId) {
     if (typeof document === 'undefined' || !qId) return;
+    const survey = window.aeStore && window.AEApp
+      ? window.aeStore.getSurveyById(window.AEApp.activeSurveyId)
+      : null;
+    if (survey && Array.isArray(survey.pages)) {
+      const targetPageIdx = survey.pages.findIndex(
+        (p) => Array.isArray(p && p.questions) && p.questions.some((q) => q && q.id === qId)
+      );
+      if (targetPageIdx >= 0 && targetPageIdx !== this.activePageIndex) {
+        this.activePageIndex = targetPageIdx;
+        if (window.AEApp && typeof window.AEApp.render === 'function') {
+          window.AEApp.render();
+        }
+      }
+    }
     const el = document.getElementById(`builder_q_${qId}`);
     if (!el) return;
     if (typeof el.scrollIntoView === 'function') {
@@ -538,7 +552,10 @@ window.AEBuilder = {
     const currentPage = survey.pages[this.activePageIndex];
     const allSurveys = window.aeStore.surveys || [];
     const schemaVer = Number(survey.schemaVersion || 1);
-    const historyCount = Array.isArray(survey.versionHistory) ? survey.versionHistory.length : 0;
+    const versionHistory = window.aeStore && typeof window.aeStore.getSurveyVersionHistory === 'function'
+      ? window.aeStore.getSurveyVersionHistory(survey.id)
+      : (survey.versionHistory || []);
+    const historyCount = Array.isArray(versionHistory) ? versionHistory.length : 0;
     const existingResponseCount = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
       ? window.aeStore.getResponsesForSurvey(survey.id).length
       : 0;

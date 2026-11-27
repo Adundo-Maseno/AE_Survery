@@ -1350,7 +1350,7 @@ window.AEAnalytics = {
   _galleryItemsByKey: {},
   askSurveyOpen: false,
   askSurveyBusy: false,
-  askSurveyHistory: [],
+  askSurveyHistoryBySurvey: {},
   askSurveyDraft: '',
   chartInstances: {}, // qId -> Chart.js instance
   mapInstances: {}, // qId -> Leaflet map instance
@@ -1966,6 +1966,11 @@ window.AEAnalytics = {
   },
 
   openQuestionInVerbatimTab(qId, themeId = 'all') {
+    const isPublicReportMode = Boolean(window.AEApp && window.AEApp.isPublicReportMode);
+    const activeSurvey = window.aeStore && typeof window.aeStore.getActiveSurvey === 'function'
+      ? window.aeStore.getActiveSurvey()
+      : null;
+    if (isPublicReportMode && activeSurvey?.reportAccess?.hideOpenEnded) return;
     this.activeTab = 'text';
     this.verbatimQuestionId = qId || 'all';
     this.verbatimThemeFilter = themeId || 'all';
@@ -2582,6 +2587,12 @@ window.AEAnalytics = {
     const filtered = this.getFilteredResponses(survey.id);
     const collectors = window.aeStore.getCollectorsForSurvey(survey.id);
     const isPublicReportMode = Boolean(window.AEApp && window.AEApp.isPublicReportMode);
+    const reportAccess = (survey && survey.reportAccess) || {};
+    if (isPublicReportMode) {
+      if ((this.activeTab === 'text' && reportAccess.hideOpenEnded) || (this.activeTab === 'gallery' && reportAccess.hideGallery)) {
+        this.activeTab = 'summary';
+      }
+    }
     const safeSurveyIdJs = window.AEApp && typeof window.AEApp.escapeJs === 'function'
       ? window.AEApp.escapeJs(survey.id)
       : String(survey.id || '').replace(/'/g, "\\'");
@@ -2780,11 +2791,11 @@ window.AEAnalytics = {
                 ? this.renderPacingForecastTab(survey, filtered)
                 : this.activeTab === 'field_ops' && !isPublicReportMode
                 ? this.renderFieldOpsTab(survey, filtered)
-                : this.activeTab === 'gallery'
+                : this.activeTab === 'gallery' && !(isPublicReportMode && reportAccess.hideGallery)
                 ? this.renderMediaGalleryTab(survey, filtered, isPublicReportMode)
                 : this.activeTab === 'forensics' && !isPublicReportMode
                 ? this.renderForensicsTab(survey, filtered)
-                : this.activeTab === 'text'
+                : this.activeTab === 'text' && !(isPublicReportMode && reportAccess.hideOpenEnded)
                 ? this.renderQualitativeTextTab(survey, filtered)
                 : this.activeTab === 'individual' && !isPublicReportMode
                 ? this.renderIndividualInspector(survey, filtered)
@@ -4300,6 +4311,8 @@ window.AEAnalytics = {
     const isBusy = Boolean(this.questionAiBusy[q.id]);
     const isExpanded = Boolean(this.questionVerbatimExpanded[q.id]);
 
+    const isPublicReportMode = Boolean(window.AEApp && window.AEApp.isPublicReportMode);
+    const hideVerbatimLinks = isPublicReportMode && Boolean(survey?.reportAccess?.hideOpenEnded);
     const safeQIdJs = AEApp.escapeJs(q.id);
     const safeSurveyIdJs = AEApp.escapeJs(surveyId);
 
@@ -4385,19 +4398,27 @@ window.AEAnalytics = {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <button type="button"
-              ${isBusy ? 'disabled' : ''}
-              onclick="AEAnalytics.runQuestionAiSummary('${safeSurveyIdJs}', '${safeQIdJs}', ${cachedAi ? 'true' : 'false'})"
-              class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-xs font-medium border border-[#247B50]/35 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] disabled:opacity-60 ae-press">
-              <i class="fa-solid ${isBusy ? 'fa-spinner fa-spin' : (cachedAi ? 'fa-rotate' : 'fa-wand-magic-sparkles')} text-[10px] text-[#247B50]"></i>
-              <span>${aiBtnLabel}</span>
-            </button>
-            <button type="button"
-              onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
-              class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-xs font-medium border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613] ae-press">
-              <span>Deep Dive in Verbatim Tab</span>
-              <i class="fa-solid fa-arrow-right text-[10px] text-[#525B56]"></i>
-            </button>
+            ${
+              !isPublicReportMode
+                ? `<button type="button"
+                    ${isBusy ? 'disabled' : ''}
+                    onclick="AEAnalytics.runQuestionAiSummary('${safeSurveyIdJs}', '${safeQIdJs}', ${cachedAi ? 'true' : 'false'})"
+                    class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-xs font-medium border border-[#247B50]/35 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] disabled:opacity-60 ae-press">
+                    <i class="fa-solid ${isBusy ? 'fa-spinner fa-spin' : (cachedAi ? 'fa-rotate' : 'fa-wand-magic-sparkles')} text-[10px] text-[#247B50]"></i>
+                    <span>${aiBtnLabel}</span>
+                  </button>`
+                : ''
+            }
+            ${
+              !hideVerbatimLinks
+                ? `<button type="button"
+                    onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
+                    class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[5px] text-xs font-medium border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[#111613] ae-press">
+                    <span>Deep Dive in Verbatim Tab</span>
+                    <i class="fa-solid fa-arrow-right text-[10px] text-[#525B56]"></i>
+                  </button>`
+                : ''
+            }
           </div>
         </div>
 
@@ -4455,19 +4476,16 @@ window.AEAnalytics = {
             ? `<div class="space-y-2">
                 <div class="flex items-center justify-between text-[11px] font-medium text-[#525B56]">
                   <span>Recurring Themes &amp; What Respondents Said</span>
-                  <span class="text-[#646E68]">Click any theme to filter in Verbatim tab</span>
+                  ${!hideVerbatimLinks ? '<span class="text-[#646E68]">Click any theme to filter in Verbatim tab</span>' : ''}
                 </div>
                 <div class="space-y-2">
                   ${themeInsights
                     .map((t) => {
                       const pct = Math.max(0, Math.min(100, Math.round(Number(t.pct) || 0)));
                       const safeThemeJs = AEApp.escapeJs(t.id || t.name || 'all');
-                      return `
-                        <button type="button"
-                          onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', '${safeThemeJs}')"
-                          class="w-full text-left group p-2.5 rounded-[6px] border border-[#EFEFEF] hover:border-[#247B50]/40 bg-white hover:bg-[#FAFBF9] transition-colors space-y-1.5">
+                      const innerHtml = `
                           <div class="flex items-center justify-between gap-2 text-xs">
-                            <span class="font-semibold text-[#111613] group-hover:text-[#247B50] truncate">${AEApp.escapeHtml(t.name)}</span>
+                            <span class="font-semibold text-[#111613] ${hideVerbatimLinks ? '' : 'group-hover:text-[#247B50] '}truncate">${AEApp.escapeHtml(t.name)}</span>
                             <span class="text-[11px] text-[#525B56] tabular-nums shrink-0">
                               <strong class="text-[#111613]">${t.count}</strong> responses (${pct}%)
                             </span>
@@ -4477,6 +4495,15 @@ window.AEAnalytics = {
                           </div>
                           ${t.insight ? `<div class="text-[11.5px] text-[#525B56] leading-snug">${AEApp.escapeHtml(t.insight)}</div>` : ''}
                           ${t.sampleQuote ? `<div class="text-[11px] text-[#646E68] italic truncate">&ldquo;${AEApp.escapeHtml(t.sampleQuote)}&rdquo;</div>` : ''}
+                      `;
+                      if (hideVerbatimLinks) {
+                        return `<div class="w-full text-left p-2.5 rounded-[6px] border border-[#EFEFEF] bg-white space-y-1.5">${innerHtml}</div>`;
+                      }
+                      return `
+                        <button type="button"
+                          onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', '${safeThemeJs}')"
+                          class="w-full text-left group p-2.5 rounded-[6px] border border-[#EFEFEF] hover:border-[#247B50]/40 bg-white hover:bg-[#FAFBF9] transition-colors space-y-1.5">
+                          ${innerHtml}
                         </button>
                       `;
                     })
@@ -4504,11 +4531,15 @@ window.AEAnalytics = {
 
           <div class="flex flex-wrap items-center gap-1.5">
             ${
-              actionableCount > 0
+              actionableCount > 0 && !hideVerbatimLinks
                 ? `<button type="button" onclick="AEAnalytics.openQuestionInVerbatimTab('${safeQIdJs}', 'all')"
                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[10.5px] font-semibold hover:bg-[#FEF3C7] tabular-nums">
                     <i class="fa-solid fa-lightbulb text-[9px]"></i> ${actionableCount} actionable
                   </button>`
+                : actionableCount > 0
+                ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[10.5px] font-semibold tabular-nums">
+                    <i class="fa-solid fa-lightbulb text-[9px]"></i> ${actionableCount} actionable
+                  </span>`
                 : ''
             }
             ${
@@ -6355,7 +6386,8 @@ window.AEAnalytics = {
                   const formatted = this.formatAnswerDisplay(ans, q.type);
                   const displayNum = numMap[q.id]?.label || String(qIdx + 1);
                   const resolvedTitle = this.cleanQuestionTitle(q, r.answers || {}, survey);
-                  const canEditAns = !Boolean(window.AEApp && window.AEApp.isPublicReportMode) && q.type !== 'photo_proof' && q.type !== 'signature' && q.type !== 'gps_location';
+                  const nonInlineEditableTypes = ['checkboxes', 'matrix', 'cascading_dropdown', 'repeat_group', 'audio_note', 'photo_proof', 'signature', 'gps_location'];
+                  const canEditAns = !Boolean(window.AEApp && window.AEApp.isPublicReportMode) && !nonInlineEditableTypes.includes(q.type);
                   return `
                     <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-[#FAFBF9]">
                       <div class="font-medium text-[#525B56] sm:max-w-md ae-break-words"><span class="font-semibold text-[#247B50] mr-1.5">Q${AEApp.escapeHtml(displayNum)}</span>${AEApp.escapeHtml(resolvedTitle)}</div>
@@ -10535,6 +10567,33 @@ window.AEAnalytics = {
   },
 
   togglePinGalleryItem(surveyId, itemKey) {
+    const list = new Set(this.getPinnedGalleryItems(surveyId));
+    if (list.has(itemKey)) list.delete(itemKey);
+    else list.add(itemKey);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(`ae_pinned_media_${surveyId}`, JSON.stringify(Array.from(list)));
+      }
+    } catch (e) {}
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  openGalleryLightbox(itemKey) {
+    this.galleryLightboxKey = itemKey || null;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  closeGalleryLightbox() {
+    this.galleryLightboxKey = null;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  downloadMediaItem(itemKey) {
+    const item = this._galleryItemsByKey[itemKey];
+    if (!item || !item.src || typeof document === 'undefined') return;
+    const a = document.createElement('a');
+    a.href = item.src;
+    const ext = item.kind === 'photo' ? 'jpg' : 'webm';
     a.download = `AE_Evidence_${item.questionId}_${item.responseId}.${ext}`;
     a.click();
   },
@@ -10842,6 +10901,23 @@ window.AEAnalytics = {
     };
   },
 
+  getAskSurveyHistory(surveyId) {
+    const sid = String(surveyId || '');
+    if (!sid) return [];
+    if (!this.askSurveyHistoryBySurvey || typeof this.askSurveyHistoryBySurvey !== 'object') {
+      this.askSurveyHistoryBySurvey = {};
+    }
+    return Array.isArray(this.askSurveyHistoryBySurvey[sid]) ? this.askSurveyHistoryBySurvey[sid] : [];
+  },
+
+  clearAskSurveyHistory(surveyId) {
+    const sid = String(surveyId || '');
+    if (sid && this.askSurveyHistoryBySurvey && typeof this.askSurveyHistoryBySurvey === 'object') {
+      this.askSurveyHistoryBySurvey[sid] = [];
+    }
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
   async askSurveyQuestion(surveyId, rawQuestion) {
     const qText = String(rawQuestion !== undefined ? rawQuestion : this.askSurveyDraft || '').trim();
     if (!qText || this.askSurveyBusy) return null;
@@ -10862,7 +10938,7 @@ window.AEAnalytics = {
       const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
 
       let result = null;
-      if (online && gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl) && typeof fetch === 'function') {
+      if (online && gasUrl && /^https:\/\/script\.(google|googleusercontent)\.com\//i.test(gasUrl) && typeof fetch === 'function') {
         try {
           const res = await fetch(gasUrl, {
             method: 'POST',
@@ -10904,7 +10980,11 @@ window.AEAnalytics = {
         responseCount: responses.length,
         askedAt: new Date().toISOString()
       };
-      this.askSurveyHistory = [entry, ...(this.askSurveyHistory || [])].slice(0, 12);
+      if (!this.askSurveyHistoryBySurvey || typeof this.askSurveyHistoryBySurvey !== 'object') {
+        this.askSurveyHistoryBySurvey = {};
+      }
+      const prevHistory = this.getAskSurveyHistory(survey.id);
+      this.askSurveyHistoryBySurvey[survey.id] = [entry, ...prevHistory].slice(0, 12);
       return entry;
     } finally {
       this.askSurveyBusy = false;
@@ -10916,7 +10996,7 @@ window.AEAnalytics = {
     const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
       ? window.aeStore.getSurveyById(surveyId)
       : null;
-    const item = (this.askSurveyHistory || [])[idx];
+    const item = this.getAskSurveyHistory(surveyId)[idx];
     if (!survey || !item) return;
     if (!survey.publishedAiBrief || typeof survey.publishedAiBrief !== 'object') {
       survey.publishedAiBrief = {
@@ -10945,7 +11025,9 @@ window.AEAnalytics = {
   },
 
   renderAskSurveyDrawer(survey, filtered) {
-    const safeSid = AEApp.escapeJs(survey?.id || '');
+    const surveyId = survey?.id || '';
+    const safeSid = AEApp.escapeJs(surveyId);
+    const history = this.getAskSurveyHistory(surveyId);
     const starters = [
       'What are the top 3 takeaways across all responses?',
       'What are respondents asking us to improve first?',
@@ -10966,8 +11048,8 @@ window.AEAnalytics = {
           </div>
           <div class="flex items-center gap-1.5">
             ${
-              (this.askSurveyHistory || []).length > 0
-                ? `<button type="button" onclick="AEAnalytics.askSurveyHistory=[]; AEApp.render();"
+              history.length > 0
+                ? `<button type="button" onclick="AEAnalytics.clearAskSurveyHistory('${safeSid}');"
                     class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[11px] text-[#525B56] font-medium">
                     Clear
                   </button>`
@@ -11009,9 +11091,9 @@ window.AEAnalytics = {
 
         <!-- Answers History -->
         ${
-          (this.askSurveyHistory || []).length > 0
+          history.length > 0
             ? `<div class="space-y-3 max-h-96 overflow-y-auto pr-1">
-                ${this.askSurveyHistory
+                ${history
                   .map((item, idx) => `
                     <div class="p-3.5 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2 text-xs">
                       <div class="flex items-start justify-between gap-2">
@@ -11171,8 +11253,14 @@ window.AEAnalytics = {
     const numQs = this.getNumericQuestions(survey);
     numQs.forEach((q) => {
       const pairs = list
-        .map((r) => ({ r, val: Number(r?.answers?.[q.id]) }))
-        .filter((x) => Number.isFinite(x.val));
+        .map((r) => {
+          const raw = r?.answers?.[q.id];
+          if (raw === undefined || raw === null || typeof raw === 'boolean' || typeof raw === 'object') return null;
+          if (typeof raw === 'string' && raw.trim() === '') return null;
+          const val = Number(raw);
+          return Number.isFinite(val) ? { r, val } : null;
+        })
+        .filter(Boolean);
       if (pairs.length < 5) return;
       const sorted = pairs.map((x) => x.val).sort((a, b) => a - b);
       const q1 = sorted[Math.floor(sorted.length * 0.25)];

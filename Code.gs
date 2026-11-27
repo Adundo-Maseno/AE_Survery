@@ -123,6 +123,41 @@ function isAuthorizedAdmin_(callerId, syncToken) {
   return isCallerAdmin_(callerId);
 }
 
+/**
+ * Checks whether the caller has Admin or Supervisor rights in Personnel sheet
+ * (or is a built-in seed admin).
+ */
+function isCallerAdminOrSupervisor_(callerId) {
+  if (!callerId) return false;
+  var safeId = String(callerId).trim();
+  if (safeId === 'ADM-01' || safeId === 'ADM-02') {
+    return true;
+  }
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.PERSONNEL);
+    if (!sheet) return false;
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      var rowId = String(data[i][0] || '').trim();
+      var role = String(data[i][2] || '').trim().toLowerCase();
+      var active = data[i][9]; // Column 9 is Status ('Active' / 'Inactive')
+      if (rowId === safeId) {
+        var isActive = active === true || active === 'TRUE' || active === 1 || String(active).toLowerCase() === 'active' || String(active).toLowerCase() === 'true';
+        return (role === 'admin' || role === 'supervisor') && isActive;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+function isAuthorizedAdminOrSupervisor_(callerId, syncToken) {
+  if (!verifySyncToken_(syncToken)) {
+    return false;
+  }
+  return isCallerAdminOrSupervisor_(callerId);
+}
+
 var CACHE_TTL_DB_INIT_SEC_ = 21600; // 6 hours
 var CACHE_TTL_SURVEY_SEC_ = 300;    // 5 minutes
 var CACHE_MAX_BYTES_ = 95000;       // Safe margin under GAS 100KB CacheService limit
@@ -289,17 +324,25 @@ function doGet(e) {
       ensureDatabaseInitialized_();
       var surveyMap = getSurveyMap_();
       var targetSurvey = surveyMap[surveyId] || null;
+      if (!targetSurvey) {
+        return jsonResponse_({
+          ok: false,
+          notFound: true,
+          survey: null,
+          collectors: [],
+          version: surveyVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
       var ssSurvey = SpreadsheetApp.getActiveSpreadsheet();
       var surveyCollectors = readCollectorsRows_(ssSurvey, surveyId);
 
-      if (targetSurvey) {
-        try {
-          var serialized = JSON.stringify({ survey: targetSurvey, collectors: surveyCollectors });
-          if (serialized.length <= CACHE_MAX_BYTES_) {
-            CacheService.getScriptCache().put(cacheKey, serialized, CACHE_TTL_SURVEY_SEC_);
-          }
-        } catch (cachePutErr) {}
-      }
+      try {
+        var serialized = JSON.stringify({ survey: targetSurvey, collectors: surveyCollectors });
+        if (serialized.length <= CACHE_MAX_BYTES_) {
+          CacheService.getScriptCache().put(cacheKey, serialized, CACHE_TTL_SURVEY_SEC_);
+        }
+      } catch (cachePutErr) {}
 
       return jsonResponse_({
         ok: true,
@@ -409,7 +452,7 @@ function doPost(e) {
       });
     }
 
-    var action = String(payload.action || 'BATCH_SYNC');
+    var action = String(payload.action || 'BATCH_SYNC').trim();
     var deviceId = sanitizeSheetCell_(payload.deviceId || 'unknown-device');
 
     // Sliding-window rate limit guard (max 60 sync operations per minute per device) — runs outside ScriptLock
@@ -424,7 +467,10 @@ function doPost(e) {
     } catch (cacheErr) {}
 
     // Media Upload Endpoint -> Google Drive (runs outside ScriptLock)
-    if (action === 'UPLOAD_MEDIA' && payload.mediaItem) {
+    if (action === 'UPLOAD_MEDIA') {
+      if (!payload.mediaItem) {
+        return jsonResponse_({ ok: false, error: 'Missing required field: mediaItem.' });
+      }
       var driveUrl = saveMediaFileToDrive_(payload.mediaItem);
       return jsonResponse_({
         ok: Boolean(driveUrl),
@@ -574,9 +620,12 @@ function doPost(e) {
     try {
       ensureDatabaseInitialized_();
 
-      if (action === 'UPSERT_SURVEY' && payload.survey) {
+      if (action === 'UPSERT_SURVEY') {
         if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
-          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+        }
+        if (!payload.survey) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: survey.' });
         }
         upsertSurveyRow_(payload.survey);
         syncSurveyDedicatedSheetHeader_(payload.survey);
@@ -591,7 +640,13 @@ function doPost(e) {
         });
       }
 
-      if (action === 'UPSERT_COLLECTOR' && payload.collector) {
+      if (action === 'UPSERT_COLLECTOR') {
+        if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+        }
+        if (!payload.collector) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: collector.' });
+        }
         upsertCollectorRow_(payload.collector);
         var upsertCollectorVersion = bumpDbVersion_();
         logSyncEvent_('UPSERT_COLLECTOR', deviceId, 0, 0, 0, 'OK');
@@ -604,7 +659,13 @@ function doPost(e) {
         });
       }
 
-      if (action === 'UPDATE_RESPONSE_REVIEW' && payload.responseId) {
+      if (action === 'UPDATE_RESPONSE_REVIEW') {
+        if (!isAuthorizedAdminOrSupervisor_(payload.callerId, clientSyncToken)) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin or Supervisor role.' });
+        }
+        if (!payload.responseId) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: responseId.' });
+        }
         var revRes = updateResponseReviewStatus_(payload.responseId, payload.reviewStatus, payload.reviewedBy, payload.reviewNote);
         if (!revRes.ok) {
           return jsonResponse_(revRes);
@@ -621,7 +682,13 @@ function doPost(e) {
         });
       }
 
-      if (action === 'UPDATE_RESPONSE_ANSWER' && payload.responseId && payload.questionId) {
+      if (action === 'UPDATE_RESPONSE_ANSWER') {
+        if (!isAuthorizedAdminOrSupervisor_(payload.callerId, clientSyncToken)) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin or Supervisor role.' });
+        }
+        if (!payload.responseId || !payload.questionId) {
+          return jsonResponse_({ ok: false, error: 'Missing required fields: responseId and questionId.' });
+        }
         var editRes = updateResponseAnswerWithAudit_(payload.responseId, payload.questionId, payload.newValue, payload.editedBy, payload.reason);
         if (!editRes.ok) {
           return jsonResponse_(editRes);
@@ -638,13 +705,17 @@ function doPost(e) {
         });
       }
 
-      if (action === 'UPSERT_PERSONNEL' && (payload.personnel || payload.person)) {
+      if (action === 'UPSERT_PERSONNEL') {
         var targetPerson = Array.isArray(payload.personnel) ? payload.personnel[0] : (payload.personnel || payload.person);
-        var isSelf = payload.callerId && String(payload.callerId).trim() === String(targetPerson.id || '').trim();
-        if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken) && !isSelf) {
-          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' }, 403);
+        if (!targetPerson) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: personnel.' });
         }
-        upsertPersonnelRow_(targetPerson);
+        var isPersAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
+        var isSelf = payload.callerId && String(payload.callerId).trim() === String(targetPerson.id || '').trim();
+        if (!isPersAdmin && !isSelf) {
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role or account ownership.' });
+        }
+        upsertPersonnelRow_(targetPerson, isPersAdmin);
         var upsertPersonnelVersion = bumpDbVersion_();
         logSyncEvent_('UPSERT_PERSONNEL', deviceId, 0, 0, 0, 'OK');
         var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -658,7 +729,10 @@ function doPost(e) {
         });
       }
 
-      if (action === 'SUBMIT_RESPONSE' && payload.response) {
+      if (action === 'SUBMIT_RESPONSE') {
+        if (!payload.response) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: response.' });
+        }
         var surveyMap = getSurveyMap_();
         if (payload.survey && isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
           upsertSurveyRow_(payload.survey);
@@ -680,9 +754,12 @@ function doPost(e) {
           version: submitRespVersion,
           serverTime: new Date().toISOString()
         };
-      } else if (action === 'DELETE_SURVEY' && payload.surveyId) {
+      } else if (action === 'DELETE_SURVEY') {
         if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
-          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' }, 403);
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+        }
+        if (!payload.surveyId) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: surveyId.' });
         }
         var delStats = deleteSurveyCompletely_(String(payload.surveyId), payload.purgeCloudData !== false);
         var deleteSurveyVersion = bumpDbVersion_();
@@ -696,11 +773,12 @@ function doPost(e) {
           version: deleteSurveyVersion,
           serverTime: new Date().toISOString()
         });
-      }
-
-      if (action === 'CLEAR_SURVEY_RESPONSES' && payload.surveyId) {
+      } else if (action === 'CLEAR_SURVEY_RESPONSES') {
         if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
-          return jsonResponse_({ ok: false, error: 'Unauthorized: Clearing survey responses requires Admin role.' }, 403);
+          return jsonResponse_({ ok: false, error: 'Unauthorized: Clearing survey responses requires Admin role.' });
+        }
+        if (!payload.surveyId) {
+          return jsonResponse_({ ok: false, error: 'Missing required field: surveyId.' });
         }
         var clearStats = clearSurveyResponses_(String(payload.surveyId));
         var clearVersion = bumpDbVersion_();
@@ -714,13 +792,11 @@ function doPost(e) {
           version: clearVersion,
           serverTime: new Date().toISOString()
         });
-      }
-
-      if (!postLockResponse) {
-        // Default: BATCH_SYNC (handles offline queue flush + full sync)
+      } else if (action === 'BATCH_SYNC' || action === 'SYNC_BATCH') {
+        // Explicit BATCH_SYNC / SYNC_BATCH (handles offline queue flush + full sync)
         var isCallerAdmin = isAuthorizedAdmin_(payload.callerId, clientSyncToken);
         var surveys = (isCallerAdmin && Array.isArray(payload.surveys)) ? payload.surveys.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
-        var collectors = Array.isArray(payload.collectors) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
+        var collectors = (isCallerAdmin && Array.isArray(payload.collectors)) ? payload.collectors.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
         var responses = Array.isArray(payload.responses) ? payload.responses.slice(0, DB_CONFIG.MAX_BATCH_ITEMS) : [];
         var rawPersonnel = Array.isArray(payload.personnel)
           ? payload.personnel.slice(0, DB_CONFIG.MAX_BATCH_ITEMS)
@@ -753,7 +829,7 @@ function doPost(e) {
 
         var personnelUpserted = 0;
         for (var k = 0; k < personnel.length; k++) {
-          upsertPersonnelRow_(personnel[k]);
+          upsertPersonnelRow_(personnel[k], isCallerAdmin);
           personnelUpserted++;
         }
 
@@ -790,6 +866,11 @@ function doPost(e) {
           serverTime: new Date().toISOString(),
           counts: getRowCounts_()
         };
+      } else {
+        return jsonResponse_({
+          ok: false,
+          error: 'Unknown action: ' + action
+        });
       }
     } finally {
       lock.releaseLock();
@@ -950,7 +1031,7 @@ function migrateResponsesSheetLayout_() {
     if (!rSheet || rSheet.getLastRow() <= 1) return { migrated: 0 };
 
     var lastRow = rSheet.getLastRow();
-    var maxCols = Math.max(19, rSheet.getLastColumn());
+    var maxCols = Math.max(20, rSheet.getLastColumn());
     var range = rSheet.getRange(2, 1, lastRow - 1, maxCols);
     var values = range.getValues();
     var migratedCount = 0;
@@ -1010,18 +1091,74 @@ function ensureSheetWithHeaders_(ss, sheetName, headers) {
       .setFontWeight('bold')
       .setFontFamily('Arial');
     sheet.setFrozenRows(1);
+  } else {
+    if (sheet.getMaxColumns() < headers.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+    }
+    var existingRow1 = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    var startMissing = -1;
+    for (var hIdx = 0; hIdx < headers.length; hIdx++) {
+      if (String(existingRow1[hIdx] || '').trim() === '') {
+        if (startMissing === -1) startMissing = hIdx;
+        existingRow1[hIdx] = headers[hIdx];
+      }
+    }
+    if (startMissing !== -1) {
+      var patchLen = headers.length - startMissing;
+      var patchRange = sheet.getRange(1, startMissing + 1, 1, patchLen);
+      patchRange.setValues([existingRow1.slice(startMissing)]);
+      patchRange
+        .setBackground(DB_CONFIG.BRAND_HEADER_BG)
+        .setFontColor(DB_CONFIG.BRAND_HEADER_FG)
+        .setFontWeight('bold')
+        .setFontFamily('Arial');
+    }
   }
   return sheet;
 }
 
 /**
  * Upserts a survey record in the `Surveys` tab.
+ * Strips transient versionHistory and never truncates JSON mid-string;
+ * falls back to stripping heavy optional assets if > 48,000 chars.
  */
 function upsertSurveyRow_(survey) {
   if (!survey || !survey.id) return;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.SURVEYS);
   var questions = getFlattenedQuestions_(survey);
+
+  var surveyToSave = Object.assign({}, survey);
+  delete surveyToSave.versionHistory;
+
+  var schemaJson = JSON.stringify(surveyToSave);
+  if (schemaJson.length > 48000) {
+    if (surveyToSave.branding && typeof surveyToSave.branding === 'object' && surveyToSave.branding.logoDataUrl) {
+      var brandingCopy = Object.assign({}, surveyToSave.branding);
+      delete brandingCopy.logoDataUrl;
+      surveyToSave.branding = brandingCopy;
+      schemaJson = JSON.stringify(surveyToSave);
+    }
+  }
+  if (schemaJson.length > 48000) {
+    if (surveyToSave.accessControl && typeof surveyToSave.accessControl === 'object' && surveyToSave.accessControl.inviteContacts) {
+      var acCopy = Object.assign({}, surveyToSave.accessControl);
+      delete acCopy.inviteContacts;
+      surveyToSave.accessControl = acCopy;
+      schemaJson = JSON.stringify(surveyToSave);
+    }
+    if (schemaJson.length > 48000 && surveyToSave.inviteContacts) {
+      delete surveyToSave.inviteContacts;
+      schemaJson = JSON.stringify(surveyToSave);
+    }
+  }
+  if (schemaJson.length > 48000 && surveyToSave.publishedAiBrief) {
+    delete surveyToSave.publishedAiBrief;
+    schemaJson = JSON.stringify(surveyToSave);
+  }
+  if (schemaJson.length > 49500) {
+    throw new Error('Survey schema exceeds Google Sheets 50,000-character cell limit.');
+  }
 
   var rowValues = [
     sanitizeSheetCell_(String(survey.id)),
@@ -1031,7 +1168,7 @@ function upsertSurveyRow_(survey) {
     Number(survey.version || 1),
     questions.length,
     sanitizeSheetCell_(String(survey.updatedAt || new Date().toISOString())),
-    sanitizeSheetCell_(JSON.stringify(survey))
+    schemaJson
   ];
 
   var rowIndex = findRowIndexByValue_(sheet, 1, String(survey.id));
@@ -1079,11 +1216,13 @@ function upsertCollectorRow_(collector) {
   invalidateCollectorCache_(collector.surveyId);
 }
 
-function upsertPersonnelRow_(person) {
+function upsertPersonnelRow_(person, isCallerAdmin) {
   if (!person || !person.id) return;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.PERSONNEL);
   if (!sheet) return;
+
+  var allowPrivileged = isCallerAdmin === true;
 
   var quotasJson = (person.taskQuotas && typeof person.taskQuotas === 'object')
     ? JSON.stringify(person.taskQuotas)
@@ -1107,8 +1246,19 @@ function upsertPersonnelRow_(person) {
 
   var rowIndex = findRowIndexByValue_(sheet, 1, String(person.id));
   if (rowIndex > 1) {
+    if (!allowPrivileged) {
+      var existingRow = sheet.getRange(rowIndex, 1, 1, 10).getValues()[0];
+      rowValues[2] = existingRow[2]; // Block role modification on non-admin self-update
+      rowValues[8] = existingRow[8]; // Block assignedSurveys modification on non-admin self-update
+      rowValues[9] = existingRow[9]; // Block active/Status modification on non-admin self-update
+    }
     sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
   } else {
+    if (!allowPrivileged) {
+      rowValues[2] = 'enumerator';
+      rowValues[8] = '';
+      rowValues[9] = 'Active';
+    }
     sheet.appendRow(rowValues);
   }
 }
@@ -1262,11 +1412,13 @@ function appendResponsesIdempotent_(responses, surveyMap) {
       ];
       if (existingRowMap[clientRespId] > 1) {
         respSheet.getRange(existingRowMap[clientRespId], 12, 1, 6).setValues([qaUpdateCols]);
+        respSheet.getRange(existingRowMap[clientRespId], 19).setValue(nowIso);
       } else if (pendingNewIndex[clientRespId] !== undefined) {
         var pendingRow = newMasterRows[pendingNewIndex[clientRespId]];
         for (var cIdx = 0; cIdx < 6; cIdx++) {
           pendingRow[11 + cIdx] = qaUpdateCols[cIdx];
         }
+        pendingRow[18] = nowIso;
       }
       var existingSurvey = surveyMap[r.surveyId] || null;
       if (existingSurvey && r.answers && Object.keys(r.answers).length > 0) {
@@ -1683,16 +1835,16 @@ function readAnswersFromDedicatedSheet_(ss, surveyId, clientRespId) {
 
     var rowValues = targetSheet.getRange(rowIndex, 1, 1, lastCol).getValues()[0];
     var answers = {};
-    for (var c = 8; c < headers.length; c++) {
+    for (var c = 9; c < headers.length; c++) {
       var header = String(headers[c] || '');
       var cellVal = rowValues[c];
       if (cellVal === undefined || cellVal === null || cellVal === '') continue;
 
-      var matchQ = header.match(/^Q\d+:\s*(.*)/);
+      var matchQ = header.match(/^Q\d+[a-z]?:\s*(.*)/i);
       var qTitle = matchQ ? matchQ[1].trim() : header.trim();
 
       // Normalize common keys
-      var qKey = 'q_' + (c - 7);
+      var qKey = 'q_' + (c - 8);
       if (/county/i.test(qTitle)) qKey = 'q_county';
       else if (/variety|seed/i.test(qTitle)) qKey = 'q_seed_variety';
       else if (/inputs|fertility/i.test(qTitle)) qKey = 'q_inputs_used';
@@ -2561,6 +2713,7 @@ function analyzeVerbatimsWithGemini_(payload) {
     return {
       ok: true,
       provider: 'offline_fallback',
+      configured: true,
       error: (err && err.message) ? String(err.message) : 'Gemini verbatim analysis failed.',
       serverTime: new Date().toISOString()
     };
@@ -3060,6 +3213,7 @@ function updateResponseReviewStatus_(responseId, reviewStatus, reviewedBy, revie
   for (var i = 0; i < ids.length; i++) {
     if (String(ids[i][0] || '').trim() === targetId) {
       var rowNum = i + 2;
+      var nowIso = new Date().toISOString();
       sheet.getRange(rowNum, 12).setValue(sanitizeSheetCell_(cleanStatus));
       if (reviewedBy) {
         sheet.getRange(rowNum, 14).setValue(sanitizeSheetCell_(String(reviewedBy).substring(0, 120)));
@@ -3069,6 +3223,7 @@ function updateResponseReviewStatus_(responseId, reviewStatus, reviewedBy, revie
         var noteTag = '[Review: ' + String(reviewNote).substring(0, 180) + ']';
         sheet.getRange(rowNum, 13).setValue(sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + noteTag) : noteTag));
       }
+      sheet.getRange(rowNum, 19).setValue(nowIso);
       return { ok: true, responseId: targetId, reviewStatus: cleanStatus };
     }
   }
@@ -3232,16 +3387,23 @@ function updateResponseAnswerWithAudit_(responseId, questionId, newValue, edited
   for (var i = 0; i < ids.length; i++) {
     if (String(ids[i][0] || '').trim() === targetId) {
       var rowNum = i + 2;
-      var rawAnswers = String(sheet.getRange(rowNum, 18).getValue() || '{}');
+      var rawAnswers = String(sheet.getRange(rowNum, 18).getValue() || '{}').trim();
+      if (rawAnswers.charAt(0) === "'") rawAnswers = rawAnswers.replace(/^'+/, '').trim();
       var answersObj = {};
       try { answersObj = JSON.parse(rawAnswers) || {}; } catch (e) { answersObj = {}; }
       var oldVal = answersObj[qId];
       answersObj[qId] = newValue;
-      sheet.getRange(rowNum, 18).setValue(JSON.stringify(answersObj));
+      var updatedAnswersJson = JSON.stringify(answersObj);
+      if (updatedAnswersJson.length > 48000) {
+        return { ok: false, error: 'Updated AnswersJSON exceeds 48,000-character cell size limit.' };
+      }
+      var nowIso = new Date().toISOString();
+      sheet.getRange(rowNum, 18).setValue(updatedAnswersJson);
 
       var existingFlags = String(sheet.getRange(rowNum, 13).getValue() || '').trim();
       var auditTag = '[Edit ' + qId + ': ' + String(oldVal === undefined ? '' : oldVal).substring(0, 40) + ' -> ' + String(newValue === undefined ? '' : newValue).substring(0, 40) + ' by ' + String(editedBy || 'Supervisor').substring(0, 40) + (reason ? (' (' + String(reason).substring(0, 80) + ')') : '') + ']';
       sheet.getRange(rowNum, 13).setValue(sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + auditTag) : auditTag));
+      sheet.getRange(rowNum, 19).setValue(nowIso);
       return { ok: true, responseId: targetId, questionId: qId };
     }
   }

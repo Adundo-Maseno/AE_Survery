@@ -3882,104 +3882,134 @@ class AESurveyStore {
       personnel: person
     };
 
-    this._syncInFlight = true;
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
-    }
-
-    try {
-      const res = await this._fetchWithRetry(
-        gasUrl,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload),
-          redirect: 'follow'
-        },
-        { timeoutMs: 18000, maxAttempts: 2 }
-      );
-
-      if (res && res.ok) {
-        let data = await res.json();
-        if (data && data.ok) {
-          // Verify whether the GAS deployment updated the PIN in Google Sheets.
-          // If the deployed GAS script is an older version that only handles BATCH_SYNC (expecting an array),
-          // automatically send a fallback BATCH_SYNC request with the full personnel array.
-          const remoteMatch = Array.isArray(data.personnel)
-            ? data.personnel.find((rp) => rp && rp.id === person.id)
-            : null;
-          const remotePin = remoteMatch && remoteMatch.pinCode ? String(remoteMatch.pinCode).replace(/^'+/, '').trim() : '';
-
-          if (remoteMatch && remotePin !== String(person.pinCode).trim()) {
-            try {
-              const fallbackPayload = {
-                action: 'BATCH_SYNC',
-                syncToken: this.settings.syncToken || '',
-                deviceId: this.settings.deviceId,
-                callerId: 'ADM-01',
-                surveys: [],
-                collectors: [],
-                responses: [],
-                personnel: this.personnel
-              };
-              const fbRes = await this._fetchWithRetry(
-                gasUrl,
-                {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                  body: JSON.stringify(fallbackPayload),
-                  redirect: 'follow'
-                },
-                { timeoutMs: 18000, maxAttempts: 1 }
-              );
-              if (fbRes && fbRes.ok) {
-                const fbData = await fbRes.json();
-                if (fbData && fbData.ok && Array.isArray(fbData.personnel)) {
-                  data = fbData;
-                }
-              }
-            } catch (fbErr) { }
-          }
-
-          const confirmedMatch = Array.isArray(data.personnel)
-            ? data.personnel.find((rp) => rp && rp.id === person.id)
-            : null;
-          if (confirmedMatch && String(confirmedMatch.pinCode || '').replace(/^'+/, '').trim() === String(person.pinCode).trim()) {
-            if (this.pinOverrides && this.pinOverrides[person.id]) {
-              this.pinOverrides[person.id].cloudConfirmed = true;
-            }
-          }
-
-          if (data.version !== undefined && data.version !== null && data.version !== '') {
-            this.settings.cloudDbVersion = String(data.version);
-          }
-          if (Array.isArray(data.personnel) && data.personnel.length > 0) {
-            this.mergePersonnelFromCloud(data.personnel);
-          }
-          this.syncQueue = this.syncQueue.filter((q) => q.recordId !== person.id);
-          this.settings.lastSyncedAt = new Date().toISOString();
-          this.saveToLocalStorage({ stores: ['personnel', 'pinOverrides', 'syncQueue', 'settings'] });
-          this._syncInFlight = false;
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
-          }
-          return { ok: true, personnel: data.personnel };
-        } else {
-          throw new Error(data && data.error ? data.error : 'GAS rejected personnel upsert');
-        }
-      } else {
-        throw new Error(`HTTP ${res.status}: Google Apps Script returned an error.`);
-      }
-    } catch (e) {
-      console.warn('Direct personnel sync failed, safely preserved in local outbox:', e);
+    if (this._syncInFlight) {
       this.enqueueSyncItem('UPSERT_PERSONNEL', person.id, `Personnel (${person.role || 'Staff'}): ${person.fullName || person.id}`);
       this.saveToLocalStorage({ stores: ['syncQueue'] });
-      this._syncInFlight = false;
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+      this._syncPendingAgain = true;
+      const prev = this._syncPendingOptions || {};
+      this._syncPendingOptions = {
+        forceAll: Boolean(prev.forceAll),
+        syncSurveys: Boolean(prev.syncSurveys),
+        manual: Boolean(prev.manual),
+        isBackground: prev.isBackground !== undefined ? Boolean(prev.isBackground) : true
+      };
+      if (this._syncInFlightPromise) {
+        return this._syncInFlightPromise;
       }
-      return { ok: false, error: e.message || 'Network error during cloud sync' };
+      return { ok: true, coalesced: true };
     }
+
+    this._syncInFlight = true;
+    const runPersonnelSync = async () => {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: true } }));
+      }
+
+      try {
+        const res = await this._fetchWithRetry(
+          gasUrl,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload),
+            redirect: 'follow'
+          },
+          { timeoutMs: 18000, maxAttempts: 2 }
+        );
+
+        if (res && res.ok) {
+          let data = await res.json();
+          if (data && data.ok) {
+            // Verify whether the GAS deployment updated the PIN in Google Sheets.
+            // If the deployed GAS script is an older version that only handles BATCH_SYNC (expecting an array),
+            // automatically send a fallback BATCH_SYNC request with the full personnel array.
+            const remoteMatch = Array.isArray(data.personnel)
+              ? data.personnel.find((rp) => rp && rp.id === person.id)
+              : null;
+            const remotePin = remoteMatch && remoteMatch.pinCode ? String(remoteMatch.pinCode).replace(/^'+/, '').trim() : '';
+
+            if (remoteMatch && remotePin !== String(person.pinCode).trim()) {
+              try {
+                const fallbackPayload = {
+                  action: 'BATCH_SYNC',
+                  syncToken: this.settings.syncToken || '',
+                  deviceId: this.settings.deviceId,
+                  callerId: 'ADM-01',
+                  surveys: [],
+                  collectors: [],
+                  responses: [],
+                  personnel: this.personnel
+                };
+                const fbRes = await this._fetchWithRetry(
+                  gasUrl,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(fallbackPayload),
+                    redirect: 'follow'
+                  },
+                  { timeoutMs: 18000, maxAttempts: 1 }
+                );
+                if (fbRes && fbRes.ok) {
+                  const fbData = await fbRes.json();
+                  if (fbData && fbData.ok && Array.isArray(fbData.personnel)) {
+                    data = fbData;
+                  }
+                }
+              } catch (fbErr) { }
+            }
+
+            const confirmedMatch = Array.isArray(data.personnel)
+              ? data.personnel.find((rp) => rp && rp.id === person.id)
+              : null;
+            if (confirmedMatch && String(confirmedMatch.pinCode || '').replace(/^'+/, '').trim() === String(person.pinCode).trim()) {
+              if (this.pinOverrides && this.pinOverrides[person.id]) {
+                this.pinOverrides[person.id].cloudConfirmed = true;
+              }
+            }
+
+            if (data.version !== undefined && data.version !== null && data.version !== '') {
+              this.settings.cloudDbVersion = String(data.version);
+            }
+            if (Array.isArray(data.personnel) && data.personnel.length > 0) {
+              this.mergePersonnelFromCloud(data.personnel);
+            }
+            this.syncQueue = this.syncQueue.filter((q) => q.recordId !== person.id);
+            this.settings.lastSyncedAt = new Date().toISOString();
+            this.saveToLocalStorage({ stores: ['personnel', 'pinOverrides', 'syncQueue', 'settings'] });
+            return { ok: true, personnel: data.personnel };
+          } else {
+            throw new Error(data && data.error ? data.error : 'GAS rejected personnel upsert');
+          }
+        } else {
+          throw new Error(`HTTP ${res.status}: Google Apps Script returned an error.`);
+        }
+      } catch (e) {
+        console.warn('Direct personnel sync failed, safely preserved in local outbox:', e);
+        this.enqueueSyncItem('UPSERT_PERSONNEL', person.id, `Personnel (${person.role || 'Staff'}): ${person.fullName || person.id}`);
+        this.saveToLocalStorage({ stores: ['syncQueue'] });
+        return { ok: false, error: e.message || 'Network error during cloud sync' };
+      } finally {
+        this._syncInFlight = false;
+        this._syncInFlightPromise = null;
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('ae-sync-state-change', { detail: { inFlight: false } }));
+        }
+        if (this._syncPendingAgain) {
+          const nextOpts = this._syncPendingOptions || { forceAll: false, isBackground: true };
+          this._syncPendingAgain = false;
+          this._syncPendingOptions = null;
+          if (this.isEffectivelyOnline()) {
+            setTimeout(() => {
+              this.syncWithGoogleSheets(nextOpts).catch(() => { });
+            }, 50);
+          }
+        }
+      }
+    };
+
+    this._syncInFlightPromise = runPersonnelSync();
+    return this._syncInFlightPromise;
   }
 
   /**
@@ -4262,10 +4292,7 @@ class AESurveyStore {
         return;
       }
 
-      const hasUnsyncedResponses = this.responses.some((r) => r.syncStatus !== 'synced');
-      const hasQueuedItems = Array.isArray(this.syncQueue) && this.syncQueue.length > 0;
-
-      if ((hasUnsyncedResponses || hasQueuedItems) && !this._syncInFlight) {
+      if (this._hasPendingSyncableWork() && !this._syncInFlight) {
         try {
           await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
         } catch (e) {
@@ -4320,7 +4347,49 @@ class AESurveyStore {
   }
 
   /**
+   * Returns true if a syncQueue item is eligible to be pushed by the currently signed-in user.
+   * Prevents non-admin/supervisor sessions from looping forever on admin-only queue items.
+   */
+  _isQueueItemEligibleForCurrentUser(item) {
+    if (!item || !item.action) return false;
+    if (item.action === 'SUBMIT_RESPONSE') return true;
+    const currentSessionUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    const role = currentSessionUser ? String(currentSessionUser.role || '').toLowerCase() : '';
+    if (role === 'admin' || !currentSessionUser) {
+      return !item.serverAdminRejected;
+    }
+    if (item.action === 'UPSERT_PERSONNEL') {
+      if (item.recordId === currentSessionUser.id) return true;
+      if (role === 'supervisor' && !item.serverAdminRejected) {
+        const target = this.getPersonnelById(item.recordId);
+        return Boolean(target && target.role === 'enumerator' && (!target.supervisorId || target.supervisorId === currentSessionUser.id));
+      }
+      return false;
+    }
+    // UPSERT_SURVEY, DELETE_SURVEY, UPSERT_COLLECTOR require admin
+    return false;
+  }
+
+  /**
+   * Returns true if there is any pending local work (responses, eligible syncQueue items,
+   * or deletedSurveyIds for admin callers) that can be synced right now.
+   */
+  _hasPendingSyncableWork() {
+    const hasUnsyncedResponses = Array.isArray(this.responses) && this.responses.some((r) => r && r.syncStatus !== 'synced');
+    const hasEligibleQueuedItems = Array.isArray(this.syncQueue) && this.syncQueue.some((q) => this._isQueueItemEligibleForCurrentUser(q));
+    const currentSessionUser = (typeof window !== 'undefined' && window.AESession && typeof window.AESession.getCurrentUser === 'function')
+      ? window.AESession.getCurrentUser()
+      : null;
+    const canSyncDeletes = !currentSessionUser || String(currentSessionUser.role || '').toLowerCase() === 'admin';
+    const hasDeletedSurveys = canSyncDeletes && Array.isArray(this.deletedSurveyIds) && this.deletedSurveyIds.length > 0;
+    return hasUnsyncedResponses || hasEligibleQueuedItems || hasDeletedSurveys;
+  }
+
+  /**
    * Debounced immediate trigger for background synchronization.
+   * Coalesces cleanly via syncWithGoogleSheets() when a sync is already in flight.
    */
   triggerBackgroundSyncNow(delayMs = 400) {
     if (this._bgTriggerDebounce) {
@@ -4328,11 +4397,10 @@ class AESurveyStore {
       this._bgTriggerDebounce = null;
     }
     this._bgTriggerDebounce = setTimeout(async () => {
-      if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl || this._syncInFlight) {
+      if (!this.isEffectivelyOnline() || !this.settings.gasWebAppUrl) {
         return;
       }
-      const hasUnsynced = this.responses.some((r) => r.syncStatus !== 'synced') || (this.syncQueue && this.syncQueue.length > 0);
-      if (hasUnsynced) {
+      if (this._hasPendingSyncableWork()) {
         try {
           await this.syncWithGoogleSheets({ forceAll: false, isBackground: true });
         } catch (e) { }
@@ -4810,8 +4878,16 @@ class AESurveyStore {
       : [];
 
     const theme = (survey.theme && typeof survey.theme === 'object') ? survey.theme : {};
+    // Migrate legacy embedded versionHistory out of the synced survey object into localStorage
+    if (Array.isArray(survey.versionHistory) && survey.versionHistory.length > 0) {
+      const existingStored = this.getSurveyVersionHistory(safeId);
+      if (existingStored.length === 0) {
+        this._saveSurveyVersionHistory(safeId, survey.versionHistory);
+      }
+    }
+    const { versionHistory: _strippedVersionHistory, ...surveyWithoutHistory } = survey;
     return {
-      ...survey,
+      ...surveyWithoutHistory,
       id: safeId,
       title: String(survey.title || 'Untitled Field Survey').slice(0, 240),
       description: String(survey.description || '').slice(0, 800),
@@ -4907,15 +4983,50 @@ class AESurveyStore {
     };
   }
 
+  getSurveyVersionHistory(surveyId) {
+    if (!surveyId) return [];
+    const key = `ae_survey_versions_${surveyId}`;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+    } catch (_) {
+      // Ignore storage read/parse errors
+    }
+    return [];
+  }
+
+  _saveSurveyVersionHistory(surveyId, history) {
+    if (!surveyId) return;
+    const key = `ae_survey_versions_${surveyId}`;
+    const trimmed = Array.isArray(history) ? history.slice(-15) : [];
+    try {
+      if (typeof this._safeLocalStorageSet === 'function') {
+        this._safeLocalStorageSet(key, JSON.stringify(trimmed));
+      } else if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, JSON.stringify(trimmed));
+      }
+    } catch (_) {
+      // Non-fatal if localStorage quota is full
+    }
+  }
+
   upsertSurvey(survey, queueForCloud = true) {
+    const legacyIncomingHistory = Array.isArray(survey && survey.versionHistory) ? survey.versionHistory.slice() : [];
     const cleanSurvey = this.sanitizeSurveyRecord(survey);
     if (!cleanSurvey) return null;
+    delete cleanSurvey.versionHistory;
     const nowIso = new Date().toISOString();
     cleanSurvey.updatedAt = nowIso;
     this._surveysDirty = true;
     const idx = this.surveys.findIndex((s) => s.id === cleanSurvey.id);
 
-    // Automatic Survey Version Snapshots (Feature 3: Safe Live-Edit & Version History)
+    // Automatic Survey Version Snapshots stored locally in `ae_survey_versions_${survey.id}`
+    // so versionHistory is NEVER serialized into Google Sheets SchemaJSON.
     const buildSchemaSig = (s) => {
       try {
         return JSON.stringify({ title: s.title || '', pages: s.pages || [] });
@@ -4931,9 +5042,14 @@ class AESurveyStore {
 
     if (idx >= 0) {
       const prev = this.surveys[idx];
-      const history = Array.isArray(cleanSurvey.versionHistory)
-        ? cleanSurvey.versionHistory.slice()
-        : (Array.isArray(prev.versionHistory) ? prev.versionHistory.slice() : []);
+      let history = this.getSurveyVersionHistory(cleanSurvey.id);
+      if (history.length === 0) {
+        if (legacyIncomingHistory.length > 0) {
+          history = legacyIncomingHistory;
+        } else if (Array.isArray(prev.versionHistory) && prev.versionHistory.length > 0) {
+          history = prev.versionHistory.slice();
+        }
+      }
       const prevVer = Number(cleanSurvey.schemaVersion || prev.schemaVersion || 1);
       if (buildSchemaSig(prev) !== buildSchemaSig(cleanSurvey)) {
         // Snapshot the previous schema before applying the new version
@@ -4949,15 +5065,19 @@ class AESurveyStore {
           });
         }
         cleanSurvey.schemaVersion = prevVer + 1;
-        cleanSurvey.versionHistory = history.slice(-15);
+        this._saveSurveyVersionHistory(cleanSurvey.id, history);
       } else {
         cleanSurvey.schemaVersion = prevVer;
-        cleanSurvey.versionHistory = history.slice(-15);
+        if (history.length > 0) {
+          this._saveSurveyVersionHistory(cleanSurvey.id, history);
+        }
       }
       this.surveys[idx] = cleanSurvey;
     } else {
       cleanSurvey.schemaVersion = Number(cleanSurvey.schemaVersion || 1);
-      cleanSurvey.versionHistory = Array.isArray(cleanSurvey.versionHistory) ? cleanSurvey.versionHistory.slice(-15) : [];
+      if (legacyIncomingHistory.length > 0) {
+        this._saveSurveyVersionHistory(cleanSurvey.id, legacyIncomingHistory);
+      }
       this.surveys.unshift(cleanSurvey);
       // Ensure at least one default collector exists for new surveys
       if (this.getCollectorsForSurvey(cleanSurvey.id).length === 0) {
@@ -4986,10 +5106,13 @@ class AESurveyStore {
 
   restoreSurveyVersion(surveyId, targetVersion) {
     const survey = this.getSurveyById(surveyId);
-    if (!survey || !Array.isArray(survey.versionHistory)) return null;
-    const snap = survey.versionHistory.find((h) => Number(h.version) === Number(targetVersion));
+    if (!survey) return null;
+    const history = this.getSurveyVersionHistory(surveyId);
+    if (!Array.isArray(history) || history.length === 0) return null;
+    const snap = history.find((h) => h && Number(h.version) === Number(targetVersion));
     if (!snap) return null;
     const restored = JSON.parse(JSON.stringify(survey));
+    delete restored.versionHistory;
     restored.title = snap.title || restored.title;
     restored.pages = JSON.parse(JSON.stringify(snap.pages || []));
     return this.upsertSurvey(restored, true);
@@ -5779,7 +5902,10 @@ class AESurveyStore {
     }
 
     if (changed) {
-      // Advance lastSyncedAt if needed so reconcileIndexedDB will never resurrect the dismissed item
+      // Advance lastSyncedAt so reconcileIndexedDB will never resurrect the dismissed item
+      this.settings = this.settings || {};
+      this.settings.lastSyncedAt = new Date().toISOString();
+      stores.add('settings');
       this.saveToLocalStorage({ stores: Array.from(stores) });
     }
     return {
@@ -5878,12 +6004,28 @@ class AESurveyStore {
         (currentSessionUser && currentSessionUser.role === 'admin') ||
         (!currentSessionUser && (opts.forceAll || opts.syncSurveys || this._surveysDirty || hasQueuedAdminItems))
       );
+      const isCallerSupervisor = Boolean(currentSessionUser && currentSessionUser.role === 'supervisor');
+
+      // On manual sync by an admin, allow retrying previously server-rejected items
+      if (opts.manual && isCallerAdmin && Array.isArray(this.syncQueue)) {
+        this.syncQueue.forEach((q) => {
+          if (q && q.serverAdminRejected) delete q.serverAdminRejected;
+        });
+      }
 
       // Send survey schemas if forced, dirty, queued in syncQueue, first connect, or manual sync (when authorized)
       const shouldSyncSurveys = Boolean(
         isCallerAdmin && (opts.forceAll || opts.syncSurveys || this._surveysDirty || hasQueuedSurveyUpserts || !this.settings.lastSyncedAt || opts.manual)
       );
-      const surveysPayload = shouldSyncSurveys ? this.surveys : [];
+      // Never serialize versionHistory into Google Sheets SchemaJSON
+      const surveysPayload = shouldSyncSurveys
+        ? this.surveys.map((s) => {
+            if (!s || typeof s !== 'object') return s;
+            if (!('versionHistory' in s)) return s;
+            const { versionHistory: _vh, ...slimSurvey } = s;
+            return slimSurvey;
+          })
+        : [];
       const deletedSurveyIds = isCallerAdmin
         ? Array.from(
             new Set([
@@ -5901,15 +6043,24 @@ class AESurveyStore {
         answers: this.cleanAnswersForCloudSync(r.answers)
       }));
 
+      const queuedPersonnelIds = new Set(
+        (this.syncQueue || []).filter((q) => q && q.action === 'UPSERT_PERSONNEL' && q.recordId).map((q) => q.recordId)
+      );
       const personnelPayload = isCallerAdmin
         ? this.personnel
-        : (currentSessionUser ? this.personnel.filter((p) => p.id === currentSessionUser.id) : []);
+        : isCallerSupervisor
+          ? this.personnel.filter((p) => p && (
+              p.id === currentSessionUser.id ||
+              (queuedPersonnelIds.has(p.id) && p.role === 'enumerator' && (!p.supervisorId || p.supervisorId === currentSessionUser.id))
+            ))
+          : (currentSessionUser ? this.personnel.filter((p) => p && p.id === currentSessionUser.id) : []);
 
       let sentSurveySync = shouldSyncSurveys;
       let sentCollectorSync = isCallerAdmin;
       let sentDeletedSurveyIds = new Set(deletedSurveyIds);
       let sentAllPersonnel = isCallerAdmin;
       let sentPersonnelIds = new Set(personnelPayload.map((p) => p && p.id).filter(Boolean));
+      let serverDeniedAdmin = false;
 
       const payload = {
         action: 'BATCH_SYNC',
@@ -6006,10 +6157,14 @@ class AESurveyStore {
           }
 
           if (data.isCallerAdmin === false) {
+            serverDeniedAdmin = true;
             sentSurveySync = false;
             sentCollectorSync = false;
             sentDeletedSurveyIds = new Set();
             sentAllPersonnel = false;
+            if (!data.isCallerSupervisor && Number(data.personnelSynced || 0) === 0 && sentPersonnelIds.size > 0) {
+              sentPersonnelIds = new Set(callerId && sentPersonnelIds.has(callerId) ? [callerId] : []);
+            }
           } else if (Array.isArray(data.deletedSurveyIds)) {
             sentDeletedSurveyIds = new Set(data.deletedSurveyIds);
           }
@@ -6069,8 +6224,11 @@ class AESurveyStore {
         const liveCollectorIds = new Set((this.collectors || []).filter((c) => c && c.id).map((c) => c.id));
         const livePersonnelIds = new Set((this.personnel || []).filter((p) => p && p.id).map((p) => p.id));
 
-        // Prune ONLY syncQueue items that were actually included in the succeeded payload
-        // (or are already synced / orphaned), so non-admin syncs never drop valid admin items.
+        // Prune syncQueue items that were actually included in the succeeded payload
+        // (or are already synced / orphaned). When signed in as a non-admin, auto-prune
+        // non-admin-eligible admin actions (UPSERT_SURVEY / DELETE_SURVEY / UPSERT_COLLECTOR)
+        // and mark any server-rejected admin/personnel items so they never loop forever on ok:true.
+        const isExplicitNonAdmin = Boolean(currentSessionUser && currentSessionUser.role !== 'admin');
         this.syncQueue = (this.syncQueue || []).filter((item) => {
           if (!item || !item.action || !item.recordId) return false;
           if (!syncedQueueSnapshot.has(item.id) || item.createdAt !== syncedQueueSnapshot.get(item.id)) {
@@ -6084,19 +6242,31 @@ class AESurveyStore {
             return true;
           }
           if (item.action === 'DELETE_SURVEY') {
-            return !(sentDeletedSurveyIds.has(item.recordId) || !gasUrl);
+            if (sentDeletedSurveyIds.has(item.recordId) || !gasUrl) return false;
+            if (isExplicitNonAdmin) return false;
+            if (serverDeniedAdmin) item.serverAdminRejected = true;
+            return true;
           }
           if (item.action === 'UPSERT_SURVEY') {
             if (!liveSurveyIds.has(item.recordId)) return false;
-            return !(sentSurveySync || !gasUrl);
+            if (sentSurveySync || !gasUrl) return false;
+            if (isExplicitNonAdmin) return false;
+            if (serverDeniedAdmin) item.serverAdminRejected = true;
+            return true;
           }
           if (item.action === 'UPSERT_COLLECTOR') {
             if (!liveCollectorIds.has(item.recordId)) return false;
-            return !(sentCollectorSync || !gasUrl);
+            if (sentCollectorSync || !gasUrl) return false;
+            if (isExplicitNonAdmin) return false;
+            if (serverDeniedAdmin) item.serverAdminRejected = true;
+            return true;
           }
           if (item.action === 'UPSERT_PERSONNEL') {
             if (!livePersonnelIds.has(item.recordId)) return false;
-            return !(sentAllPersonnel || sentPersonnelIds.has(item.recordId) || !gasUrl);
+            if (sentAllPersonnel || sentPersonnelIds.has(item.recordId) || !gasUrl) return false;
+            if (serverDeniedAdmin) item.serverAdminRejected = true;
+            if (isExplicitNonAdmin && !isCallerSupervisor && item.recordId !== callerId) return false;
+            return true;
           }
           // Drop unrecognized legacy action types so they never stick forever
           return false;
@@ -6456,6 +6626,7 @@ class AESurveyStore {
         let collectorsChanged = false;
         let newResponsesCount = 0;
         let responsesChanged = false;
+        let syncQueueChanged = false;
         let personnelChanged = false;
 
         // Merge remote surveys (sanitized against DOM XSS / invalid IDs, preserving newer local edits)
@@ -6528,6 +6699,7 @@ class AESurveyStore {
             }
           });
           const seedMap = new Map(getInitialSeedData().responses.map((sr) => [sr.id, sr]));
+          const healedResponseIds = new Set();
           this.responses.forEach((localResp) => {
             const key = localResp.clientResponseId || localResp.id;
             if (!respMap.has(key)) {
@@ -6543,11 +6715,22 @@ class AESurveyStore {
                 remoteItem.answers = JSON.parse(JSON.stringify(seedMap.get(key).answers || {}));
               }
               if (localResp.syncStatus === 'queued') {
-                remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
-                remoteItem.qaFlags = Array.isArray(localResp.qaFlags) && localResp.qaFlags.length ? localResp.qaFlags : remoteItem.qaFlags;
-                remoteItem.audit = localResp.audit || remoteItem.audit;
-                remoteItem.auditTrail = Array.isArray(localResp.auditTrail) && localResp.auditTrail.length ? localResp.auditTrail : remoteItem.auditTrail;
-                remoteItem.syncStatus = 'queued';
+                // Server already has this response — heal local status to 'synced' and prune from syncQueue
+                if (localResp.reviewStatus && localResp.reviewStatus !== 'pending_review' && (!remoteItem.reviewStatus || remoteItem.reviewStatus === 'pending_review')) {
+                  remoteItem.reviewStatus = localResp.reviewStatus;
+                }
+                if (Array.isArray(localResp.qaFlags) && localResp.qaFlags.length && (!Array.isArray(remoteItem.qaFlags) || !remoteItem.qaFlags.length)) {
+                  remoteItem.qaFlags = localResp.qaFlags;
+                }
+                if (localResp.audit && !remoteItem.audit) {
+                  remoteItem.audit = localResp.audit;
+                  remoteItem.auditTrail = Array.isArray(localResp.auditTrail) ? localResp.auditTrail : [];
+                }
+                remoteItem.syncStatus = 'synced';
+                remoteItem.syncedAt = remoteItem.syncedAt || localResp.syncedAt || new Date().toISOString();
+                if (localResp.id) healedResponseIds.add(localResp.id);
+                if (localResp.clientResponseId) healedResponseIds.add(localResp.clientResponseId);
+                responsesChanged = true;
               } else if (localResp.audit && !remoteItem.audit) {
                 remoteItem.reviewStatus = localResp.reviewStatus || remoteItem.reviewStatus;
                 remoteItem.audit = localResp.audit;
@@ -6562,6 +6745,15 @@ class AESurveyStore {
             (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
           );
           this.healResponsesAnswers();
+          if (healedResponseIds.size > 0 && Array.isArray(this.syncQueue)) {
+            const beforeQueueLen = this.syncQueue.length;
+            this.syncQueue = this.syncQueue.filter(
+              (q) => !(q && q.action === 'SUBMIT_RESPONSE' && healedResponseIds.has(q.recordId))
+            );
+            if (this.syncQueue.length !== beforeQueueLen) {
+              syncQueueChanged = true;
+            }
+          }
         }
 
         // Merge remote personnel (staff credentials, roles, and PIN updates)
@@ -6586,11 +6778,12 @@ class AESurveyStore {
           latencyMs
         });
 
-        const changed = surveysUpdated > 0 || collectorsChanged || responsesChanged || personnelChanged;
+        const changed = surveysUpdated > 0 || collectorsChanged || responsesChanged || syncQueueChanged || personnelChanged;
         const storesToSave = ['settings', 'syncLogs'];
         if (surveysUpdated > 0) storesToSave.push('surveys');
         if (collectorsChanged) storesToSave.push('collectors');
         if (responsesChanged) storesToSave.push('responses');
+        if (syncQueueChanged) storesToSave.push('syncQueue');
         if (personnelChanged) storesToSave.push('personnel', 'pinOverrides');
 
         this.saveToLocalStorage({
@@ -6666,36 +6859,46 @@ class AESurveyStore {
     if (!gasUrl || !this.isValidGasUrl(gasUrl)) return null;
     if (!Array.isArray(texts) || texts.length === 0) return [];
 
-    const payload = {
-      action: 'BATCH_TRANSLATE',
-      syncToken: this.settings.syncToken || '',
-      deviceId: this.settings.deviceId || 'ae-studio-browser',
-      sourceLang: sourceLang,
-      targetLang: targetLang,
-      texts: texts
-    };
+    const CHUNK_SIZE = 150;
+    const allTranslations = [];
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
-    try {
-      const resp = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      clearTimeout(timer);
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      if (data && data.ok && Array.isArray(data.translations)) {
-        return data.translations;
+    for (let offset = 0; offset < texts.length; offset += CHUNK_SIZE) {
+      const chunk = texts.slice(offset, offset + CHUNK_SIZE);
+      const payload = {
+        action: 'BATCH_TRANSLATE',
+        syncToken: this.settings.syncToken || '',
+        deviceId: this.settings.deviceId || 'ae-studio-browser',
+        sourceLang: sourceLang,
+        targetLang: targetLang,
+        texts: chunk
+      };
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25000);
+      try {
+        const resp = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          redirect: 'follow',
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        if (data && data.ok && Array.isArray(data.translations)) {
+          allTranslations.push(...data.translations);
+        } else {
+          return null;
+        }
+      } catch (err) {
+        clearTimeout(timer);
+        console.warn('[AE Translate] Google Apps Script translation request failed:', err);
+        return null;
       }
-      return null;
-    } catch (err) {
-      clearTimeout(timer);
-      console.warn('[AE Translate] Google Apps Script translation request failed:', err);
-      return null;
     }
+
+    return allTranslations;
   }
 
   /**

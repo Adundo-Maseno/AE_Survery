@@ -3,7 +3,7 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.79';
+const CACHE_NAME = 'ae-survey-prod-v3.80';
 const CODE_ASSET_TIMEOUT_MS = 2000;
 const SW_IDB_CANDIDATES = ['AESurveyMonkeyDB', 'AESurveyDB'];
 
@@ -528,7 +528,12 @@ async function performClosedTabBackgroundSync() {
 
       // Prune matching SUBMIT_RESPONSE items from syncQueue if present
       if (db.objectStoreNames.contains('syncQueue')) {
-        const syncedIds = new Set(unsynced.map((r) => r.id));
+        const syncedIds = new Set();
+        unsynced.forEach((r) => {
+          if (!r) return;
+          if (r.id) syncedIds.add(r.id);
+          if (r.clientResponseId) syncedIds.add(r.clientResponseId);
+        });
         const queueItems = await idbReadAll(db, 'syncQueue');
         const keysToDelete = queueItems
           .filter((q) => q && q.action === 'SUBMIT_RESPONSE' && syncedIds.has(q.recordId))
