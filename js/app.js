@@ -4908,6 +4908,92 @@ window.AEApp = {
     this.render();
   },
 
+  updateSurveyStratifiedQuota(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.stratifiedQuotas = s.stratifiedQuotas || { enabled: false, questionId: '', targets: {}, warnWhenFull: true };
+    if (field === 'enabled' || field === 'warnWhenFull') {
+      s.stratifiedQuotas[field] = Boolean(value);
+    } else if (field === 'questionId') {
+      s.stratifiedQuotas.questionId = String(value || '').trim();
+      s.stratifiedQuotas.targets = s.stratifiedQuotas.targets || {};
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateSurveyStratifiedTarget(optLabel, targetVal) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.stratifiedQuotas = s.stratifiedQuotas || { enabled: true, questionId: '', targets: {}, warnWhenFull: true };
+    s.stratifiedQuotas.targets = s.stratifiedQuotas.targets || {};
+    const parsed = parseInt(String(targetVal ?? '').trim(), 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      s.stratifiedQuotas.targets[optLabel] = parsed;
+    } else {
+      delete s.stratifiedQuotas.targets[optLabel];
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateSurveyCompletionWorkflow(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.completionWorkflow = s.completionWorkflow || {};
+    if (field === 'autoRedirect' || field === 'conditionalEnabled' || field === 'webhookEnabled') {
+      s.completionWorkflow[field] = Boolean(value);
+    } else {
+      s.completionWorkflow[field] = String(value ?? '').trim();
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  async testSurveyWebhook(surveyId) {
+    const s = window.aeStore.getSurveyById(surveyId || this.activeSurveyId);
+    if (!s || !s.completionWorkflow || !s.completionWorkflow.webhookUrl) {
+      this.showToast('Enter an https:// webhook URL first.', 'warning');
+      return null;
+    }
+    const settings = window.aeStore.settings || {};
+    const gasUrl = String(settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !/^https:\/\/script\.google\.com\//i.test(gasUrl)) {
+      this.showToast('Configure your Google Apps Script Web App URL in Sync Settings first.', 'warning');
+      return null;
+    }
+    const currentUser = window.AESession && typeof window.AESession.getCurrentUser === 'function' ? window.AESession.getCurrentUser() : null;
+    try {
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'TEST_WEBHOOK',
+          syncToken: settings.syncToken || '',
+          callerId: currentUser ? currentUser.id : '',
+          surveyId: s.id,
+          surveyTitle: s.title,
+          webhookUrl: s.completionWorkflow.webhookUrl,
+          webhookSecret: s.completionWorkflow.webhookSecret || ''
+        }),
+        redirect: 'follow'
+      });
+      const data = await res.json();
+      if (data && data.ok) {
+        this.showToast(data.message || 'Webhook test ping succeeded!', 'success');
+      } else {
+        this.showToast((data && (data.error || data.message)) || 'Webhook test failed.', 'error');
+      }
+      return data;
+    } catch (err) {
+      this.showToast((err && err.message) || 'Network error testing webhook.', 'error');
+      return null;
+    }
+  },
+
   updateSurveyAccessControl(field, value) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
@@ -6248,6 +6334,7 @@ window.AEApp = {
       window.AECollector.justSubmittedBanner = {
         title: `Field Enumeration Receipt Verified (${window.aeStore.isEffectivelyOnline() ? 'Synced to Sheets' : 'Saved to Offline Vault'})`,
         subtitle: `Enumerator ${saved.enumerator} · Ready for next respondent interview.`,
+        submittedAnswers: saved.answers || {},
         receiptText,
         receiptMeta: {
           id: saved.id,
@@ -6255,6 +6342,25 @@ window.AEApp = {
           gps: gpsLabel
         }
       };
+
+      // Optional Auto-Redirect (Completion Workflow) when enabled and safe redirectUrl is configured
+      if (
+        survey &&
+        survey.completionWorkflow &&
+        survey.completionWorkflow.autoRedirect &&
+        window.AECollector &&
+        typeof window.AECollector.getSafeRedirectUrl === 'function'
+      ) {
+        const safeUrl = window.AECollector.getSafeRedirectUrl(survey);
+        if (safeUrl) {
+          window.AECollector.justSubmittedBanner.autoRedirectUrl = safeUrl;
+          setTimeout(() => {
+            if (window.AECollector.justSubmittedBanner && window.AECollector.justSubmittedBanner.autoRedirectUrl === safeUrl) {
+              window.location.href = safeUrl;
+            }
+          }, 3000);
+        }
+      }
 
       this.showToast('Survey response recorded. Form reset for next respondent.', 'success');
       this.render();

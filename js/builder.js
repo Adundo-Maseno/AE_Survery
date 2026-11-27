@@ -42,7 +42,182 @@ window.AEBuilder = {
   targetLang: 'sw', // 'sw' | 'fr'
   previewMode: false, // false = editor, true = interactive simulator
   previewDevice: 'desktop', // 'desktop' | 'mobile'
+  showPreFlightPanel: false,
   _draggedQuestionId: null,
+
+  // --------------------------------------------------------------------------
+  // FEATURE: PRE-FLIGHT SURVEY LINTER (PRE-LAUNCH QUALITY AUDIT)
+  // --------------------------------------------------------------------------
+  runPreFlightAudit(survey) {
+    const issues = [];
+    const pages = Array.isArray(survey?.pages) ? survey.pages : [];
+    const allQuestions = pages.flatMap((p, pIdx) => (p.questions || []).map((q) => ({ q, pageIndex: pIdx, pageId: p.id })));
+    const qIdSet = new Set(allQuestions.map((x) => x.q.id));
+    const pageIdSet = new Set(pages.map((p) => p.id));
+
+    if (allQuestions.length === 0) {
+      issues.push({ severity: 'error', code: 'EMPTY_SURVEY', message: 'Survey has no questions yet. Add at least one question before publishing.' });
+    }
+
+    const titleCounts = {};
+    let totalEstimatedSec = 0;
+    let hasOpenEnded = false;
+
+    allQuestions.forEach(({ q, pageIndex }, idx) => {
+      const label = `Q${idx + 1}`;
+      const title = String(q.title || '').trim();
+      if (!title || /^untitled question$/i.test(title)) {
+        issues.push({ severity: 'error', code: 'UNTITLED', qId: q.id, message: `${label} still has a placeholder or empty title.` });
+      } else {
+        const norm = title.toLowerCase();
+        titleCounts[norm] = (titleCounts[norm] || 0) + 1;
+        if (titleCounts[norm] === 2) {
+          issues.push({ severity: 'warning', code: 'DUPLICATE_TITLE', qId: q.id, message: `${label} duplicates an earlier question title ("${title.slice(0, 40)}").` });
+        }
+      }
+
+      // Choice option checks
+      if (q.type === 'multiple_choice' || q.type === 'checkboxes' || q.type === 'dropdown') {
+        const opts = Array.isArray(q.options) ? q.options.map((o) => String(o || '').trim()).filter(Boolean) : [];
+        if (opts.length < 2) {
+          issues.push({ severity: 'error', code: 'TOO_FEW_OPTIONS', qId: q.id, message: `${label} ("${title.slice(0, 32)}") needs at least 2 answer choices.` });
+        }
+        const seenOpts = new Set();
+        opts.forEach((o) => {
+          const ol = o.toLowerCase();
+          if (seenOpts.has(ol)) {
+            issues.push({ severity: 'error', code: 'DUPLICATE_OPTION', qId: q.id, message: `${label} has a duplicate option "${o}".` });
+          }
+          seenOpts.add(ol);
+        });
+      }
+
+      // Broken skip-logic target check
+      if (q.logic && q.logic.enabled && q.logic.target) {
+        const tgt = String(q.logic.target).trim();
+        if (tgt !== 'submit' && tgt !== 'end' && !pageIdSet.has(tgt) && !qIdSet.has(tgt)) {
+          issues.push({ severity: 'error', code: 'BROKEN_LOGIC', qId: q.id, message: `${label} skip-logic points to a missing target ("${tgt}").` });
+        }
+      }
+
+      // Broken display rule source check
+      if (q.displayRule && q.displayRule.enabled && q.displayRule.sourceQuestionId) {
+        if (!qIdSet.has(q.displayRule.sourceQuestionId)) {
+          issues.push({ severity: 'error', code: 'BROKEN_DISPLAY_RULE', qId: q.id, message: `${label} conditional display rule references a deleted question.` });
+        }
+      }
+
+      // Formula validation for calculated fields
+      if (q.type === 'calculated' && !String(q.formula || '').trim()) {
+        issues.push({ severity: 'error', code: 'EMPTY_FORMULA', qId: q.id, message: `${label} is a Calculated Field with no formula configured.` });
+      }
+
+      if (q.type === 'short_text' || q.type === 'long_text' || q.type === 'audio_note') {
+        hasOpenEnded = true;
+        totalEstimatedSec += q.type === 'long_text' ? 35 : 20;
+      } else if (q.type === 'matrix') {
+        totalEstimatedSec += Math.max(20, ((q.rows || []).length || 3) * 8);
+      } else {
+        totalEstimatedSec += 12;
+      }
+    });
+
+    // Long unpaginated page warning
+    pages.forEach((p, idx) => {
+      if ((p.questions || []).length > 12) {
+        issues.push({ severity: 'warning', code: 'LONG_PAGE', message: `Page ${idx + 1} has ${p.questions.length} questions. Splitting into pages improves mobile completion rates.` });
+      }
+    });
+
+    // Incomplete translations check (only if user started translating into any language)
+    if (survey && survey.translations && typeof survey.translations === 'object') {
+      Object.keys(survey.translations).forEach((lang) => {
+        const dict = survey.translations[lang];
+        if (!dict || Object.keys(dict).length === 0) return;
+        const missing = allQuestions.filter(({ q }) => !dict[q.id] || !String(dict[q.id].title || '').trim());
+        if (missing.length > 0) {
+          issues.push({
+            severity: 'warning',
+            code: 'INCOMPLETE_TRANSLATION',
+            qId: missing[0].q.id,
+            message: `${missing.length} ${missing.length === 1 ? 'question is' : 'questions are'} missing ${lang.toUpperCase()} translations (use Auto-Translate in Translations tab).`
+          });
+        }
+      });
+    }
+
+    if (allQuestions.length > 0 && !hasOpenEnded) {
+      issues.push({ severity: 'tip', code: 'NO_OPEN_ENDED', message: 'Consider adding 1 optional open-ended question to capture unexpected insights.' });
+    }
+
+    const errors = issues.filter((i) => i.severity === 'error').length;
+    const warnings = issues.filter((i) => i.severity === 'warning').length;
+    const estimatedMinutes = Math.max(1, Math.round(totalEstimatedSec / 60));
+
+    return {
+      ok: errors === 0,
+      errors,
+      warnings,
+      tips: issues.filter((i) => i.severity === 'tip').length,
+      estimatedMinutes,
+      issues
+    };
+  },
+
+  renderPreFlightPanel(survey, audit) {
+    if (!this.showPreFlightPanel || !audit) return '';
+    return `
+      <div class="bg-white border ${audit.errors > 0 ? 'border-[#C4242A]/50' : 'border-[#247B50]/40'} rounded-[8px] p-4 space-y-3 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#EFEFEF]">
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="font-semibold text-[#111613]">
+              <i class="fa-solid ${audit.errors > 0 ? 'fa-triangle-exclamation text-[#C4242A]' : 'fa-circle-check text-[#247B50]'} mr-1.5"></i>
+              Pre-Flight Survey Check
+            </span>
+            <span class="px-2 py-0.5 rounded-[4px] ${audit.errors > 0 ? 'bg-[#FEE2E2] text-[#831C1E]' : 'bg-[#DCFAE5] text-[#04250E]'} text-[11px] font-semibold tabular-nums">
+              ${audit.errors} errors &middot; ${audit.warnings} warnings
+            </span>
+            <span class="text-[11px] text-[#646E68] tabular-nums">Est. completion: ~${audit.estimatedMinutes} min</span>
+          </div>
+          <button type="button" onclick="window.AEBuilder.showPreFlightPanel=false; window.AEApp.render();"
+            class="w-7 h-7 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        ${
+          audit.issues.length === 0
+            ? `<div class="p-3 rounded-[6px] bg-[#F3FBF6] text-xs text-[#04250E] font-medium">All checks passed! Your survey is ready for field deployment.</div>`
+            : `<ul class="space-y-1.5 text-xs">
+                ${audit.issues
+                  .map((iss) => {
+                    const badge = iss.severity === 'error'
+                      ? 'bg-[#FEE2E2] text-[#831C1E]'
+                      : iss.severity === 'warning'
+                      ? 'bg-[#FFFBEB] text-[#92400E]'
+                      : 'bg-[#F4F6F4] text-[#525B56]';
+                    return `
+                      <li class="flex items-center justify-between gap-2 p-2 rounded-[5px] bg-[#FAFBF9] border border-[#EFEFEF]">
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase shrink-0 ${badge}">${iss.severity}</span>
+                          <span class="text-[#111613] ae-break-words">${AEApp.escapeHtml(iss.message)}</span>
+                        </div>
+                        ${
+                          iss.qId
+                            ? `<button type="button" onclick="window.AEBuilder.scrollToQuestion('${AEApp.escapeJs(iss.qId)}')"
+                                class="h-6 px-2 rounded border border-[#CFD5D0] bg-white hover:bg-[#141A17] hover:text-white text-[11px] font-medium shrink-0 ae-press">
+                                Jump
+                              </button>`
+                            : ''
+                        }
+                      </li>
+                    `;
+                  })
+                  .join('')}
+              </ul>`
+        }
+      </div>
+    `;
+  },
 
   handleQuestionDragStart(e, qId) {
     if (e && e.target && /^(INPUT|TEXTAREA|SELECT|OPTION)$/i.test(e.target.tagName || '')) {
@@ -304,6 +479,7 @@ window.AEBuilder = {
     const existingResponseCount = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
       ? window.aeStore.getResponsesForSurvey(survey.id).length
       : 0;
+    const preFlightAudit = this.runPreFlightAudit(survey);
 
     return `
       <div class="space-y-5">
@@ -330,6 +506,18 @@ window.AEBuilder = {
           </div>
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <!-- Pre-Flight Quality Linter -->
+            <button onclick="window.AEBuilder.showPreFlightPanel = !window.AEBuilder.showPreFlightPanel; window.AEApp.render();"
+              title="Audit survey logic, translations, and options before publishing"
+              class="h-8 px-2.5 rounded-[6px] border ${
+                preFlightAudit.errors > 0
+                  ? 'border-[#C4242A]/50 bg-[#FFF7F6] text-[#831C1E]'
+                  : 'border-[#247B50]/35 bg-[#F3FBF6] text-[#04250E]'
+              } text-xs font-semibold inline-flex items-center gap-1.5 ae-press tabular-nums">
+              <i class="fa-solid ${preFlightAudit.errors > 0 ? 'fa-triangle-exclamation text-[#C4242A]' : 'fa-clipboard-check text-[#247B50]'}"></i>
+              Pre-Flight${preFlightAudit.errors + preFlightAudit.warnings > 0 ? ` (${preFlightAudit.errors + preFlightAudit.warnings})` : ' ✓'}
+            </button>
+
             <!-- Version History -->
             <button onclick="AEApp.openVersionHistoryModal()"
               title="Inspect or restore previous survey versions"
@@ -365,6 +553,9 @@ window.AEBuilder = {
             </button>
           </div>
         </div>
+
+        <!-- 1a. Pre-Flight Quality Linter Drawer (when toggled) -->
+        ${this.renderPreFlightPanel(survey, preFlightAudit)}
 
         <!-- 1b. Active Instrument & Access Control Bar (Matching Overview Scope Bar) -->
         <div class="bg-white p-3 rounded-[8px] border border-[#E4E7E4] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
@@ -1081,6 +1272,91 @@ window.AEBuilder = {
               placeholder="https://example.org/thank-you"
               class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
           </div>
+
+          <!-- Completion Workflows: Auto-Redirect, Conditional Thank-You & Webhooks -->
+          ${(() => {
+            const cw = survey.completionWorkflow || {};
+            const allQs = window.aeStore.getQuestionsForSurvey(survey);
+            const condQs = allQs.filter((q) => ['multiple_choice', 'dropdown', 'nps', 'star_rating'].includes(q.type));
+            return `
+              <div class="pt-2.5 border-t border-[#EFEFEF] space-y-2.5">
+                <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+                  <i class="fa-solid fa-bolt text-[#247B50] text-[11px]"></i> Completion Workflows &amp; Webhooks
+                </span>
+
+                <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer gap-2">
+                  <span>Auto-redirect after 3s (respondent mode)</span>
+                  <input type="checkbox" ${cw.autoRedirect ? 'checked' : ''}
+                    onchange="AEApp.updateSurveyCompletionWorkflow('autoRedirect', this.checked)"
+                    class="accent-[#247B50] w-4 h-4 rounded shrink-0" />
+                </label>
+
+                <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer gap-2">
+                  <span>Conditional Thank-You message</span>
+                  <input type="checkbox" ${cw.conditionalEnabled ? 'checked' : ''}
+                    onchange="AEApp.updateSurveyCompletionWorkflow('conditionalEnabled', this.checked)"
+                    class="accent-[#247B50] w-4 h-4 rounded shrink-0" />
+                </label>
+
+                ${
+                  cw.conditionalEnabled && condQs.length > 0
+                    ? `<div class="p-2.5 rounded-[6px] bg-[#FAFBF9] border border-[#E4E7E4] space-y-2">
+                        <select onchange="AEApp.updateSurveyCompletionWorkflow('condQuestionId', this.value)"
+                          class="w-full h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613]">
+                          <option value="">Trigger question…</option>
+                          ${condQs.map((q) => `<option value="${AEApp.escapeAttr(q.id)}" ${cw.condQuestionId === q.id ? 'selected' : ''}>${AEApp.escapeHtml((q.title || q.id).slice(0, 42))}</option>`).join('')}
+                        </select>
+                        <div class="grid grid-cols-2 gap-1.5">
+                          <select onchange="AEApp.updateSurveyCompletionWorkflow('condOperator', this.value)"
+                            class="h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-1.5 text-[#111613]">
+                            <option value="equals" ${(cw.condOperator || 'equals') === 'equals' ? 'selected' : ''}>Equals</option>
+                            <option value="lte" ${cw.condOperator === 'lte' ? 'selected' : ''}>≤ (Score)</option>
+                            <option value="gte" ${cw.condOperator === 'gte' ? 'selected' : ''}>≥ (Score)</option>
+                          </select>
+                          <input type="text" value="${AEApp.escapeAttr(cw.condValue || '')}"
+                            onchange="AEApp.updateSurveyCompletionWorkflow('condValue', this.value)"
+                            placeholder="e.g. 6 or Yes"
+                            class="h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613]" />
+                        </div>
+                        <input type="text" value="${AEApp.escapeAttr(cw.condTitle || '')}"
+                          onchange="AEApp.updateSurveyCompletionWorkflow('condTitle', this.value)"
+                          placeholder="Conditional Thank-You Title"
+                          class="w-full h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613]" />
+                        <textarea rows="2" onchange="AEApp.updateSurveyCompletionWorkflow('condMessage', this.value)"
+                          placeholder="Custom message shown when trigger matches…"
+                          class="w-full text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 py-1 text-[#111613] resize-none">${AEApp.escapeHtml(cw.condMessage || '')}</textarea>
+                      </div>`
+                    : ''
+                }
+
+                <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer gap-2 pt-1">
+                  <span>Fire Webhook on new response</span>
+                  <input type="checkbox" ${cw.webhookEnabled ? 'checked' : ''}
+                    onchange="AEApp.updateSurveyCompletionWorkflow('webhookEnabled', this.checked)"
+                    class="accent-[#247B50] w-4 h-4 rounded shrink-0" />
+                </label>
+
+                ${
+                  cw.webhookEnabled
+                    ? `<div class="p-2.5 rounded-[6px] bg-[#FAFBF9] border border-[#E4E7E4] space-y-2">
+                        <input type="url" value="${AEApp.escapeAttr(cw.webhookUrl || '')}"
+                          onchange="AEApp.updateSurveyCompletionWorkflow('webhookUrl', this.value)"
+                          placeholder="https://hooks.slack.com/… or Zapier/n8n URL"
+                          class="w-full h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613]" />
+                        <input type="text" value="${AEApp.escapeAttr(cw.webhookSecret || '')}"
+                          onchange="AEApp.updateSurveyCompletionWorkflow('webhookSecret', this.value)"
+                          placeholder="Optional X-AE-Webhook-Secret header"
+                          class="w-full h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613]" />
+                        <button type="button" onclick="AEApp.testSurveyWebhook('${AEApp.escapeJs(survey.id)}')"
+                          class="w-full h-7 rounded-[5px] border border-[#247B50]/40 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold ae-press">
+                          <i class="fa-solid fa-paper-plane mr-1 text-[10px]"></i> Send Test Ping
+                        </button>
+                      </div>`
+                    : ''
+                }
+              </div>
+            `;
+          })()}
         </div>
 
         <!-- Schedule & Response Quota -->
@@ -1124,6 +1400,62 @@ window.AEBuilder = {
               placeholder="e.g. This survey has reached its target responses."
               class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
           </div>
+
+          <!-- Stratified Sampling Quotas (Targets per Region / Segment) -->
+          ${(() => {
+            const sq = survey.stratifiedQuotas || {};
+            const allQs = window.aeStore.getQuestionsForSurvey(survey);
+            const strataQs = allQs.filter((q) => ['multiple_choice', 'dropdown', 'checkboxes'].includes(q.type) && Array.isArray(q.options) && q.options.length > 0);
+            const activeQ = strataQs.find((q) => q.id === sq.questionId) || null;
+            const targets = sq.targets || {};
+            return `
+              <div class="pt-2.5 border-t border-[#EFEFEF] space-y-2">
+                <label class="flex items-center justify-between text-xs font-medium text-[#111613] cursor-pointer gap-2">
+                  <span><i class="fa-solid fa-bullseye text-[#247B50] text-[10px] mr-1"></i>Stratified Sampling Quotas</span>
+                  <input type="checkbox" ${sq.enabled ? 'checked' : ''}
+                    onchange="AEApp.updateSurveyStratifiedQuota('enabled', this.checked)"
+                    class="accent-[#247B50] w-4 h-4 rounded shrink-0" />
+                </label>
+                ${
+                  sq.enabled
+                    ? `<div class="p-2.5 rounded-[6px] bg-[#FAFBF9] border border-[#E4E7E4] space-y-2">
+                        <select onchange="AEApp.updateSurveyStratifiedQuota('questionId', this.value)"
+                          class="w-full h-7 text-[11px] bg-white border border-[#CFD5D0] rounded-[5px] px-2 text-[#111613]">
+                          <option value="">Choose stratification question…</option>
+                          ${strataQs.map((q) => `<option value="${AEApp.escapeAttr(q.id)}" ${sq.questionId === q.id ? 'selected' : ''}>${AEApp.escapeHtml((q.title || q.id).slice(0, 42))}</option>`).join('')}
+                        </select>
+                        ${
+                          activeQ
+                            ? `<div class="space-y-1.5">
+                                ${activeQ.options
+                                  .map((opt) => {
+                                    const lbl = typeof opt === 'string' ? opt : String(opt.label || opt.value || '');
+                                    return `
+                                      <div class="flex items-center justify-between gap-2 text-[11px]">
+                                        <span class="text-[#111613] truncate flex-1">${AEApp.escapeHtml(lbl)}</span>
+                                        <input type="number" min="0" step="1" value="${targets[lbl] ? Number(targets[lbl]) : ''}"
+                                          placeholder="Target"
+                                          onchange="AEApp.updateSurveyStratifiedTarget('${AEApp.escapeAttr(AEApp.escapeJs(lbl))}', this.value)"
+                                          class="w-16 h-6 px-1.5 text-[11px] text-right bg-white border border-[#CFD5D0] rounded-[4px] tabular-nums" />
+                                      </div>
+                                    `;
+                                  })
+                                  .join('')}
+                              </div>
+                              <label class="flex items-center justify-between text-[11px] text-[#525B56] cursor-pointer pt-1">
+                                <span>Warn collector when stratum is full</span>
+                                <input type="checkbox" ${sq.warnWhenFull !== false ? 'checked' : ''}
+                                  onchange="AEApp.updateSurveyStratifiedQuota('warnWhenFull', this.checked)"
+                                  class="accent-[#247B50] w-3.5 h-3.5 rounded" />
+                              </label>`
+                            : ''
+                        }
+                      </div>`
+                    : ''
+                }
+              </div>
+            `;
+          })()}
         </div>
 
         <!-- Access & Anti-Duplicate -->

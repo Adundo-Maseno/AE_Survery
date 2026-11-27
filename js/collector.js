@@ -532,14 +532,69 @@ window.AECollector = {
     const headerBg = accent === '#007A4B' || accent === '#247B50' ? '#1F6A45' : accent;
     const brandLogo = this.getSafeBrandLogo(rawSurvey);
     const safeRedirectUrl = this.getSafeRedirectUrl(rawSurvey);
-    const customThankYouTitle =
+    let customThankYouTitle =
       rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouTitle && String(rawSurvey.branding.thankYouTitle).trim()
         ? String(rawSurvey.branding.thankYouTitle).trim()
         : '';
-    const customThankYouMsg =
+    let customThankYouMsg =
       rawSurvey && rawSurvey.branding && rawSurvey.branding.thankYouMessage && String(rawSurvey.branding.thankYouMessage).trim()
         ? String(rawSurvey.branding.thankYouMessage).trim()
         : '';
+
+    // Evaluate Conditional Thank-You Rule (Completion Workflow)
+    if (this.justSubmittedBanner && rawSurvey && rawSurvey.completionWorkflow && rawSurvey.completionWorkflow.conditionalEnabled) {
+      const cw = rawSurvey.completionWorkflow;
+      const ans = this.justSubmittedBanner.submittedAnswers ? this.justSubmittedBanner.submittedAnswers[cw.condQuestionId] : undefined;
+      if (ans !== undefined && ans !== null && ans !== '') {
+        let matched = false;
+        const op = cw.condOperator || 'equals';
+        if (op === 'lte') {
+          const n = Number(ans), t = Number(cw.condValue);
+          matched = Number.isFinite(n) && Number.isFinite(t) && n <= t;
+        } else if (op === 'gte') {
+          const n = Number(ans), t = Number(cw.condValue);
+          matched = Number.isFinite(n) && Number.isFinite(t) && n >= t;
+        } else {
+          matched = String(ans).trim().toLowerCase() === String(cw.condValue || '').trim().toLowerCase();
+        }
+        if (matched) {
+          if (cw.condTitle) customThankYouTitle = cw.condTitle;
+          if (cw.condMessage) customThankYouMsg = cw.condMessage;
+        }
+      }
+    }
+
+    // Check Stratified Sampling Quota Warning for currently selected draft answer
+    let stratumWarningHtml = '';
+    if (
+      !this.justSubmittedBanner &&
+      rawSurvey &&
+      rawSurvey.stratifiedQuotas &&
+      rawSurvey.stratifiedQuotas.enabled &&
+      rawSurvey.stratifiedQuotas.warnWhenFull !== false &&
+      rawSurvey.stratifiedQuotas.questionId &&
+      window.AEAnalytics &&
+      typeof window.AEAnalytics.computeStratifiedQuotas === 'function'
+    ) {
+      const sqId = rawSurvey.stratifiedQuotas.questionId;
+      const picked = this.draftAnswers ? this.draftAnswers[sqId] : undefined;
+      if (picked !== undefined && picked !== null && picked !== '') {
+        const allResps = window.aeStore ? window.aeStore.getResponsesForSurvey(rawSurvey.id) : [];
+        const qData = window.AEAnalytics.computeStratifiedQuotas(rawSurvey, allResps);
+        if (qData) {
+          const pickedVals = Array.isArray(picked) ? picked.map(String) : [String(picked)];
+          const fullHit = qData.rows.find((r) => r.isFull && pickedVals.includes(r.option));
+          if (fullHit) {
+            stratumWarningHtml = `
+              <div class="bg-[#FFFBEB] border border-[#FDE68A] rounded-[8px] px-4 py-2.5 flex items-center gap-2.5 text-xs text-[#92400E]">
+                <i class="fa-solid fa-bullseye text-[#D97706]"></i>
+                <span><strong>Quota reached for "${AEApp.escapeHtml(fullHit.option)}"</strong> (${fullHit.current}/${fullHit.target}). Consider prioritizing under-sampled groups.</span>
+              </div>
+            `;
+          }
+        }
+      }
+    }
 
     const allQuestions = window.aeStore.getQuestionsForSurvey(survey).filter((q) =>
       !window.AEPiping || typeof window.AEPiping.isQuestionVisible !== 'function'
@@ -556,6 +611,7 @@ window.AECollector = {
 
     return `
       <div class="max-w-3xl mx-auto space-y-4">
+        ${stratumWarningHtml}
         ${
           this.justSubmittedBanner
             ? `<div class="bg-[#DCFAE5] border border-[#247B50]/30 rounded-[8px] p-4 space-y-2.5">
@@ -565,6 +621,11 @@ window.AECollector = {
                     <div class="min-w-0">
                       <div class="text-sm font-semibold text-[#04250E] ae-break-words">${AEApp.escapeHtml(customThankYouTitle || this.justSubmittedBanner.title)}</div>
                       <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">${AEApp.escapeHtml(customThankYouMsg || this.justSubmittedBanner.subtitle)}</div>
+                      ${
+                        this.justSubmittedBanner.autoRedirectUrl
+                          ? `<div class="text-[11px] text-[#247B50] font-medium mt-1"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Redirecting automatically in 3 seconds…</div>`
+                          : ''
+                      }
                     </div>
                   </div>
                   <div class="flex flex-wrap items-center gap-2 shrink-0">

@@ -497,6 +497,19 @@ function doPost(e) {
       return jsonResponse_(analyzeVerbatimsWithGemini_(payload));
     }
 
+    // "Ask Your Survey" Natural-Language AI Analyst Endpoint — runs outside ScriptLock
+    if (action === 'ASK_SURVEY_AI') {
+      return jsonResponse_(askSurveyWithGemini_(payload));
+    }
+
+    // Test Webhook Ping Endpoint (Admin-only) — runs outside ScriptLock
+    if (action === 'TEST_WEBHOOK') {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+      }
+      return jsonResponse_(testSurveyWebhook_(payload));
+    }
+
     // Daily Digest Email Endpoint (Admin-only) — runs outside ScriptLock
     if (action === 'SEND_DAILY_DIGEST') {
       if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
@@ -732,9 +745,10 @@ function doPost(e) {
       lock.releaseLock();
     }
 
-    // Run real-time risk alerts AFTER releasing ScriptLock so MailApp never blocks concurrent syncs
+    // Run real-time risk alerts & webhooks AFTER releasing ScriptLock so MailApp/UrlFetchApp never block concurrent syncs
     if (alertContext && alertContext.insertedResponses && alertContext.insertedResponses.length > 0) {
       maybeSendRealtimeAlerts_(alertContext.surveyMap, alertContext.insertedResponses);
+      maybeFireSurveyWebhooks_(alertContext.surveyMap, alertContext.insertedResponses);
     }
 
     return jsonResponse_(postLockResponse);
@@ -2594,6 +2608,180 @@ function sendDailyDigestTrigger() {
     surveysProcessed: surveysProcessed,
     emailsSent: emailsSent
   };
+}
+
+/**
+ * Natural-language "Ask Your Survey" Q&A powered by Gemini 2.5 Flash.
+ * Grounded strictly in the supplied quantitative breakdown + sampled open-ended verbatims.
+ */
+function askSurveyWithGemini_(payload) {
+  var nowIso = new Date().toISOString();
+  var geminiKey = '';
+  try {
+    geminiKey = String(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
+  } catch (e) {
+    geminiKey = '';
+  }
+
+  if (!geminiKey) {
+    return {
+      ok: true,
+      provider: 'offline_fallback',
+      configured: false,
+      message: 'GEMINI_API_KEY is not set in Apps Script Project Properties; using local offline Q&A.',
+      serverTime: nowIso
+    };
+  }
+
+  var question = String((payload && payload.question) || '').trim().substring(0, 500);
+  if (!question) {
+    return { ok: false, error: 'Question text is required.' };
+  }
+
+  var surveyTitle = String((payload && payload.surveyTitle) || 'Survey').trim().substring(0, 140);
+  var responseCount = Number((payload && payload.responseCount) || 0);
+  var quantSummary = Array.isArray(payload && payload.quantSummary) ? payload.quantSummary.slice(0, 25) : [];
+  var verbatims = Array.isArray(payload && payload.verbatims) ? payload.verbatims.slice(0, 60) : [];
+
+  var promptText = [
+    'You are an expert quantitative & qualitative survey research analyst.',
+    'Answer the user question strictly using the provided data for survey: "' + surveyTitle + '" (n=' + responseCount + ' filtered responses).',
+    'Cite exact numbers, percentages, and short respondent quotes where relevant. Never invent statistics that are not in the supplied data.',
+    'Return strictly valid JSON with these exact keys:',
+    '- "answer": string (2 to 4 clear, direct sentences answering the user question)',
+    '- "keyPoints": string[] (2 to 4 crisp supporting bullet points with exact numbers or patterns)',
+    '- "citedEvidence": string[] (0 to 3 short verbatim quotes or exact metric facts supporting the answer)',
+    '',
+    'USER QUESTION:',
+    question,
+    '',
+    'QUANTITATIVE SUMMARY:',
+    JSON.stringify(quantSummary),
+    '',
+    'SAMPLED OPEN-ENDED RESPONSES:',
+    verbatims.map(function(v, idx) { return (idx + 1) + '. ' + String(v || '').substring(0, 240); }).join('\n')
+  ].join('\n');
+
+  try {
+    var model = 'gemini-2.5-flash';
+    var endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
+    var res = UrlFetchApp.fetch(endpoint, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': geminiKey },
+      payload: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: promptText }] }],
+        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' }
+      }),
+      muteHttpExceptions: true
+    });
+
+    var code = res.getResponseCode();
+    var body = res.getContentText() || '';
+    if (code < 200 || code >= 300) {
+      throw new Error('Gemini API HTTP ' + code);
+    }
+    var raw = JSON.parse(body);
+    var cand = raw && raw.candidates && raw.candidates[0] && raw.candidates[0].content && raw.candidates[0].content.parts && raw.candidates[0].content.parts[0]
+      ? String(raw.candidates[0].content.parts[0].text || '').trim()
+      : '';
+    var jsonText = cand.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    var parsed = JSON.parse(jsonText);
+
+    return {
+      ok: true,
+      provider: 'gemini',
+      configured: true,
+      model: model,
+      answer: typeof parsed.answer === 'string' ? parsed.answer : '',
+      keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints.slice(0, 5) : [],
+      citedEvidence: Array.isArray(parsed.citedEvidence) ? parsed.citedEvidence.slice(0, 4) : [],
+      serverTime: nowIso
+    };
+  } catch (err) {
+    return {
+      ok: true,
+      provider: 'offline_fallback',
+      configured: true,
+      message: 'Gemini Q&A error (' + String(err && err.message ? err.message : err) + '); using local offline Q&A.',
+      serverTime: nowIso
+    };
+  }
+}
+
+/**
+ * Send a test webhook ping from Apps Script (Admin-only).
+ */
+function testSurveyWebhook_(payload) {
+  var url = String((payload && payload.webhookUrl) || '').trim();
+  if (!/^https:\/\/[^\s]+$/i.test(url)) {
+    return { ok: false, error: 'Webhook URL must start with https://' };
+  }
+  var secret = String((payload && payload.webhookSecret) || '').trim();
+  var headers = { 'X-AE-Event': 'webhook.test' };
+  if (secret) headers['X-AE-Webhook-Secret'] = secret;
+
+  try {
+    var res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: headers,
+      payload: JSON.stringify({
+        event: 'webhook.test',
+        surveyId: String((payload && payload.surveyId) || ''),
+        surveyTitle: String((payload && payload.surveyTitle) || 'AE Survey'),
+        message: 'Test ping from AE Survey webhook integration.',
+        sentAt: new Date().toISOString()
+      }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    return {
+      ok: code >= 200 && code < 300,
+      statusCode: code,
+      message: code >= 200 && code < 300 ? ('Webhook responded with HTTP ' + code) : ('Webhook returned HTTP ' + code)
+    };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+/**
+ * Fire configured survey webhooks after new responses are synced (outside ScriptLock).
+ */
+function maybeFireSurveyWebhooks_(surveyMap, insertedResponses) {
+  if (!surveyMap || !Array.isArray(insertedResponses) || insertedResponses.length === 0) return;
+  var maxFires = Math.min(insertedResponses.length, 15);
+  for (var i = 0; i < maxFires; i++) {
+    var resp = insertedResponses[i];
+    if (!resp || !resp.surveyId) continue;
+    var survey = surveyMap[resp.surveyId];
+    if (!survey || !survey.completionWorkflow || !survey.completionWorkflow.webhookEnabled) continue;
+    var url = String(survey.completionWorkflow.webhookUrl || '').trim();
+    if (!/^https:\/\/[^\s]+$/i.test(url)) continue;
+    var secret = String(survey.completionWorkflow.webhookSecret || '').trim();
+    var headers = { 'X-AE-Event': 'response.created' };
+    if (secret) headers['X-AE-Webhook-Secret'] = secret;
+    try {
+      UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        headers: headers,
+        payload: JSON.stringify({
+          event: 'response.created',
+          surveyId: survey.id,
+          surveyTitle: survey.title || '',
+          responseId: resp.id || resp.clientResponseId || '',
+          submittedAt: resp.submittedAt || new Date().toISOString(),
+          enumerator: resp.enumerator || '',
+          answers: resp.answers || {}
+        }),
+        muteHttpExceptions: true
+      });
+    } catch (e) {
+      // Never break sync if downstream webhook is unreachable
+    }
+  }
 }
 
 function jsonResponse_(obj) {

@@ -1348,6 +1348,10 @@ window.AEAnalytics = {
   galleryPinnedOnly: false,
   galleryLightboxKey: null,
   _galleryItemsByKey: {},
+  askSurveyOpen: false,
+  askSurveyBusy: false,
+  askSurveyHistory: [],
+  askSurveyDraft: '',
   chartInstances: {}, // qId -> Chart.js instance
   mapInstances: {}, // qId -> Leaflet map instance
   _mapFocusBounds: {}, // mapKey -> { countryName, countryBounds, plotBounds, center, zoom }
@@ -2650,7 +2654,12 @@ window.AEAnalytics = {
               }
               ${
                 !isPublicReportMode
-                  ? `<button onclick="AEApp.copyLiveReportLink('${safeSurveyIdJs}')"
+                  ? `<button onclick="AEAnalytics.toggleAskSurveyPanel()"
+                      title="Ask plain-English questions about your filtered survey results"
+                      class="h-8 px-3 rounded-[6px] border ${this.askSurveyOpen ? 'border-[#141A17] bg-[#141A17] text-white' : 'border-[#247B50]/40 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E]'} text-xs font-semibold inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                      <i class="fa-solid fa-comments text-xs ${this.askSurveyOpen ? 'text-[#3FC07A]' : 'text-[#247B50]'}"></i> Ask Your Survey
+                    </button>
+                    <button onclick="AEApp.copyLiveReportLink('${safeSurveyIdJs}')"
                       title="Copy privacy-safe read-only live stakeholder results link"
                       class="h-8 px-3 rounded-[6px] border border-[#247B50] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
                       <i class="fa-solid fa-share-nodes text-xs"></i> Share Live Results
@@ -2717,8 +2726,14 @@ window.AEAnalytics = {
         <!-- 2. Dynamic Multi-Dimensional Filter Bar -->
         ${this.renderMultiDimensionalFilterBar(survey, allResponses, filtered, collectors)}
 
+        <!-- 2a. Interactive "Ask Your Survey" AI Analyst Drawer -->
+        ${!isPublicReportMode && this.askSurveyOpen ? this.renderAskSurveyDrawer(survey, filtered) : ''}
+
         <!-- 2b. Published Whole-Survey Executive AI Brief (Synced to Live Report & Exports) -->
         ${this.renderPublishedExecutiveBrief(survey, filtered, isPublicReportMode)}
+
+        <!-- 2c. Stratified Sampling Quotas Progress (when configured on survey) -->
+        ${this.renderStratifiedQuotasCard(survey, allResponses)}
 
         <!-- 3. Automated Executive Survey Insights Callout -->
         ${this.renderAutomatedInsightsBanner(survey, filtered)}
@@ -10689,6 +10704,398 @@ window.AEAnalytics = {
               </div>`
             : ''
         }
+      </div>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE: "ASK YOUR SURVEY" INTERACTIVE AI ANALYST & STRATIFIED QUOTAS
+  // --------------------------------------------------------------------------
+  toggleAskSurveyPanel() {
+    this.askSurveyOpen = !this.askSurveyOpen;
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  _buildAskSurveyContext(survey, responses) {
+    const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey.questions || []);
+    const quantSummary = [];
+    questions.slice(0, 20).forEach((q, idx) => {
+      if (this.isOpenEndedTextQuestion(q, survey)) return;
+      const vals = (responses || [])
+        .map((r) => r.answers?.[q.id])
+        .filter((v) => v !== undefined && v !== null && v !== '' && (!Array.isArray(v) || v.length > 0));
+      if (vals.length === 0) return;
+      const title = this.cleanQuestionTitle(q, {}, survey).slice(0, 80);
+      if (q.type === 'nps' || q.type === 'star_rating' || q.type === 'number_yield' || q.type === 'calculated') {
+        const nums = vals.map(Number).filter((n) => Number.isFinite(n));
+        if (nums.length > 0) {
+          const avg = Number((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2));
+          quantSummary.push({ q: `Q${idx + 1}: ${title}`, n: nums.length, mean: avg, min: Math.min(...nums), max: Math.max(...nums) });
+        }
+      } else {
+        const counts = {};
+        vals.forEach((v) => {
+          const arr = Array.isArray(v) ? v : [typeof v === 'object' ? (v.level1 || v.label || v.value || '') : String(v)];
+          arr.forEach((item) => {
+            const s = String(item || '').trim();
+            if (s) counts[s] = (counts[s] || 0) + 1;
+          });
+        });
+        const top = Object.entries(counts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([k, c]) => `${k}: ${c} (${Math.round((c / vals.length) * 100)}%)`);
+        quantSummary.push({ q: `Q${idx + 1}: ${title}`, n: vals.length, breakdown: top });
+      }
+    });
+
+    const verbatims = [];
+    const engine = window.AETeXtEngine;
+    const analysis = engine && typeof engine.analyzeVerbatims === 'function'
+      ? engine.analyzeVerbatims(responses || [], survey, { questionId: 'all' })
+      : null;
+    if (analysis && Array.isArray(analysis.records)) {
+      analysis.records.slice(0, 60).forEach((rec) => {
+        const txt = String(rec.translatedText || rec.text || '').trim();
+        if (txt) verbatims.push(`[${rec.questionCode || 'Q'}] ${txt.slice(0, 220)}`);
+      });
+    }
+    return { quantSummary, verbatims, analysis };
+  },
+
+  _answerSurveyOfflineFallback(questionText, survey, responses, ctx) {
+    const qLower = String(questionText || '').toLowerCase();
+    const tokens = qLower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 3);
+    const matchingVerbs = (ctx.verbatims || []).filter((v) => {
+      const vl = v.toLowerCase();
+      return tokens.some((t) => vl.includes(t));
+    });
+    const matchingQuants = (ctx.quantSummary || []).filter((item) => {
+      const s = JSON.stringify(item).toLowerCase();
+      return tokens.some((t) => s.includes(t));
+    });
+
+    const keyPoints = [];
+    matchingQuants.slice(0, 3).forEach((m) => {
+      if (m.breakdown) keyPoints.push(`${m.q} (n=${m.n}): ${m.breakdown.slice(0, 3).join(', ')}.`);
+      else if (m.mean !== undefined) keyPoints.push(`${m.q} (n=${m.n}): mean ${m.mean} (range ${m.min}–${m.max}).`);
+    });
+    if (keyPoints.length === 0 && ctx.quantSummary.length > 0) {
+      const first = ctx.quantSummary[0];
+      keyPoints.push(first.breakdown ? `${first.q}: ${first.breakdown.slice(0, 3).join(', ')}.` : `${first.q}: mean ${first.mean} (n=${first.n}).`);
+    }
+    if (ctx.analysis && Array.isArray(ctx.analysis.themes) && ctx.analysis.themes.length > 0) {
+      const topThemes = ctx.analysis.themes.slice(0, 3).map((t) => `${t.name} (${t.pct}%)`).join(', ');
+      keyPoints.push(`Top open-ended themes across ${ctx.analysis.totalAnalyzed} verbatims: ${topThemes}.`);
+    }
+
+    const answer = matchingVerbs.length > 0
+      ? `Across ${responses.length} filtered responses, ${matchingVerbs.length} open-ended ${matchingVerbs.length === 1 ? 'response directly mentions' : 'responses directly mention'} terms from your question. See the matched metrics and respondent quotes below (connect Gemini in Apps Script for full AI synthesis).`
+      : `Based on ${responses.length} filtered responses, here are the closest quantitative distributions and open-ended themes matching your question (set GEMINI_API_KEY in Apps Script for conversational AI answers).`;
+
+    return {
+      provider: 'offline_fallback',
+      answer,
+      keyPoints: keyPoints.slice(0, 4),
+      citedEvidence: matchingVerbs.slice(0, 3)
+    };
+  },
+
+  async askSurveyQuestion(surveyId, rawQuestion) {
+    const qText = String(rawQuestion !== undefined ? rawQuestion : this.askSurveyDraft || '').trim();
+    if (!qText || this.askSurveyBusy) return null;
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    if (!survey) return null;
+
+    const responses = this.getFilteredResponses(surveyId);
+    this.askSurveyBusy = true;
+    this.askSurveyDraft = '';
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+
+    try {
+      const ctx = this._buildAskSurveyContext(survey, responses);
+      const settings = (window.aeStore && window.aeStore.settings) || {};
+      const gasUrl = String(settings.gasWebAppUrl || '').trim();
+      const online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+
+      let result = null;
+      if (online && gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl) && typeof fetch === 'function') {
+        try {
+          const res = await fetch(gasUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'ASK_SURVEY_AI',
+              syncToken: settings.syncToken || '',
+              deviceId: settings.deviceId || '',
+              surveyId: survey.id,
+              surveyTitle: survey.title || 'Survey',
+              responseCount: responses.length,
+              question: qText,
+              quantSummary: ctx.quantSummary,
+              verbatims: ctx.verbatims
+            }),
+            redirect: 'follow'
+          });
+          if (res && res.ok) {
+            const data = await res.json();
+            if (data && data.ok && data.provider === 'gemini' && data.answer) {
+              result = {
+                provider: 'gemini',
+                answer: data.answer,
+                keyPoints: Array.isArray(data.keyPoints) ? data.keyPoints : [],
+                citedEvidence: Array.isArray(data.citedEvidence) ? data.citedEvidence : []
+              };
+            }
+          }
+        } catch (netErr) {}
+      }
+
+      if (!result) {
+        result = this._answerSurveyOfflineFallback(qText, survey, responses, ctx);
+      }
+
+      const entry = {
+        question: qText,
+        ...result,
+        responseCount: responses.length,
+        askedAt: new Date().toISOString()
+      };
+      this.askSurveyHistory = [entry, ...(this.askSurveyHistory || [])].slice(0, 12);
+      return entry;
+    } finally {
+      this.askSurveyBusy = false;
+      if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    }
+  },
+
+  pinAskAnswerToBrief(surveyId, idx) {
+    const survey = window.aeStore && typeof window.aeStore.getSurveyById === 'function'
+      ? window.aeStore.getSurveyById(surveyId)
+      : null;
+    const item = (this.askSurveyHistory || [])[idx];
+    if (!survey || !item) return;
+    if (!survey.publishedAiBrief || typeof survey.publishedAiBrief !== 'object') {
+      survey.publishedAiBrief = {
+        headline: item.answer,
+        summaryBullets: [],
+        recommendations: [],
+        provider: item.provider || 'offline_synthesis',
+        responseCount: item.responseCount || 0,
+        publishedAt: new Date().toISOString()
+      };
+    }
+    survey.publishedAiBrief.summaryBullets = Array.isArray(survey.publishedAiBrief.summaryBullets)
+      ? survey.publishedAiBrief.summaryBullets
+      : [];
+    const note = `Q: ${item.question} — ${item.answer}`;
+    if (!survey.publishedAiBrief.summaryBullets.includes(note)) {
+      survey.publishedAiBrief.summaryBullets.push(note);
+    }
+    if (window.aeStore && typeof window.aeStore.upsertSurvey === 'function') {
+      window.aeStore.upsertSurvey(survey, true);
+    }
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast('Pinned answer to Published Executive Brief.', 'success');
+    }
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+  },
+
+  renderAskSurveyDrawer(survey, filtered) {
+    const safeSid = AEApp.escapeJs(survey?.id || '');
+    const starters = [
+      'What are the top 3 takeaways across all responses?',
+      'What are respondents asking us to improve first?',
+      'Which segments show the biggest differences in feedback?'
+    ];
+
+    return `
+      <div class="bg-white border border-[#247B50]/40 rounded-[8px] p-5 space-y-4 shadow-sm">
+        <div class="flex items-center justify-between gap-3 pb-3 border-b border-[#EFEFEF]">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-8 h-8 rounded-[6px] bg-[#141A17] text-[#3FC07A] flex items-center justify-center shrink-0">
+              <i class="fa-solid fa-comments text-xs"></i>
+            </span>
+            <div class="min-w-0">
+              <h2 class="text-sm font-semibold text-[#111613]">Ask Your Survey (AI Analyst)</h2>
+              <p class="text-[11px] text-[#525B56]">Ask any plain-English question grounded in your ${filtered.length} currently filtered responses.</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            ${
+              (this.askSurveyHistory || []).length > 0
+                ? `<button type="button" onclick="AEAnalytics.askSurveyHistory=[]; AEApp.render();"
+                    class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[11px] text-[#525B56] font-medium">
+                    Clear
+                  </button>`
+                : ''
+            }
+            <button type="button" onclick="AEAnalytics.toggleAskSurveyPanel()" aria-label="Close Ask Your Survey"
+              class="w-7 h-7 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Question Input Form -->
+        <form onsubmit="event.preventDefault(); AEAnalytics.askSurveyQuestion('${safeSid}', this.querySelector('input').value);" class="flex flex-col sm:flex-row gap-2">
+          <input type="text"
+            value="${AEApp.escapeAttr(this.askSurveyDraft || '')}"
+            oninput="AEAnalytics.askSurveyDraft = this.value"
+            placeholder="e.g. Why are respondents dissatisfied with delivery speed?"
+            class="flex-1 h-9 px-3 text-xs bg-[#FAFBF9] border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+          <button type="submit" ${this.askSurveyBusy ? 'disabled' : ''}
+            class="h-9 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-60 ae-press shrink-0">
+            <i class="fa-solid ${this.askSurveyBusy ? 'fa-spinner fa-spin' : 'fa-paper-plane'} text-[11px] text-[#3FC07A]"></i>
+            <span>${this.askSurveyBusy ? 'Analyzing…' : 'Ask'}</span>
+          </button>
+        </form>
+
+        <!-- Starter Prompts -->
+        <div class="flex flex-wrap gap-1.5">
+          ${starters
+            .map((p) => `
+              <button type="button" ${this.askSurveyBusy ? 'disabled' : ''}
+                onclick="AEAnalytics.askSurveyQuestion('${safeSid}', '${AEApp.escapeAttr(AEApp.escapeJs(p))}')"
+                class="px-2.5 py-1 rounded-full bg-[#F8F9F8] hover:bg-[#DCFAE5]/60 border border-[#E4E7E4] text-[11px] text-[#2C3530] ae-press">
+                ${AEApp.escapeHtml(p)}
+              </button>
+            `)
+            .join('')}
+        </div>
+
+        <!-- Answers History -->
+        ${
+          (this.askSurveyHistory || []).length > 0
+            ? `<div class="space-y-3 max-h-96 overflow-y-auto pr-1">
+                ${this.askSurveyHistory
+                  .map((item, idx) => `
+                    <div class="p-3.5 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2 text-xs">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="font-semibold text-[#111613]">${AEApp.escapeHtml(item.question)}</div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${item.provider === 'gemini' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#EAECE9] text-[#525B56]'}">
+                            ${item.provider === 'gemini' ? 'Gemini AI' : 'Offline Q&A'}
+                          </span>
+                          <button type="button" onclick="AEAnalytics.pinAskAnswerToBrief('${safeSid}', ${idx})"
+                            class="h-6 px-2 rounded-[4px] border border-[#247B50]/35 bg-white hover:bg-[#F3FBF6] text-[#04250E] text-[10.5px] font-medium ae-press">
+                            <i class="fa-solid fa-thumbtack text-[9px] mr-1"></i>Pin to Brief
+                          </button>
+                        </div>
+                      </div>
+                      <p class="text-[#2C3530] leading-relaxed">${AEApp.escapeHtml(item.answer)}</p>
+                      ${
+                        Array.isArray(item.keyPoints) && item.keyPoints.length > 0
+                          ? `<ul class="list-disc pl-4 space-y-1 text-[11.5px] text-[#525B56]">
+                              ${item.keyPoints.map((kp) => `<li>${AEApp.escapeHtml(kp)}</li>`).join('')}
+                            </ul>`
+                          : ''
+                      }
+                      ${
+                        Array.isArray(item.citedEvidence) && item.citedEvidence.length > 0
+                          ? `<div class="pt-1.5 border-t border-[#EFEFEF] space-y-1">
+                              ${item.citedEvidence.map((ev) => `<div class="text-[11px] text-[#646E68] italic">&ldquo;${AEApp.escapeHtml(ev)}&rdquo;</div>`).join('')}
+                            </div>`
+                          : ''
+                      }
+                    </div>
+                  `)
+                  .join('')}
+              </div>`
+            : ''
+        }
+      </div>
+    `;
+  },
+
+  computeStratifiedQuotas(survey, responses) {
+    const cfg = survey && survey.stratifiedQuotas;
+    if (!cfg || !cfg.enabled || !cfg.questionId) return null;
+    const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey.questions || []);
+    const q = questions.find((item) => item.id === cfg.questionId);
+    if (!q) return null;
+
+    const targets = cfg.targets && typeof cfg.targets === 'object' ? cfg.targets : {};
+    const options = Array.isArray(q.options) && q.options.length > 0 ? q.options : Object.keys(targets);
+    const counts = {};
+    (responses || []).forEach((r) => {
+      const raw = r?.answers?.[q.id];
+      if (raw === undefined || raw === null || raw === '') return;
+      const arr = Array.isArray(raw) ? raw : [typeof raw === 'object' ? (raw.level1 || raw.label || raw.value || '') : String(raw)];
+      arr.forEach((v) => {
+        const s = String(v || '').trim();
+        if (s) counts[s] = (counts[s] || 0) + 1;
+      });
+    });
+
+    const rows = options
+      .map((opt) => {
+        const label = typeof opt === 'string' ? opt : String(opt.label || opt.value || '');
+        const target = Math.max(0, Number(targets[label]) || 0);
+        const current = counts[label] || 0;
+        const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+        return {
+          option: label,
+          current,
+          target,
+          pct,
+          remaining: Math.max(0, target - current),
+          isFull: target > 0 && current >= target
+        };
+      })
+      .filter((r) => r.option && r.target > 0);
+
+    if (rows.length === 0) return null;
+    const totalTarget = rows.reduce((a, b) => a + b.target, 0);
+    const totalCurrent = rows.reduce((a, b) => a + Math.min(b.current, b.target), 0);
+    return {
+      questionId: q.id,
+      questionTitle: this.cleanQuestionTitle(q, {}, survey),
+      warnWhenFull: Boolean(cfg.warnWhenFull),
+      rows,
+      totalTarget,
+      totalCurrent,
+      overallPct: totalTarget > 0 ? Math.round((totalCurrent / totalTarget) * 100) : 0
+    };
+  },
+
+  renderStratifiedQuotasCard(survey, allResponses) {
+    const qData = this.computeStratifiedQuotas(survey, allResponses);
+    if (!qData) return '';
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="font-semibold text-[#111613]"><i class="fa-solid fa-bullseye text-[#247B50] mr-1.5"></i>Stratified Sampling Quotas</span>
+            <span class="text-[#646E68]">&middot; ${AEApp.escapeHtml(qData.questionTitle)}</span>
+          </div>
+          <span class="text-xs font-semibold text-[#04250E] bg-[#DCFAE5] px-2 py-0.5 rounded-[4px] tabular-nums">
+            ${qData.totalCurrent} / ${qData.totalTarget} (${qData.overallPct}%)
+          </span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          ${qData.rows
+            .map((r) => `
+              <div class="p-2.5 rounded-[6px] border ${r.isFull ? 'border-[#247B50]/40 bg-[#F3FBF6]' : 'border-[#EFEFEF] bg-[#FAFBF9]'} space-y-1.5 text-xs">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-[#111613] truncate">${AEApp.escapeHtml(r.option)}</span>
+                  <span class="text-[11px] font-semibold tabular-nums ${r.isFull ? 'text-[#247B50]' : 'text-[#525B56]'}">
+                    ${r.current}/${r.target}${r.isFull ? ' ✓' : ''}
+                  </span>
+                </div>
+                <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                  <div class="h-full rounded-full ${r.isFull ? 'bg-[#247B50]' : 'bg-[#3FC07A]'}" style="width: ${Math.max(r.pct, 2)}%;"></div>
+                </div>
+              </div>
+            `)
+            .join('')}
+        </div>
       </div>
     `;
   },
