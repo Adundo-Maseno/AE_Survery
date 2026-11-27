@@ -1843,6 +1843,177 @@ ${htmlTag}
       deckWin.document.close();
       deckWin.focus();
       return true;
+    },
+
+    /**
+     * Builds a clean, print-ready A4 Blank Paper Questionnaire (PDF/Print)
+     * for client/IRB sign-off or zero-device field fallback.
+     */
+    buildBlankQuestionnaireHTML(survey, options = {}) {
+      const safeSurvey = survey || { title: 'Questionnaire', pages: [] };
+      const lang = String(options.lang || 'en').toLowerCase();
+      const transDict = (lang !== 'en' && safeSurvey.translations && safeSurvey.translations[lang]) || {};
+      const pages = Array.isArray(safeSurvey.pages) && safeSurvey.pages.length > 0
+        ? safeSurvey.pages
+        : [{ id: 'p1', title: 'Questions', questions: Array.isArray(safeSurvey.questions) ? safeSurvey.questions : [] }];
+      const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+      const renderFieldControl = (q) => {
+        const qTrans = transDict[q.id] || {};
+        const opts = Array.isArray(qTrans.options) && qTrans.options.length > 0
+          ? qTrans.options
+          : (Array.isArray(q.options) ? q.options : []);
+        const type = String(q.type || 'short_text');
+
+        if (type === 'multiple_choice' || type === 'dropdown' || type === 'checkboxes') {
+          const sym = type === 'checkboxes' ? '&#9744;' : '&#9711;';
+          return `
+            <div style="margin-top:8px; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px 16px;">
+              ${opts.map((opt) => `<div style="font-size:11.5px; color:#111613;"><span style="font-size:13px; margin-right:6px;">${sym}</span>${_esc(typeof opt === 'string' ? opt : (opt.label || opt.value || ''))}</div>`).join('')}
+            </div>
+          `;
+        }
+        if (type === 'nps') {
+          return `
+            <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+              ${Array.from({ length: 11 }, (_, n) => `<span style="display:inline-block; width:24px; height:24px; line-height:24px; text-align:center; border:1px solid #9CA3AF; border-radius:4px; font-size:11px; font-weight:600;">${n}</span>`).join('')}
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:9.5px; color:#646E68; margin-top:4px;"><span>0 = Not at all likely</span><span>10 = Extremely likely</span></div>
+          `;
+        }
+        if (type === 'star_rating') {
+          const maxS = Number(q.maxStars || q.max || 5);
+          return `
+            <div style="margin-top:8px; display:flex; gap:8px;">
+              ${Array.from({ length: maxS }, (_, i) => `<span style="display:inline-block; padding:3px 10px; border:1px solid #9CA3AF; border-radius:4px; font-size:11px;">&#9734; ${i + 1}</span>`).join('')}
+            </div>
+          `;
+        }
+        if (type === 'matrix') {
+          const rows = Array.isArray(q.rows) ? q.rows : ['Item 1', 'Item 2'];
+          const cols = Array.isArray(q.columns) ? q.columns : ['Poor', 'Fair', 'Good', 'Excellent'];
+          return `
+            <table cellpadding="6" cellspacing="0" border="0" style="width:100%; border-collapse:collapse; margin-top:8px; font-size:11px;">
+              <tr style="background:#F4F6F4;">
+                <th style="text-align:left; border:1px solid #CFD5D0;">Statement</th>
+                ${cols.map((c) => `<th style="text-align:center; border:1px solid #CFD5D0;">${_esc(c)}</th>`).join('')}
+              </tr>
+              ${rows.map((r) => `
+                <tr>
+                  <td style="border:1px solid #CFD5D0;">${_esc(r)}</td>
+                  ${cols.map(() => `<td style="text-align:center; border:1px solid #CFD5D0;">&#9711;</td>`).join('')}
+                </tr>
+              `).join('')}
+            </table>
+          `;
+        }
+        if (type === 'long_text' || type === 'audio_note') {
+          return `
+            <div style="margin-top:10px;">
+              <div style="border-bottom:1px solid #9CA3AF; height:22px;"></div>
+              <div style="border-bottom:1px solid #9CA3AF; height:22px;"></div>
+              <div style="border-bottom:1px solid #9CA3AF; height:22px;"></div>
+            </div>
+          `;
+        }
+        if (type === 'gps_location') {
+          return `<div style="margin-top:8px; font-size:11px; color:#525B56;">Lat: ________________________ &nbsp;&nbsp; Lng: ________________________</div>`;
+        }
+        if (type === 'signature' || type === 'photo_proof') {
+          return `<div style="margin-top:8px; height:48px; border:1px dashed #9CA3AF; border-radius:4px; padding:6px; font-size:10px; color:#646E68;">${type === 'signature' ? 'Respondent / Enumerator Signature' : 'Photo Reference ID / Notes'}</div>`;
+        }
+        return `<div style="margin-top:10px; border-bottom:1px solid #9CA3AF; height:20px; width:85%;">${q.unit ? `<span style="float:right; font-size:10.5px; color:#646E68;">(${_esc(q.unit)})</span>` : ''}</div>`;
+      };
+
+      const pagesHtml = pages.map((p, pIdx) => {
+        const qs = Array.isArray(p.questions) ? p.questions : [];
+        const numMap = (globalScope.AEPiping && typeof globalScope.AEPiping.computeQuestionDisplayNumbers === 'function')
+          ? globalScope.AEPiping.computeQuestionDisplayNumbers(qs)
+          : {};
+        return `
+          <div style="margin-top:18px;">
+            <div style="background:#F4F6F4; border-left:3px solid #247B50; padding:8px 12px; margin-bottom:12px;">
+              <div style="font-size:13px; font-weight:700; color:#111613;">Section ${pIdx + 1}: ${_esc(p.title || `Page ${pIdx + 1}`)}</div>
+              ${p.description ? `<div style="font-size:11px; color:#525B56; margin-top:2px;">${_esc(p.description)}</div>` : ''}
+            </div>
+            ${qs.map((q, qIdx) => {
+              const nInfo = (numMap && numMap[q.id]) || { label: String(qIdx + 1), isSub: false };
+              const qTrans = transDict[q.id] || {};
+              const title = qTrans.title || q.title || `Question ${qIdx + 1}`;
+              const help = qTrans.helpText || q.helpText || '';
+              return `
+                <div style="padding:10px 12px; margin-bottom:10px; border:1px solid #E4E7E4; border-radius:5px; page-break-inside:avoid; ${nInfo.isSub ? 'margin-left:20px; border-left:3px solid #247B50;' : ''}">
+                  <div style="font-size:12px; font-weight:600; color:#111613; line-height:1.4;">
+                    <span style="color:#247B50; margin-right:6px;">Q${_esc(nInfo.label)}.</span>${_esc(title)}${q.required ? ' <span style="color:#C4242A;">*</span>' : ''}
+                  </div>
+                  ${help ? `<div style="font-size:10.5px; color:#646E68; margin-top:2px;">${_esc(help)}</div>` : ''}
+                  ${renderFieldControl(q)}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }).join('');
+
+      const tyTitle = safeSurvey.branding?.thankYouTitle || 'Thank you for participating!';
+      const tyMsg = safeSurvey.branding?.thankYouMessage || '';
+
+      return `<!DOCTYPE html>
+<html lang="${_esc(lang)}">
+<head>
+  <meta charset="UTF-8" />
+  <title>Blank Form — ${_esc(safeSurvey.title || 'Survey')}</title>
+  <style>
+    @page { size: A4 portrait; margin: 16mm 16mm; }
+    body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; color:#111613; margin:0; padding:20px; line-height:1.45; }
+    .sheet { max-width: 760px; margin: 0 auto; }
+    @media print { body { padding:0; } .no-print { display:none !important; } }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <div class="no-print" style="margin-bottom:14px; text-align:right;">
+      <button onclick="window.print()" style="padding:7px 14px; background:#141A17; color:#fff; border:none; border-radius:5px; font-size:12px; font-weight:600; cursor:pointer;">Print / Save as PDF</button>
+    </div>
+    <div style="border-top:3px solid #141A17; border-bottom:1px solid #CFD5D0; padding:12px 0; margin-bottom:14px;">
+      <div style="font-size:10.5px; font-weight:700; color:#247B50; text-transform:uppercase;">AE Survey &middot; Printable Questionnaire (${_esc(lang.toUpperCase())})</div>
+      <h1 style="font-size:21px; margin:4px 0 4px 0;">${_esc(safeSurvey.title || 'Untitled Survey')}</h1>
+      ${safeSurvey.description ? `<p style="font-size:12px; color:#525B56; margin:0;">${_esc(safeSurvey.description)}</p>` : ''}
+      <div style="margin-top:10px; display:flex; gap:18px; flex-wrap:wrap; font-size:11px; color:#525B56;">
+        <span>Enumerator: ______________________</span>
+        <span>Date: _______________</span>
+        <span>Location/ID: ___________________</span>
+      </div>
+    </div>
+    ${pagesHtml}
+    <div style="margin-top:18px; padding:10px 12px; background:#F8FBF9; border:1px solid #C8E6C9; border-radius:5px; font-size:11.5px; page-break-inside:avoid;">
+      <strong style="color:#04250E;">${_esc(tyTitle)}</strong>${tyMsg ? ` &mdash; ${_esc(tyMsg)}` : ''}
+      <div style="font-size:10px; color:#646E68; margin-top:4px;">Generated ${_esc(today)} &middot; Version v${Number(safeSurvey.schemaVersion || 1)}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+    },
+
+    exportBlankFormPDF(surveyId, options = {}) {
+      const survey = globalScope.aeStore && typeof globalScope.aeStore.getSurveyById === 'function'
+        ? globalScope.aeStore.getSurveyById(surveyId)
+        : null;
+      if (!survey) return false;
+      const html = this.buildBlankQuestionnaireHTML(survey, options);
+      if (typeof globalScope.open !== 'function') return html;
+      const win = globalScope.open('', '_blank', 'width=900,height=780');
+      if (!win) {
+        if (globalScope.AEApp && typeof globalScope.AEApp.showToast === 'function') {
+          globalScope.AEApp.showToast('Pop-up blocked. Please allow pop-ups to print the blank form.', 'warning');
+        }
+        return false;
+      }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      return true;
     }
   };
 

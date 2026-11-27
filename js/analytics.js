@@ -2707,6 +2707,15 @@ window.AEAnalytics = {
 
             <div class="flex flex-wrap items-center gap-1.5">
               <span class="text-xs font-medium text-[#646E68] mr-1">Data</span>
+              ${
+                !isPublicReportMode
+                  ? `<button onclick="AEApp.openImportCsvModal('${safeSurveyIdJs}')"
+                      title="Import historical or external responses from a CSV file"
+                      class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F3FBF6] text-xs font-semibold text-[#111613] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
+                      <i class="fa-solid fa-file-import text-[#247B50] text-[11px]"></i> Import CSV
+                    </button>`
+                  : ''
+              }
               <button onclick="AEAnalytics.exportExcelWorkbook('${safeSurveyIdJs}')"
                 class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/35 bg-[#DCFAE5]/45 hover:bg-[#DCFAE5] text-xs font-semibold text-[#04250E] inline-flex items-center gap-1.5 ae-press whitespace-nowrap">
                 <i class="fa-solid fa-file-excel text-[#247B50] text-[11px]"></i> 7-Sheet Excel (.xls)
@@ -3390,6 +3399,7 @@ window.AEAnalytics = {
     const numMap = this.getQuestionDisplayMap(questions);
     return `
       <div class="space-y-5">
+        ${this.renderQuestionSkipFunnelCard(survey, responses)}
         ${questions.map((q, idx) => this.renderSingleQuestionAnalyticsCard(q, idx, responses, survey, numMap[q.id])).join('')}
       </div>
     `;
@@ -11385,6 +11395,78 @@ window.AEAnalytics = {
           }).join('')}
         </div>
       </div>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE: QUESTION-LEVEL SKIP & DROP-OFF FUNNEL
+  // --------------------------------------------------------------------------
+  computeQuestionSkipFunnel(survey, responses) {
+    const list = Array.isArray(responses) ? responses : [];
+    const total = list.length;
+    if (total === 0) return [];
+    const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey?.pages || []).flatMap((p) => p.questions || []);
+
+    return questions.map((q, idx) => {
+      let answered = 0;
+      list.forEach((r) => {
+        const v = r?.answers?.[q.id];
+        if (v !== undefined && v !== null && v !== '' && (!Array.isArray(v) || v.length > 0)) {
+          answered++;
+        }
+      });
+      const skipped = total - answered;
+      const skipPct = Math.round((skipped / total) * 100);
+      return {
+        qId: q.id,
+        label: `Q${idx + 1}`,
+        title: this.cleanQuestionTitle(q, {}, survey),
+        answered,
+        skipped,
+        answeredPct: 100 - skipPct,
+        skipPct,
+        highFriction: skipPct >= 25
+      };
+    });
+  },
+
+  renderQuestionSkipFunnelCard(survey, responses) {
+    const rows = this.computeQuestionSkipFunnel(survey, responses);
+    const withSkips = rows.filter((r) => r.skipped > 0).sort((a, b) => b.skipPct - a.skipPct);
+    if (withSkips.length === 0) return '';
+    const highCount = withSkips.filter((r) => r.highFriction).length;
+
+    return `
+      <details class="bg-white border border-[#E4E7E4] rounded-[8px] px-4 py-3 text-xs group">
+        <summary class="cursor-pointer list-none flex flex-wrap items-center justify-between gap-2 select-none">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-filter-circle-xmark text-[#247B50]"></i>
+            <span class="font-semibold text-[#111613]">Question Completion &amp; Skip Funnel</span>
+            <span class="text-[#646E68] tabular-nums">&middot; ${withSkips.length} of ${rows.length} questions have skips</span>
+          </div>
+          <div class="flex items-center gap-2">
+            ${highCount > 0 ? `<span class="px-2 py-0.5 rounded-[4px] bg-[#FFFBEB] border border-[#FDE68A] text-[#92400E] text-[10.5px] font-semibold tabular-nums">${highCount} high-skip (&ge;25%)</span>` : ''}
+            <span class="text-[11px] text-[#247B50] font-medium">Inspect funnel &#9662;</span>
+          </div>
+        </summary>
+        <div class="mt-3 pt-3 border-t border-[#EFEFEF] space-y-2">
+          ${withSkips.slice(0, 8).map((r) => `
+            <div class="space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[#111613] truncate"><strong class="text-[#247B50]">${r.label}</strong> ${AEApp.escapeHtml(r.title)}</span>
+                <span class="tabular-nums shrink-0 ${r.highFriction ? 'text-[#C4242A] font-semibold' : 'text-[#525B56]'}">
+                  ${r.answeredPct}% answered &middot; ${r.skipped} skipped (${r.skipPct}%)
+                </span>
+              </div>
+              <div class="w-full h-1.5 rounded-full bg-[#FEE2E2] overflow-hidden">
+                <div class="h-full rounded-full ${r.highFriction ? 'bg-[#D97706]' : 'bg-[#247B50]'}" style="width: ${r.answeredPct}%;"></div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </details>
     `;
   },
 

@@ -540,6 +540,13 @@ window.AEBuilder = {
               ${this.previewMode ? 'Editor Canvas' : 'Live Simulator'}
             </button>
 
+            <!-- Print Blank Paper Form -->
+            <button onclick="AEReportExport.exportBlankFormPDF('${AEApp.escapeJs(survey.id)}')"
+              title="Export print-ready A4 blank paper questionnaire for client sign-off or offline backup"
+              class="h-8 px-2.5 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-print text-[#247B50]"></i> Blank Form
+            </button>
+
             <!-- Preview & Kiosk -->
             <button onclick="AEApp.switchStage('collect', '${survey.id}')"
               class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
@@ -842,6 +849,62 @@ window.AEBuilder = {
                   })()
             }
           </div>
+
+          <!-- Inline End Screen / Thank-You Note Card (directly on canvas) -->
+          ${(() => {
+            const branding = survey.branding || {};
+            const cw = survey.completionWorkflow || {};
+            return `
+              <div class="bg-[#F8FBF9] border border-[#247B50]/30 rounded-[8px] p-5 space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#247B50]/15">
+                  <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-[6px] bg-[#DCFAE5] text-[#247B50] flex items-center justify-center text-xs shrink-0">
+                      <i class="fa-solid fa-circle-check"></i>
+                    </span>
+                    <div>
+                      <div class="text-xs font-semibold text-[#04250E]">Survey Closing &amp; Thank-You Screen</div>
+                      <div class="text-[11px] text-[#525B56]">Shown automatically to respondents after they submit the final page.</div>
+                    </div>
+                  </div>
+                  <span class="px-2 py-0.5 rounded-[4px] bg-white border border-[#247B50]/25 text-[10.5px] font-medium text-[#247B50]">End Screen</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label for="ae_canvas_ty_title" class="block text-[11px] font-medium text-[#525B56] mb-1">Thank-You Title</label>
+                    <input id="ae_canvas_ty_title" type="text" maxlength="120"
+                      value="${AEApp.escapeAttr(branding.thankYouTitle || '')}"
+                      onchange="AEApp.updateSurveyBranding('thankYouTitle', this.value)"
+                      placeholder="e.g. Asante! Thank you for your feedback"
+                      class="w-full h-8 px-2.5 bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                  </div>
+                  <div>
+                    <label for="ae_canvas_ty_redirect" class="block text-[11px] font-medium text-[#525B56] mb-1">Optional Redirect URL (https://)</label>
+                    <input id="ae_canvas_ty_redirect" type="url" maxlength="300"
+                      value="${AEApp.escapeAttr(branding.redirectUrl || '')}"
+                      onchange="AEApp.updateSurveyBranding('redirectUrl', this.value)"
+                      placeholder="https://example.org/thank-you"
+                      class="w-full h-8 px-2.5 bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                  </div>
+                </div>
+                <div>
+                  <label for="ae_canvas_ty_msg" class="block text-[11px] font-medium text-[#525B56] mb-1">Closing / Thank-You Message</label>
+                  <textarea id="ae_canvas_ty_msg" rows="2" maxlength="400"
+                    onchange="AEApp.updateSurveyBranding('thankYouMessage', this.value)"
+                    placeholder="Write the thank-you note or next steps respondents see upon completion…"
+                    class="w-full px-2.5 py-1.5 bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613] focus:outline-none focus:border-[#247B50] resize-none">${AEApp.escapeHtml(branding.thankYouMessage || '')}</textarea>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
+                  <label class="inline-flex items-center gap-2 text-[#111613] font-medium cursor-pointer">
+                    <input type="checkbox" ${cw.autoRedirect ? 'checked' : ''}
+                      onchange="AEApp.updateSurveyCompletionWorkflow('autoRedirect', this.checked)"
+                      class="accent-[#247B50] w-3.5 h-3.5 rounded" />
+                    <span>Auto-redirect after 3s (when Redirect URL is set)</span>
+                  </label>
+                  <span class="text-[#646E68]">Need conditional messages or webhooks? Open the <strong>Theme</strong> sidebar tab.</span>
+                </div>
+              </div>
+            `;
+          })()}
         </section>
       </div>
       `

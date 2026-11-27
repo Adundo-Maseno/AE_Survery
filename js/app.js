@@ -1888,6 +1888,7 @@ window.AEApp = {
 
         <!-- 2. Survey Scope Selector -->
         ${surveys.length >= 2 && this.overviewSurveyFilter === 'all' ? this.renderPortfolioRollupCard(surveys, allResponses) : ''}
+        ${allResponses.length > 0 ? this.renderLiveFieldPulseCard(surveys, allResponses) : ''}
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div class="text-xs font-medium text-[#525B56]">
             ${
@@ -3382,8 +3383,69 @@ window.AEApp = {
     const modalRoot = document.getElementById('ae_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showAiSurveyModal && !this.showVersionHistoryModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
+    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showAiSurveyModal && !this.showImportCsvModal && !this.showVersionHistoryModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
       modalRoot.innerHTML = '';
+      return;
+    }
+
+    if (this.showImportCsvModal) {
+      const survey = window.aeStore ? window.aeStore.getSurveyById(this.importCsvSurveyId || this.activeSurveyId) : null;
+      const questions = survey && window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+      const headers = Array.isArray(this.importCsvHeaders) ? this.importCsvHeaders : [];
+      const rows = Array.isArray(this.importCsvRows) ? this.importCsvRows : [];
+      const mapping = this.importCsvMapping || {};
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this) AEApp.closeImportCsvModal()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-center justify-center p-4 overflow-y-auto">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-2xl w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
+            <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3 gap-3">
+              <div>
+                <h2 class="text-base font-semibold text-[#111613]">Import Historical / External CSV Responses</h2>
+                <p class="text-xs text-[#525B56] mt-0.5">Upload a CSV (from Kobo, Google Forms, or paper entry) into <strong>${this.escapeHtml(survey?.title || 'Survey')}</strong>.</p>
+              </div>
+              <button type="button" onclick="AEApp.closeImportCsvModal()" aria-label="Close" class="w-8 h-8 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <div class="space-y-3 text-xs">
+              <input type="file" accept=".csv,text/csv" onchange="AEApp.handleImportCsvFile(this)"
+                class="block w-full text-xs text-[#525B56] file:mr-3 file:py-1.5 file:px-3 file:rounded-[5px] file:border file:border-[#CFD5D0] file:text-xs file:font-semibold file:bg-white file:text-[#111613] cursor-pointer" />
+              ${
+                headers.length > 0
+                  ? `<div class="space-y-2">
+                      <div class="text-[11px] font-semibold text-[#247B50]">Loaded ${rows.length} rows &middot; Map CSV columns to survey questions:</div>
+                      <div class="max-h-56 overflow-y-auto border border-[#E4E7E4] rounded-[6px] divide-y divide-[#EFEFEF]">
+                        ${headers.map((h, idx) => `
+                          <div class="px-3 py-2 flex items-center justify-between gap-3 bg-white">
+                            <div class="min-w-0 flex-1">
+                              <div class="font-medium text-[#111613] truncate">${this.escapeHtml(h)}</div>
+                              <div class="text-[10.5px] text-[#646E68] truncate">Sample: ${this.escapeHtml(String((rows[0] && rows[0][idx]) || '—').slice(0, 50))}</div>
+                            </div>
+                            <select onchange="AEApp.setImportCsvMapping(${idx}, this.value)"
+                              class="h-7 px-2 bg-[#FAFBF9] border border-[#CFD5D0] rounded-[5px] text-[11px] text-[#111613] max-w-[230px] truncate">
+                              <option value="">Skip column</option>
+                              <option value="__enumerator__" ${mapping[idx] === '__enumerator__' ? 'selected' : ''}>Metadata: Enumerator</option>
+                              <option value="__submittedAt__" ${mapping[idx] === '__submittedAt__' ? 'selected' : ''}>Metadata: Date / Timestamp</option>
+                              ${questions.map((q, qIdx) => `<option value="${this.escapeAttr(q.id)}" ${mapping[idx] === q.id ? 'selected' : ''}>Q${qIdx + 1}: ${this.escapeHtml((q.title || q.id).slice(0, 36))}</option>`).join('')}
+                            </select>
+                          </div>
+                        `).join('')}
+                      </div>
+                    </div>`
+                  : `<div class="p-4 rounded-[6px] bg-[#FAFBF9] border border-dashed border-[#CFD5D0] text-[#646E68]">Choose a UTF-8 CSV file with column headers in Row 1. Matching question titles are auto-mapped automatically.</div>`
+              }
+            </div>
+            <div class="pt-2 border-t border-[#EFEFEF] flex items-center justify-end gap-2">
+              <button type="button" onclick="AEApp.closeImportCsvModal()" class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white text-xs text-[#525B56]">Cancel</button>
+              <button type="button" ${rows.length === 0 ? 'disabled' : ''} onclick="AEApp.commitImportedCsvResponses()"
+                class="h-8 px-4 rounded-[6px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold disabled:opacity-50 ae-press">
+                Import ${rows.length} ${rows.length === 1 ? 'Response' : 'Responses'}
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
       return;
     }
 
@@ -5555,6 +5617,275 @@ window.AEApp = {
       this.showToast('Portfolio Rollup CSV exported.', 'success');
     }
     return csv;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE: CSV RESPONSE IMPORTER & LIVE FIELD PULSE / CHANNEL ATTRIBUTION
+  // --------------------------------------------------------------------------
+  openImportCsvModal(surveyId) {
+    this.showImportCsvModal = true;
+    this.importCsvSurveyId = surveyId || this.activeSurveyId;
+    this.importCsvHeaders = [];
+    this.importCsvRows = [];
+    this.importCsvMapping = {};
+    this.render();
+  },
+
+  closeImportCsvModal() {
+    this.showImportCsvModal = false;
+    this.render();
+  },
+
+  parseCsvText(rawText) {
+    const rows = [];
+    let row = [];
+    let field = '';
+    let inQuotes = false;
+    const text = String(rawText || '').replace(/^\uFEFF/, '');
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inQuotes) {
+        if (ch === '"' && text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else if (ch === '"') {
+          inQuotes = false;
+        } else {
+          field += ch;
+        }
+      } else {
+        if (ch === '"') {
+          inQuotes = true;
+        } else if (ch === ',') {
+          row.push(field.trim());
+          field = '';
+        } else if (ch === '\n' || ch === '\r') {
+          if (ch === '\r' && text[i + 1] === '\n') i++;
+          row.push(field.trim());
+          if (row.some((c) => c !== '')) rows.push(row);
+          row = [];
+          field = '';
+        } else {
+          field += ch;
+        }
+      }
+    }
+    if (field !== '' || row.length > 0) {
+      row.push(field.trim());
+      if (row.some((c) => c !== '')) rows.push(row);
+    }
+    return rows;
+  },
+
+  loadCsvForImport(rawText, surveyId) {
+    const parsed = this.parseCsvText(rawText);
+    if (parsed.length < 2) return 0;
+    const headers = parsed[0];
+    const dataRows = parsed.slice(1, 1001);
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId || this.importCsvSurveyId || this.activeSurveyId) : null;
+    const questions = survey && window.aeStore ? window.aeStore.getQuestionsForSurvey(survey) : [];
+    const mapping = {};
+
+    headers.forEach((h, idx) => {
+      const hl = String(h || '').toLowerCase().trim();
+      if (/enumerator|interviewer|collector/i.test(hl)) {
+        mapping[idx] = '__enumerator__';
+        return;
+      }
+      if (/submitted|timestamp|date/i.test(hl)) {
+        mapping[idx] = '__submittedAt__';
+        return;
+      }
+      const match = questions.find((q) => {
+        const ql = String(q.title || '').toLowerCase().trim();
+        return hl === String(q.id || '').toLowerCase() || (ql && (hl === ql || hl.includes(ql.slice(0, 18)) || ql.includes(hl.slice(0, 18))));
+      });
+      if (match) mapping[idx] = match.id;
+    });
+
+    this.importCsvHeaders = headers;
+    this.importCsvRows = dataRows;
+    this.importCsvMapping = mapping;
+    return dataRows.length;
+  },
+
+  handleImportCsvFile(inputEl) {
+    const file = inputEl && inputEl.files && inputEl.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const count = this.loadCsvForImport(String(reader.result || ''), this.importCsvSurveyId);
+      if (count === 0) this.showToast('CSV must contain a header row and at least one data row.', 'warning');
+      this.render();
+    };
+    reader.readAsText(file);
+  },
+
+  setImportCsvMapping(colIdx, qId) {
+    this.importCsvMapping = this.importCsvMapping || {};
+    if (qId) this.importCsvMapping[colIdx] = qId;
+    else delete this.importCsvMapping[colIdx];
+  },
+
+  commitImportedCsvResponses() {
+    const surveyId = this.importCsvSurveyId || this.activeSurveyId;
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
+    if (!survey || !Array.isArray(this.importCsvRows) || this.importCsvRows.length === 0) return 0;
+    const mapping = this.importCsvMapping || {};
+    const cols = window.aeStore.getCollectorsForSurvey ? window.aeStore.getCollectorsForSurvey(survey.id) : [];
+    const defaultColId = cols[0] ? cols[0].id : 'col_csv_import';
+    let imported = 0;
+
+    this.importCsvRows.forEach((row, rIdx) => {
+      const answers = {};
+      let enumerator = 'CSV Import';
+      let submittedAt = new Date().toISOString();
+      Object.keys(mapping).forEach((colIdxStr) => {
+        const target = mapping[colIdxStr];
+        const val = row[Number(colIdxStr)];
+        if (val === undefined || val === '') return;
+        if (target === '__enumerator__') enumerator = val;
+        else if (target === '__submittedAt__') {
+          const parsedDate = new Date(val);
+          if (!isNaN(parsedDate.getTime())) submittedAt = parsedDate.toISOString();
+        } else {
+          answers[target] = val;
+        }
+      });
+      if (Object.keys(answers).length === 0) return;
+      const resp = {
+        id: 'resp_csv_' + Date.now().toString(36) + '_' + rIdx,
+        clientResponseId: 'resp_csv_' + Date.now().toString(36) + '_' + rIdx,
+        surveyId: survey.id,
+        surveyTitle: survey.title,
+        collectorId: defaultColId,
+        enumerator,
+        submittedAt,
+        startedAt: submittedAt,
+        durationSeconds: 0,
+        syncStatus: 'queued',
+        reviewStatus: 'pending_review',
+        utm: { source: 'csv_import' },
+        answers
+      };
+      if (typeof window.aeStore.saveResponse === 'function') {
+        window.aeStore.saveResponse(resp, true);
+      } else if (Array.isArray(window.aeStore.responses)) {
+        window.aeStore.responses.unshift(resp);
+      }
+      imported++;
+    });
+
+    this.showImportCsvModal = false;
+    this.importCsvHeaders = [];
+    this.importCsvRows = [];
+    this.showToast(`Imported ${imported} ${imported === 1 ? 'response' : 'responses'} into ${survey.title}.`, 'success');
+    this.render();
+    return imported;
+  },
+
+  toggleLivePulseAutoRefresh() {
+    this.livePulseAutoRefresh = !this.livePulseAutoRefresh;
+    if (this._livePulseTimer) {
+      clearInterval(this._livePulseTimer);
+      this._livePulseTimer = null;
+    }
+    if (this.livePulseAutoRefresh) {
+      this._livePulseTimer = setInterval(() => {
+        if (this.currentStage === 'dashboard' && typeof this.triggerPullFromSheets === 'function' && !this.isSyncing) {
+          this.triggerPullFromSheets();
+        }
+      }, 60000);
+      this.showToast('Live Field Pulse auto-refresh enabled (every 60s).', 'success');
+    } else {
+      this.showToast('Live Field Pulse auto-refresh paused.', 'info');
+    }
+    this.render();
+  },
+
+  computeChannelAttribution(responses) {
+    const counts = {};
+    (responses || []).forEach((r) => {
+      let ch = (r && r.utm && r.utm.source) ? String(r.utm.source).toLowerCase().trim() : '';
+      if (!ch) {
+        if (r && r.inviteToken) ch = 'invite';
+        else if (r && (r.submittedByUserRole === 'respondent' || String(r.enumerator || '').toLowerCase().includes('self-administered'))) ch = 'direct_link';
+        else ch = 'field_app';
+      }
+      counts[ch] = (counts[ch] || 0) + 1;
+    });
+    const total = Math.max(1, (responses || []).length);
+    const labels = {
+      whatsapp: 'WhatsApp',
+      sms: 'SMS',
+      email: 'Email',
+      poster: 'QR Poster',
+      invite: 'Invite Link',
+      csv_import: 'CSV Import',
+      direct_link: 'Direct Link',
+      field_app: 'Field App'
+    };
+    return Object.entries(counts)
+      .map(([key, count]) => ({ key, label: labels[key] || key, count, pct: Math.round((count / total) * 100) }))
+      .sort((a, b) => b.count - a.count);
+  },
+
+  renderLiveFieldPulseCard(surveys, allResponses) {
+    const sorted = [...(allResponses || [])].sort((a, b) => new Date(b.submittedAt || 0).getTime() - new Date(a.submittedAt || 0).getTime());
+    const recent = sorted.slice(0, 6);
+    const channels = this.computeChannelAttribution(allResponses);
+    const surveyMap = Object.fromEntries((surveys || []).map((s) => [s.id, s.title]));
+
+    const timeAgo = (iso) => {
+      const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso || 0).getTime()) / 1000));
+      if (diffSec < 60) return `${diffSec}s ago`;
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      return `${Math.floor(diffSec / 86400)}d ago`;
+    };
+
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 sm:p-5 space-y-3.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#EFEFEF]">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full ${this.livePulseAutoRefresh ? 'bg-[#247B50] animate-pulse' : 'bg-[#94A3B8]'}"></span>
+            <h2 class="text-sm font-semibold text-[#111613]">Live Field Pulse &amp; Channel Attribution</h2>
+          </div>
+          <button type="button" onclick="AEApp.toggleLivePulseAutoRefresh()"
+            class="h-7 px-2.5 rounded-[5px] border text-xs font-medium inline-flex items-center gap-1.5 ae-press ${
+              this.livePulseAutoRefresh ? 'border-[#247B50] bg-[#DCFAE5] text-[#04250E] font-semibold' : 'border-[#CFD5D0] bg-white text-[#525B56] hover:text-[#111613]'
+            }">
+            <i class="fa-solid fa-arrows-rotate text-[10px]"></i>
+            <span>${this.livePulseAutoRefresh ? 'Auto-Refresh ON (60s)' : 'Auto-Refresh (60s)'}</span>
+          </button>
+        </div>
+
+        <!-- Channel Attribution Pills -->
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-[11px] font-medium text-[#646E68]">Channels:</span>
+          ${channels.map((ch) => `
+            <span class="px-2 py-0.5 rounded-[4px] bg-[#FAFBF9] border border-[#E4E7E4] text-[11px] text-[#111613] tabular-nums">
+              <strong>${this.escapeHtml(ch.label)}</strong> ${ch.count} (${ch.pct}%)
+            </span>
+          `).join('')}
+        </div>
+
+        <!-- Recent Activity Feed -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          ${recent.map((r) => `
+            <div class="px-3 py-2 rounded-[6px] bg-[#FAFBF9] border border-[#EFEFEF] flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div class="font-medium text-[#111613] truncate">${this.escapeHtml(r.surveyTitle || surveyMap[r.surveyId] || 'Survey')}</div>
+                <div class="text-[11px] text-[#646E68] truncate">${this.escapeHtml(r.enumerator || 'Respondent')} &middot; ${timeAgo(r.submittedAt)}</div>
+              </div>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${r.syncStatus === 'synced' ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'}">
+                ${r.syncStatus === 'synced' ? 'Synced' : 'Queued'}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
   },
 
   updateSurveySchedule(field, value) {

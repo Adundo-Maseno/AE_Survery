@@ -3,7 +3,7 @@
  * Ensures seamless PWA launch on mobile and desktop, both online and completely offline.
  */
 
-const CACHE_NAME = 'ae-survey-prod-v3.77';
+const CACHE_NAME = 'ae-survey-prod-v3.78';
 const CODE_ASSET_TIMEOUT_MS = 2000;
 const SW_IDB_CANDIDATES = ['AESurveyMonkeyDB', 'AESurveyDB'];
 
