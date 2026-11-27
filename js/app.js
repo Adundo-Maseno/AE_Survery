@@ -1071,8 +1071,63 @@ window.AEApp = {
       return;
     }
 
-    // Privacy guard: never allow Individual or Forensics tabs in public report mode
-    if (window.AEAnalytics && (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics')) {
+    // Feature 1: Live Report Expiry & Passcode Gate
+    const ra = survey.reportAccess || {};
+    if (ra.expiresAt) {
+      const expMs = new Date(`${ra.expiresAt}T23:59:59`).getTime();
+      if (Number.isFinite(expMs) && Date.now() > expMs) {
+        main.innerHTML = `
+          <div class="py-16 px-4 flex flex-col items-center justify-center min-h-[60vh]">
+            <div class="max-w-md w-full ae-card rounded-[12px] p-6 text-center space-y-3">
+              <div class="w-11 h-11 rounded-full bg-[#FFEDEA] text-[#C4242A] mx-auto flex items-center justify-center text-base">
+                <i class="fa-solid fa-calendar-xmark"></i>
+              </div>
+              <h2 class="text-base font-semibold text-[#111613]">This shared report link has expired</h2>
+              <p class="text-xs text-[#525B56]">Access to <strong>${this.escapeHtml(survey.title)}</strong> ended on ${this.escapeHtml(ra.expiresAt)}. Contact the survey owner for an updated link.</p>
+            </div>
+          </div>
+        `;
+        return;
+      }
+    }
+
+    if (ra.passcode && String(ra.passcode).trim()) {
+      let unlocked = false;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          unlocked = sessionStorage.getItem(`ae_report_unlock_${survey.id}`) === String(ra.passcode).trim();
+        }
+      } catch (e) {}
+      if (!unlocked) {
+        const safeSid = this.escapeJs(survey.id);
+        main.innerHTML = `
+          <div class="py-16 px-4 flex flex-col items-center justify-center min-h-[60vh]">
+            <div class="max-w-sm w-full ae-card rounded-[12px] p-6 space-y-4">
+              <div class="text-center space-y-1.5">
+                <div class="w-10 h-10 rounded-full bg-[#F3FBF6] text-[#247B50] mx-auto flex items-center justify-center text-base">
+                  <i class="fa-solid fa-lock"></i>
+                </div>
+                <h2 class="text-base font-semibold text-[#111613]">Passcode Required</h2>
+                <p class="text-xs text-[#525B56]">Enter the stakeholder passcode to view <strong>${this.escapeHtml(survey.title)}</strong>.</p>
+              </div>
+              <form onsubmit="event.preventDefault(); AEApp.unlockPublicReport('${safeSid}', document.getElementById('ae_report_pass_input')?.value)" class="space-y-3">
+                <input id="ae_report_pass_input" type="password" required autocomplete="off"
+                  placeholder="Enter report passcode"
+                  class="w-full h-9 px-3 text-xs bg-white border border-[#CFD5D0] rounded-[6px] text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                <button type="submit"
+                  class="w-full h-9 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold ae-press">
+                  Unlock Report
+                </button>
+              </form>
+            </div>
+          </div>
+        `;
+        return;
+      }
+    }
+
+    // Privacy guard: never allow Individual, Forensics, or Field Ops tabs in public report mode
+    if (window.AEAnalytics && (window.AEAnalytics.activeTab === 'individual' || window.AEAnalytics.activeTab === 'forensics' || window.AEAnalytics.activeTab === 'field_ops')) {
       window.AEAnalytics.activeTab = 'summary';
     }
 
@@ -1832,6 +1887,7 @@ window.AEApp = {
         }
 
         <!-- 2. Survey Scope Selector -->
+        ${surveys.length >= 2 && this.overviewSurveyFilter === 'all' ? this.renderPortfolioRollupCard(surveys, allResponses) : ''}
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           <div class="text-xs font-medium text-[#525B56]">
             ${
@@ -5276,6 +5332,231 @@ window.AEApp = {
     reader.readAsDataURL(file);
   },
 
+  unlockPublicReport(surveyId, enteredPasscode) {
+    const survey = window.aeStore ? window.aeStore.getSurveyById(surveyId) : null;
+    const expected = String(survey?.reportAccess?.passcode || '').trim();
+    if (!expected || String(enteredPasscode || '').trim() === expected) {
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem(`ae_report_unlock_${surveyId}`, expected);
+        }
+      } catch (e) {}
+      this.render();
+      return true;
+    }
+    this.showToast('Incorrect report passcode. Please try again.', 'error');
+    return false;
+  },
+
+  updateSurveyReportAccess(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.reportAccess = s.reportAccess || {};
+    if (field === 'hideOpenEnded' || field === 'hideGallery') {
+      s.reportAccess[field] = Boolean(value);
+    } else {
+      s.reportAccess[field] = String(value ?? '').trim();
+    }
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateSurveyScoring(field, value) {
+    const s = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!s) return;
+    s.scoring = s.scoring || {
+      enabled: false,
+      showScoreToRespondent: true,
+      tiers: [
+        { label: 'Gold / Pass', minPct: 80 },
+        { label: 'Silver / Moderate', minPct: 50 },
+        { label: 'Needs Support', minPct: 0 }
+      ]
+    };
+    s.scoring[field] = Boolean(value);
+    s.updatedAt = new Date().toISOString();
+    window.aeStore.upsertSurvey(s);
+    this.render();
+  },
+
+  updateQuestionOptionPoints(questionId, optLabel, ptsVal) {
+    const ctx = this.findQuestionContext(questionId);
+    if (!ctx || !ctx.question) return;
+    ctx.question.optionPoints = ctx.question.optionPoints || {};
+    const n = Number(ptsVal);
+    if (ptsVal !== '' && Number.isFinite(n) && n >= 0) {
+      ctx.question.optionPoints[optLabel] = n;
+    } else {
+      delete ctx.question.optionPoints[optLabel];
+    }
+    window.aeStore.upsertSurvey(ctx.survey);
+    this.render();
+  },
+
+  generateBatchInvitesFromCsv(surveyId, rawCsv) {
+    const s = window.aeStore.getSurveyById(surveyId || this.activeSurveyId);
+    if (!s) return [];
+    const lines = String(rawCsv || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      this.showToast('Paste at least one recipient line (Name, Phone/Email, Segment).', 'warning');
+      return [];
+    }
+    s.accessControl = s.accessControl || { limitOnePerDevice: false, requireInviteToken: false, inviteTokens: [], inviteContacts: [] };
+    s.accessControl.inviteTokens = Array.isArray(s.accessControl.inviteTokens) ? s.accessControl.inviteTokens : [];
+    s.accessControl.inviteContacts = Array.isArray(s.accessControl.inviteContacts) ? s.accessControl.inviteContacts : [];
+
+    const created = [];
+    const nowIso = new Date().toISOString();
+    const base = (typeof window !== 'undefined' && window.location)
+      ? `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}field.html`
+      : 'https://ae-survey.pages.dev/field.html';
+
+    lines.forEach((line, idx) => {
+      const parts = line.split(',').map((p) => p.trim());
+      const name = parts[0] || `Recipient ${idx + 1}`;
+      if (/^name$/i.test(name) && idx === 0) return; // skip optional CSV header row
+      const contact = parts[1] || '';
+      const segment = parts[2] || '';
+      const token = 'inv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+      const url = `${base}?survey=${encodeURIComponent(s.id)}&mode=respondent&invite=${encodeURIComponent(token)}&utm_source=invite${segment ? `&utm_campaign=${encodeURIComponent(segment)}` : ''}`;
+      s.accessControl.inviteTokens.push({ token, used: false, createdAt: nowIso, recipientName: name });
+      const rec = { id: token, name, contact, segment, token, url, status: 'pending', createdAt: nowIso };
+      s.accessControl.inviteContacts.unshift(rec);
+      created.push(rec);
+    });
+
+    window.aeStore.upsertSurvey(s, true);
+    this.showToast(`Generated ${created.length} personalized single-use invite ${created.length === 1 ? 'link' : 'links'}.`, 'success');
+    this.render();
+    return created;
+  },
+
+  exportBatchInvitesCsv(surveyId) {
+    const s = window.aeStore.getSurveyById(surveyId || this.activeSurveyId);
+    const contacts = (s && s.accessControl && Array.isArray(s.accessControl.inviteContacts)) ? s.accessControl.inviteContacts : [];
+    const allResps = window.aeStore ? window.aeStore.getResponsesForSurvey(s.id) : [];
+    const usedTokens = new Set(allResps.map((r) => r && r.inviteToken).filter(Boolean));
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = ['Name,Contact,Segment,Status,Personalized Link'];
+    contacts.forEach((c) => {
+      const status = (c.status === 'completed' || usedTokens.has(c.token)) ? 'Completed' : 'Pending';
+      rows.push([esc(c.name), esc(c.contact), esc(c.segment), esc(status), esc(c.url)].join(','));
+    });
+    const csv = rows.join('\n');
+    if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof document !== 'undefined' && typeof document.createElement === 'function') {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `AE_Invites_${s.id}_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      this.showToast('Personalized invite links CSV exported.', 'success');
+    }
+    return csv;
+  },
+
+  computePortfolioRollup(surveys, allResponses) {
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    return (surveys || []).map((s) => {
+      const sResps = (allResponses || []).filter((r) => r && r.surveyId === s.id);
+      const total = sResps.length;
+      const last7d = sResps.filter((r) => new Date(r.submittedAt || 0).getTime() >= sevenDaysAgo).length;
+      const synced = sResps.filter((r) => r.syncStatus === 'synced' || r.synced === true).length;
+      const approved = sResps.filter((r) => r.reviewStatus === 'approved').length;
+      const syncPct = total > 0 ? Math.round((synced / total) * 100) : 100;
+      const approvedPct = total > 0 ? Math.round((approved / total) * 100) : 0;
+      const quota = s.schedule && s.schedule.maxResponses ? Number(s.schedule.maxResponses) : null;
+      const quotaPct = quota ? Math.min(100, Math.round((total / quota) * 100)) : null;
+
+      // Primary rating / NPS average if survey has one
+      const qs = window.aeStore && window.aeStore.getQuestionsForSurvey ? window.aeStore.getQuestionsForSurvey(s) : [];
+      const ratingQ = qs.find((q) => q.type === 'nps' || q.type === 'star_rating');
+      let avgRating = '—';
+      if (ratingQ && total > 0) {
+        const nums = sResps.map((r) => Number(r.answers?.[ratingQ.id])).filter((n) => Number.isFinite(n));
+        if (nums.length > 0) {
+          avgRating = `${(nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1)}${ratingQ.type === 'star_rating' ? '/5' : '/10'}`;
+        }
+      }
+
+      return { id: s.id, title: s.title, status: s.status || 'Active', total, last7d, syncPct, approvedPct, quota, quotaPct, avgRating };
+    });
+  },
+
+  renderPortfolioRollupCard(surveys, allResponses) {
+    const rows = this.computePortfolioRollup(surveys, allResponses);
+    if (rows.length < 2) return '';
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 sm:p-5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#EFEFEF]">
+          <div>
+            <h2 class="text-sm font-semibold text-[#111613] flex items-center gap-2">
+              <i class="fa-solid fa-table-columns text-[#247B50]"></i> Multi-Survey Portfolio Executive Rollup
+            </h2>
+            <p class="text-[11px] text-[#525B56]">Side-by-side comparison across ${rows.length} studies — pace, sync health, supervisor sign-off, and quotas.</p>
+          </div>
+          <button type="button" onclick="AEApp.exportPortfolioRollupCSV()"
+            class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#111613] inline-flex items-center gap-1.5 ae-press">
+            <i class="fa-solid fa-file-csv text-[#247B50] text-[11px]"></i> Export Portfolio CSV
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-[#F8F9F8] text-[#525B56] border-b border-[#E4E7E4]">
+              <tr>
+                <th class="py-2 px-3 font-semibold">Survey</th>
+                <th class="py-2 px-3 font-semibold text-right">Total</th>
+                <th class="py-2 px-3 font-semibold text-right">Last 7d</th>
+                <th class="py-2 px-3 font-semibold text-right">Synced</th>
+                <th class="py-2 px-3 font-semibold text-right">Approved</th>
+                <th class="py-2 px-3 font-semibold text-right">Quota</th>
+                <th class="py-2 px-3 font-semibold text-right">Avg Score</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#EFEFEF]">
+              ${rows.map((r) => `
+                <tr class="hover:bg-[#FAFBF9]">
+                  <td class="py-2 px-3 font-medium text-[#111613]">
+                    <button type="button" onclick="AEApp.switchStage('analyze', '${this.escapeJs(r.id)}')" class="hover:text-[#247B50] hover:underline text-left truncate max-w-[240px] block">
+                      ${this.escapeHtml(r.title)}
+                    </button>
+                  </td>
+                  <td class="py-2 px-3 text-right font-semibold tabular-nums text-[#111613]">${r.total}</td>
+                  <td class="py-2 px-3 text-right tabular-nums text-[#247B50] font-medium">+${r.last7d}</td>
+                  <td class="py-2 px-3 text-right tabular-nums text-[#525B56]">${r.syncPct}%</td>
+                  <td class="py-2 px-3 text-right tabular-nums text-[#525B56]">${r.approvedPct}%</td>
+                  <td class="py-2 px-3 text-right tabular-nums text-[#525B56]">${r.quota ? `${r.quotaPct}% (${r.total}/${r.quota})` : '—'}</td>
+                  <td class="py-2 px-3 text-right font-semibold tabular-nums text-[#111613]">${this.escapeHtml(r.avgRating)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  },
+
+  exportPortfolioRollupCSV() {
+    const surveys = window.aeStore ? window.aeStore.surveys || [] : [];
+    const allResponses = window.aeStore ? window.aeStore.responses || [] : [];
+    const rows = this.computePortfolioRollup(surveys, allResponses);
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = ['Survey,Status,Total Responses,Last 7 Days,Sync %,Approved %,Quota Fill,Avg Score'];
+    rows.forEach((r) => {
+      lines.push([esc(r.title), esc(r.status), r.total, r.last7d, r.syncPct + '%', r.approvedPct + '%', esc(r.quota ? `${r.quotaPct}% (${r.total}/${r.quota})` : 'Unlimited'), esc(r.avgRating)].join(','));
+    });
+    const csv = lines.join('\n');
+    if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof document !== 'undefined' && typeof document.createElement === 'function') {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `AE_Portfolio_Rollup_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      this.showToast('Portfolio Rollup CSV exported.', 'success');
+    }
+    return csv;
+  },
+
   updateSurveySchedule(field, value) {
     const s = window.aeStore.getSurveyById(this.activeSurveyId);
     if (!s) return;
@@ -6717,10 +6998,14 @@ window.AEApp = {
       window.AECollector.initRunnerForSurvey(survey, true);
       const gpsLabel = gpsMeta ? `${gpsMeta.lat}, ${gpsMeta.lng}${gpsMeta.label ? ' (' + gpsMeta.label + ')' : ''}` : 'Standard Field Plot';
       const receiptText = `AE-RECEIPT: ${saved.id} | Survey: ${survey.title} | Enumerator: ${saved.enumerator} | GPS: ${gpsLabel} | Timestamp: ${saved.submittedAt}`;
+      const scoreResult = (window.AEAnalytics && typeof window.AEAnalytics.computeResponseScore === 'function')
+        ? window.AEAnalytics.computeResponseScore(survey, saved.answers || {})
+        : null;
       window.AECollector.justSubmittedBanner = {
         title: `Field Enumeration Receipt Verified (${window.aeStore.isEffectivelyOnline() ? 'Synced to Sheets' : 'Saved to Offline Vault'})`,
         subtitle: `Enumerator ${saved.enumerator} · Ready for next respondent interview.`,
         submittedAnswers: saved.answers || {},
+        scoreResult,
         receiptText,
         receiptMeta: {
           id: saved.id,

@@ -2735,6 +2735,9 @@ window.AEAnalytics = {
         <!-- 2c. Stratified Sampling Quotas Progress (when configured on survey) -->
         ${this.renderStratifiedQuotasCard(survey, allResponses)}
 
+        <!-- 2d. Scoring & Readiness Tier Distribution (when Scoring Mode enabled) -->
+        ${this.renderScoringSummaryCard(survey, filtered)}
+
         <!-- 3. Automated Executive Survey Insights Callout -->
         ${this.renderAutomatedInsightsBanner(survey, filtered)}
 
@@ -2743,7 +2746,7 @@ window.AEAnalytics = {
 
         <!-- 5. Enterprise Analytics Sub-View Tabs & Content Canvas -->
         <div class="space-y-5">
-          ${this.renderSubViewNavigation(filtered.length)}
+          ${this.renderSubViewNavigation(filtered.length, survey)}
 
           <!-- Active Tab Content Area -->
           <div class="transition-opacity duration-200">
@@ -3297,7 +3300,7 @@ window.AEAnalytics = {
   // --------------------------------------------------------------------------
   // SUB-VIEW NAVIGATION TABS (12 ENTERPRISE SURVEY MODES)
   // --------------------------------------------------------------------------
-  renderSubViewNavigation(filteredCount) {
+  renderSubViewNavigation(filteredCount, survey = null) {
     const tabGroups = [
       {
         name: 'Overview',
@@ -3333,11 +3336,17 @@ window.AEAnalytics = {
     ];
 
     const isPublicReportMode = Boolean(window.AEApp && window.AEApp.isPublicReportMode);
+    const reportAccess = (survey && survey.reportAccess) || {};
     const filteredTabGroups = tabGroups
       .map((group) => ({
         ...group,
         tabs: isPublicReportMode
-          ? group.tabs.filter((t) => t.id !== 'individual' && t.id !== 'forensics' && t.id !== 'field_ops')
+          ? group.tabs.filter((t) => {
+              if (t.id === 'individual' || t.id === 'forensics' || t.id === 'field_ops') return false;
+              if (reportAccess.hideOpenEnded && t.id === 'text') return false;
+              if (reportAccess.hideGallery && t.id === 'gallery') return false;
+              return true;
+            })
           : group.tabs
       }))
       .filter((group) => group.tabs.length > 0);
@@ -8721,6 +8730,7 @@ window.AEAnalytics = {
 
     return `
       <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-6 space-y-6">
+        ${this.renderDataHygieneCard(survey, responses)}
         <!-- Header -->
         <div class="border-b border-[#EFEFEF] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -11084,6 +11094,295 @@ window.AEAnalytics = {
               </div>
             `)
             .join('')}
+        </div>
+      </div>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE: DATA HYGIENE WORKBENCH & SURVEY SCORING / READINESS TIERS
+  // --------------------------------------------------------------------------
+  computeDataHygiene(survey, responses) {
+    const list = Array.isArray(responses) ? responses : [];
+    const nearDuplicates = [];
+    const numericOutliers = [];
+    const gibberishTexts = [];
+
+    // 1. Near-Duplicate Detection (same enumerator + identical core answers within 15 min)
+    const seenByEnum = new Map();
+    list.forEach((r) => {
+      const enumKey = String(r.enumerator || 'anon').toLowerCase();
+      const ansSig = JSON.stringify(r.answers || {});
+      const subMs = new Date(r.submittedAt || 0).getTime();
+      const prevList = seenByEnum.get(enumKey) || [];
+      const dupMatch = prevList.find((p) => p.ansSig === ansSig || (Math.abs(subMs - p.subMs) <= 15 * 60000 && p.ansSig.slice(0, 60) === ansSig.slice(0, 60) && ansSig.length > 25));
+      if (dupMatch) {
+        nearDuplicates.push({
+          responseId: r.id || r.clientResponseId,
+          enumerator: r.enumerator || 'Enumerator',
+          reason: `Near-duplicate of ${dupMatch.id} (same enumerator & matching answers)`
+        });
+      }
+      prevList.push({ id: r.id || r.clientResponseId, ansSig, subMs });
+      seenByEnum.set(enumKey, prevList);
+    });
+
+    // 2. Statistical Numeric Outliers (> 3x IQR extreme Tukey fence)
+    const numQs = this.getNumericQuestions(survey);
+    numQs.forEach((q) => {
+      const pairs = list
+        .map((r) => ({ r, val: Number(r?.answers?.[q.id]) }))
+        .filter((x) => Number.isFinite(x.val));
+      if (pairs.length < 5) return;
+      const sorted = pairs.map((x) => x.val).sort((a, b) => a - b);
+      const q1 = sorted[Math.floor(sorted.length * 0.25)];
+      const q3 = sorted[Math.floor(sorted.length * 0.75)];
+      const iqr = q3 - q1;
+      if (iqr <= 0) return;
+      const lo = q1 - 3 * iqr;
+      const hi = q3 + 3 * iqr;
+      pairs.forEach(({ r, val }) => {
+        if (val < lo || val > hi) {
+          numericOutliers.push({
+            responseId: r.id || r.clientResponseId,
+            enumerator: r.enumerator || 'Enumerator',
+            questionTitle: this.cleanQuestionTitle(q, {}, survey).slice(0, 40),
+            value: val,
+            reason: `Extreme outlier (${val}) on "${this.cleanQuestionTitle(q, {}, survey).slice(0, 35)}" (expected ${Math.round(lo)}–${Math.round(hi)})`
+          });
+        }
+      });
+    });
+
+    // 3. Low-Signal / Gibberish Open-Ended Entries
+    const textQs = (window.aeStore && window.aeStore.getQuestionsForSurvey ? window.aeStore.getQuestionsForSurvey(survey) : [])
+      .filter((q) => this.isOpenEndedTextQuestion(q, survey));
+    const gibberishRe = /^(n\/?a|none|nil|null|test|testing|asdf+|qwerty|xxx+|\.+|-+|0+|(.)\2{3,})$/i;
+    list.forEach((r) => {
+      for (const q of textQs) {
+        const raw = r?.answers?.[q.id];
+        const txt = typeof raw === 'string' ? raw.trim() : '';
+        if (!txt) continue;
+        if (gibberishRe.test(txt) || (txt.length >= 4 && /^[^a-zA-Z0-9\u00c0-\u024f]+$/.test(txt))) {
+          gibberishTexts.push({
+            responseId: r.id || r.clientResponseId,
+            enumerator: r.enumerator || 'Enumerator',
+            sample: txt.slice(0, 40),
+            reason: `Low-signal text "${txt.slice(0, 30)}" on "${this.cleanQuestionTitle(q, {}, survey).slice(0, 35)}"`
+          });
+          break;
+        }
+      }
+    });
+
+    return {
+      nearDuplicates,
+      numericOutliers,
+      gibberishTexts,
+      totalIssues: nearDuplicates.length + numericOutliers.length + gibberishTexts.length
+    };
+  },
+
+  bulkFlagHygieneRecords(surveyId, category) {
+    const survey = window.aeStore && window.aeStore.getSurveyById ? window.aeStore.getSurveyById(surveyId) : null;
+    if (!survey) return 0;
+    const responses = this.getFilteredResponses(surveyId);
+    const hygiene = this.computeDataHygiene(survey, responses);
+    const pool = category === 'duplicates'
+      ? hygiene.nearDuplicates
+      : category === 'outliers'
+      ? hygiene.numericOutliers
+      : category === 'gibberish'
+      ? hygiene.gibberishTexts
+      : [...hygiene.nearDuplicates, ...hygiene.numericOutliers, ...hygiene.gibberishTexts];
+
+    const cur = window.AEApp && typeof window.AEApp.getCurrentUser === 'function' ? window.AEApp.getCurrentUser() : null;
+    const reviewer = cur ? `${cur.id} (${cur.fullName})` : 'Data Hygiene Audit';
+    const seen = new Set();
+    let flagged = 0;
+
+    pool.forEach((item) => {
+      if (!item.responseId || seen.has(item.responseId)) return;
+      seen.add(item.responseId);
+      if (window.aeStore && typeof window.aeStore.flagResponse === 'function') {
+        window.aeStore.flagResponse(item.responseId, reviewer, item.reason);
+      }
+      if (window.AEApp && typeof window.AEApp.syncResponseReviewToCloud === 'function') {
+        window.AEApp.syncResponseReviewToCloud(item.responseId, 'flagged', reviewer, item.reason);
+      }
+      flagged++;
+    });
+
+    if (window.AEApp && typeof window.AEApp.showToast === 'function') {
+      window.AEApp.showToast(
+        flagged > 0 ? `Flagged ${flagged} ${flagged === 1 ? 'record' : 'records'} & synced to Sheets.` : 'No new records to flag.',
+        flagged > 0 ? 'warning' : 'info'
+      );
+    }
+    if (window.AEApp && typeof window.AEApp.render === 'function') window.AEApp.render();
+    return flagged;
+  },
+
+  renderDataHygieneCard(survey, responses) {
+    const h = this.computeDataHygiene(survey, responses);
+    const safeSid = AEApp.escapeJs(survey.id);
+    const allItems = [
+      ...h.nearDuplicates.map((x) => ({ ...x, tag: 'Duplicate' })),
+      ...h.numericOutliers.map((x) => ({ ...x, tag: 'Outlier' })),
+      ...h.gibberishTexts.map((x) => ({ ...x, tag: 'Low-Signal' }))
+    ];
+
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#EFEFEF]">
+          <div>
+            <h3 class="text-sm font-semibold text-[#111613] flex items-center gap-2">
+              <i class="fa-solid fa-broom text-[#247B50]"></i> Data Cleaning &amp; Hygiene Workbench
+            </h3>
+            <p class="text-xs text-[#525B56] mt-0.5">Automated detection of near-duplicates, 3&times; IQR numeric outliers, and gibberish text entries.</p>
+          </div>
+          ${
+            h.totalIssues > 0
+              ? `<button type="button" onclick="AEAnalytics.bulkFlagHygieneRecords('${safeSid}', 'all')"
+                  class="h-8 px-3 rounded-[6px] bg-[#C4242A] hover:bg-[#A31B20] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                  <i class="fa-solid fa-flag text-[11px]"></i> Bulk Flag All (${h.totalIssues})
+                </button>`
+              : `<span class="px-2.5 py-1 rounded-[5px] bg-[#DCFAE5] text-[#04250E] text-xs font-semibold">Clean dataset &middot; 0 anomalies</span>`
+          }
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div class="p-3 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-center justify-between">
+            <div>
+              <div class="text-[#646E68]">Near-Duplicates</div>
+              <div class="text-base font-semibold text-[#111613] tabular-nums">${h.nearDuplicates.length}</div>
+            </div>
+            ${h.nearDuplicates.length > 0 ? `<button type="button" onclick="AEAnalytics.bulkFlagHygieneRecords('${safeSid}', 'duplicates')" class="h-7 px-2 rounded border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] text-[11px] font-medium">Flag</button>` : ''}
+          </div>
+          <div class="p-3 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-center justify-between">
+            <div>
+              <div class="text-[#646E68]">Numeric Outliers (3&times; IQR)</div>
+              <div class="text-base font-semibold text-[#111613] tabular-nums">${h.numericOutliers.length}</div>
+            </div>
+            ${h.numericOutliers.length > 0 ? `<button type="button" onclick="AEAnalytics.bulkFlagHygieneRecords('${safeSid}', 'outliers')" class="h-7 px-2 rounded border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] text-[11px] font-medium">Flag</button>` : ''}
+          </div>
+          <div class="p-3 rounded-[6px] border border-[#EFEFEF] bg-[#FAFBF9] flex items-center justify-between">
+            <div>
+              <div class="text-[#646E68]">Low-Signal / Gibberish Text</div>
+              <div class="text-base font-semibold text-[#111613] tabular-nums">${h.gibberishTexts.length}</div>
+            </div>
+            ${h.gibberishTexts.length > 0 ? `<button type="button" onclick="AEAnalytics.bulkFlagHygieneRecords('${safeSid}', 'gibberish')" class="h-7 px-2 rounded border border-[#CFD5D0] bg-white hover:bg-[#FFEDEA] text-[11px] font-medium">Flag</button>` : ''}
+          </div>
+        </div>
+
+        ${
+          allItems.length > 0
+            ? `<div class="space-y-1.5 max-h-48 overflow-y-auto pr-1 text-xs">
+                ${allItems.slice(0, 12).map((it) => `
+                  <div class="p-2 rounded-[5px] bg-[#FFF7F6] border border-[#F5C2C0]/60 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                      <span class="px-1.5 py-0.5 rounded bg-[#FEE2E2] text-[#831C1E] text-[10px] font-semibold mr-1.5">${it.tag}</span>
+                      <span class="font-mono text-[11px] text-[#111613]">${AEApp.escapeHtml(it.responseId)}</span>
+                      <span class="text-[#525B56] ml-1.5">${AEApp.escapeHtml(it.reason)}</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>`
+            : ''
+        }
+      </div>
+    `;
+  },
+
+  computeResponseScore(survey, answers) {
+    if (!survey || !survey.scoring || !survey.scoring.enabled) return null;
+    const questions = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+      ? window.aeStore.getQuestionsForSurvey(survey)
+      : (survey.pages || []).flatMap((p) => p.questions || []);
+
+    let earned = 0;
+    let maxPossible = 0;
+    questions.forEach((q) => {
+      if (!q || !q.optionPoints || typeof q.optionPoints !== 'object') return;
+      const ptsMap = q.optionPoints;
+      const vals = Object.values(ptsMap).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+      if (vals.length === 0) return;
+
+      if (q.type === 'checkboxes') {
+        maxPossible += vals.reduce((a, b) => a + b, 0);
+        const ans = answers ? answers[q.id] : [];
+        if (Array.isArray(ans)) {
+          ans.forEach((v) => {
+            const p = Number(ptsMap[String(v)]);
+            if (Number.isFinite(p)) earned += p;
+          });
+        }
+      } else {
+        maxPossible += Math.max(...vals);
+        const ans = answers ? answers[q.id] : undefined;
+        if (ans !== undefined && ans !== null && ans !== '') {
+          const p = Number(ptsMap[String(ans)]);
+          if (Number.isFinite(p)) earned += p;
+        }
+      }
+    });
+
+    const pct = maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0;
+    const tiers = Array.isArray(survey.scoring.tiers) && survey.scoring.tiers.length > 0
+      ? [...survey.scoring.tiers].sort((a, b) => Number(b.minPct || 0) - Number(a.minPct || 0))
+      : [
+          { label: 'Gold / Pass', minPct: 80 },
+          { label: 'Silver / Moderate', minPct: 50 },
+          { label: 'Needs Support', minPct: 0 }
+        ];
+    const matchedTier = tiers.find((t) => pct >= Number(t.minPct || 0)) || tiers[tiers.length - 1];
+    return {
+      earned,
+      maxPossible,
+      pct,
+      tier: matchedTier ? matchedTier.label : 'Scored'
+    };
+  },
+
+  renderScoringSummaryCard(survey, responses) {
+    if (!survey || !survey.scoring || !survey.scoring.enabled || !responses || responses.length === 0) return '';
+    const scored = responses
+      .map((r) => this.computeResponseScore(survey, r.answers))
+      .filter((s) => s && s.maxPossible > 0);
+    if (scored.length === 0) return '';
+
+    const avgPct = Math.round(scored.reduce((a, b) => a + b.pct, 0) / scored.length);
+    const tierCounts = {};
+    scored.forEach((s) => {
+      tierCounts[s.tier] = (tierCounts[s.tier] || 0) + 1;
+    });
+    const tierEntries = Object.entries(tierCounts).sort((a, b) => b[1] - a[1]);
+
+    return `
+      <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+            <i class="fa-solid fa-award text-[#247B50]"></i> Assessment Score &amp; Readiness Tiers
+          </div>
+          <span class="px-2.5 py-0.5 rounded-[4px] bg-[#DCFAE5] text-[#04250E] text-xs font-semibold tabular-nums">
+            Mean Score: ${avgPct}% (n=${scored.length})
+          </span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+          ${tierEntries.map(([tier, cnt]) => {
+            const share = Math.round((cnt / scored.length) * 100);
+            return `
+              <div class="p-2.5 rounded-[6px] bg-[#FAFBF9] border border-[#EFEFEF] space-y-1.5">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium text-[#111613] truncate">${AEApp.escapeHtml(tier)}</span>
+                  <span class="font-semibold text-[#247B50] tabular-nums">${cnt} (${share}%)</span>
+                </div>
+                <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                  <div class="h-full rounded-full bg-[#247B50]" style="width: ${Math.max(share, 3)}%;"></div>
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;

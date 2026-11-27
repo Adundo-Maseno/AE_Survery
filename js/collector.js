@@ -672,6 +672,14 @@ window.AECollector = {
                       <div class="text-sm font-semibold text-[#04250E] ae-break-words">${AEApp.escapeHtml(customThankYouTitle || this.justSubmittedBanner.title)}</div>
                       <div class="text-xs text-[#04250E]/85 mt-0.5 ae-break-words">${AEApp.escapeHtml(customThankYouMsg || this.justSubmittedBanner.subtitle)}</div>
                       ${
+                        this.justSubmittedBanner.scoreResult && rawSurvey?.scoring?.showScoreToRespondent !== false
+                          ? `<div class="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded-[5px] bg-white border border-[#247B50]/35 text-xs text-[#04250E] font-semibold tabular-nums">
+                              <i class="fa-solid fa-award text-[#247B50]"></i>
+                              <span>Score: ${this.justSubmittedBanner.scoreResult.earned}/${this.justSubmittedBanner.scoreResult.maxPossible} (${this.justSubmittedBanner.scoreResult.pct}%) &middot; ${AEApp.escapeHtml(this.justSubmittedBanner.scoreResult.tier)}</span>
+                            </div>`
+                          : ''
+                      }
+                      ${
                         this.justSubmittedBanner.autoRedirectUrl
                           ? `<div class="text-[11px] text-[#247B50] font-medium mt-1"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>Redirecting automatically in 3 seconds…</div>`
                           : ''
@@ -1614,6 +1622,77 @@ window.AECollector = {
                   <i class="fa-regular fa-copy text-[11px]"></i> Copy Tracked &amp; Pre-Filled Link
                 </button>
               </div>
+            </div>
+          `;
+        })()}
+
+        <!-- Batch Personalized Invite & Follow-Up Tracker -->
+        ${(() => {
+          const contacts = (survey.accessControl && Array.isArray(survey.accessControl.inviteContacts))
+            ? survey.accessControl.inviteContacts
+            : [];
+          const allResps = window.aeStore && typeof window.aeStore.getResponsesForSurvey === 'function'
+            ? window.aeStore.getResponsesForSurvey(survey.id)
+            : [];
+          const usedTokens = new Set(allResps.map((r) => r && r.inviteToken).filter(Boolean));
+          const completedCount = contacts.filter((c) => c.status === 'completed' || usedTokens.has(c.token)).length;
+          const safeSid = AEApp.escapeJs(survey.id);
+          return `
+            <div class="bg-white border border-[#E4E7E4] rounded-[8px] p-4 space-y-3 text-xs">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-semibold text-[#111613] flex items-center gap-1.5">
+                  <i class="fa-solid fa-paper-plane text-[#247B50]"></i> Batch Personalized Invite &amp; Follow-Up Tracker
+                </span>
+                ${
+                  contacts.length > 0
+                    ? `<div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] font-semibold tabular-nums">${completedCount}/${contacts.length} completed</span>
+                        <button type="button" onclick="AEApp.exportBatchInvitesCsv('${safeSid}')"
+                          class="h-7 px-2.5 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[11px] font-medium text-[#111613]">
+                          <i class="fa-solid fa-file-csv text-[#247B50] mr-1"></i> Export Links CSV
+                        </button>
+                      </div>`
+                    : ''
+                }
+              </div>
+              <div class="space-y-2">
+                <textarea id="ae_batch_invite_csv" rows="2"
+                  placeholder="Paste recipients (one per line): Name, Phone/Email, Segment&#10;e.g. Jane Wanjiku, +254712345678, Nakuru"
+                  class="w-full p-2.5 bg-[#FAFBF9] border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613]"></textarea>
+                <div class="flex items-center justify-end">
+                  <button type="button" onclick="AEApp.generateBatchInvitesFromCsv('${safeSid}', document.getElementById('ae_batch_invite_csv')?.value)"
+                    class="h-7 px-3 rounded-[5px] bg-[#247B50] hover:bg-[#1F6A45] text-white text-xs font-semibold ae-press">
+                    Generate Personalized Links
+                  </button>
+                </div>
+              </div>
+              ${
+                contacts.length > 0
+                  ? `<div class="max-h-52 overflow-y-auto border border-[#EFEFEF] rounded-[6px] divide-y divide-[#EFEFEF]">
+                      ${contacts.slice(0, 30).map((c) => {
+                        const isDone = c.status === 'completed' || usedTokens.has(c.token);
+                        const digits = String(c.contact || '').replace(/[^0-9]/g, '');
+                        const waHref = digits.length >= 9
+                          ? `https://wa.me/${digits}?text=${encodeURIComponent(`Hi ${c.name}, please complete our brief survey: ${c.url}`)}`
+                          : '';
+                        return `
+                          <div class="px-3 py-2 flex flex-wrap items-center justify-between gap-2 bg-white">
+                            <div class="min-w-0">
+                              <span class="font-medium text-[#111613]">${AEApp.escapeHtml(c.name)}</span>
+                              ${c.segment ? `<span class="text-[#646E68] ml-1.5">&middot; ${AEApp.escapeHtml(c.segment)}</span>` : ''}
+                              <span class="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold ${isDone ? 'bg-[#DCFAE5] text-[#04250E]' : 'bg-[#FFFBEB] text-[#92400E]'}">${isDone ? 'Completed' : 'Pending'}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                              <button type="button" onclick="AEApp.copyText('${AEApp.escapeAttr(AEApp.escapeJs(c.url))}', 'Personalized link copied!')"
+                                class="h-6 px-2 rounded border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[11px] font-medium">Copy</button>
+                              ${!isDone && waHref ? `<a href="${AEApp.escapeAttr(waHref)}" target="_blank" rel="noopener noreferrer" class="h-6 px-2 rounded bg-[#25D366] text-[#04250E] text-[11px] font-semibold inline-flex items-center gap-1"><i class="fa-brands fa-whatsapp"></i> Remind</a>` : ''}
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>`
+                  : ''
+              }
             </div>
           `;
         })()}

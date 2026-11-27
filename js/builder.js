@@ -1468,6 +1468,67 @@ window.AEBuilder = {
           })()}
         </div>
 
+        <!-- Live Report Access Controls (Passcode, Expiry & Tab Visibility) -->
+        ${(() => {
+          const ra = survey.reportAccess || {};
+          const sc = survey.scoring || {};
+          return `
+            <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
+              <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+                <i class="fa-solid fa-lock text-[#247B50] text-[11px]"></i> Live Report Access Control
+              </span>
+              <div>
+                <label class="block text-[11px] font-medium text-[#525B56] mb-1">Optional Report Passcode</label>
+                <input type="text" maxlength="40" value="${AEApp.escapeAttr(ra.passcode || '')}"
+                  onchange="AEApp.updateSurveyReportAccess('passcode', this.value)"
+                  placeholder="Leave blank for open link"
+                  class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613]" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-[#525B56] mb-1">Report Link Expiry Date</label>
+                <input type="date" value="${AEApp.escapeAttr(ra.expiresAt || '')}"
+                  onchange="AEApp.updateSurveyReportAccess('expiresAt', this.value)"
+                  class="w-full h-8 text-xs bg-white border border-[#CFD5D0] rounded-[6px] px-2.5 text-[#111613]" />
+              </div>
+              <label class="flex items-center justify-between text-xs text-[#111613] cursor-pointer gap-2">
+                <span>Hide Open-Ended tab on live report</span>
+                <input type="checkbox" ${ra.hideOpenEnded ? 'checked' : ''}
+                  onchange="AEApp.updateSurveyReportAccess('hideOpenEnded', this.checked)"
+                  class="accent-[#247B50] w-4 h-4 rounded" />
+              </label>
+              <label class="flex items-center justify-between text-xs text-[#111613] cursor-pointer gap-2">
+                <span>Hide Evidence Gallery on live report</span>
+                <input type="checkbox" ${ra.hideGallery ? 'checked' : ''}
+                  onchange="AEApp.updateSurveyReportAccess('hideGallery', this.checked)"
+                  class="accent-[#247B50] w-4 h-4 rounded" />
+              </label>
+            </div>
+
+            <!-- Scoring & Readiness Tiers (Audits, Quizzes, Checklists) -->
+            <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
+              <label class="flex items-center justify-between text-xs font-semibold text-[#111613] cursor-pointer gap-2">
+                <span><i class="fa-solid fa-award text-[#247B50] text-[11px] mr-1"></i>Scoring &amp; Readiness Tiers</span>
+                <input type="checkbox" ${sc.enabled ? 'checked' : ''}
+                  onchange="AEApp.updateSurveyScoring('enabled', this.checked)"
+                  class="accent-[#247B50] w-4 h-4 rounded" />
+              </label>
+              ${
+                sc.enabled
+                  ? `<div class="p-2.5 rounded-[6px] bg-[#FAFBF9] border border-[#E4E7E4] space-y-2 text-[11px]">
+                      <label class="flex items-center justify-between text-[#111613] cursor-pointer">
+                        <span>Show score &amp; tier on Thank-You</span>
+                        <input type="checkbox" ${sc.showScoreToRespondent !== false ? 'checked' : ''}
+                          onchange="AEApp.updateSurveyScoring('showScoreToRespondent', this.checked)"
+                          class="accent-[#247B50] w-3.5 h-3.5 rounded" />
+                      </label>
+                      <p class="text-[#646E68]">Assign point values (<code>pts</code>) directly beside each answer option in your questions.</p>
+                    </div>`
+                  : ''
+              }
+            </div>
+          `;
+        })()}
+
         <!-- Access & Anti-Duplicate -->
         <div class="pt-3 border-t border-[#EFEFEF] space-y-2.5">
           <div class="flex items-center justify-between">
@@ -2232,10 +2293,13 @@ window.AEBuilder = {
 
     if (q.type === 'multiple_choice' || q.type === 'checkboxes' || q.type === 'dropdown') {
       const options = Array.isArray(q.options) ? q.options : [];
+      const activeS = window.aeStore && window.AEApp ? window.aeStore.getSurveyById(window.AEApp.activeSurveyId) : null;
+      const scoringOn = Boolean(activeS && activeS.scoring && activeS.scoring.enabled);
+      const ptsMap = (q.optionPoints && typeof q.optionPoints === 'object') ? q.optionPoints : {};
       return `
         <div class="space-y-2">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-medium text-[#525B56] tabular-nums">Answer choices (${options.length})</span>
+            <span class="text-xs font-medium text-[#525B56] tabular-nums">Answer choices (${options.length})${scoringOn ? ' · Points enabled' : ''}</span>
             <button onclick="AEApp.addQuestionOption('${q.id}')"
               class="text-xs font-medium text-[#247B50] hover:underline inline-flex items-center gap-1">
               <i class="fa-solid fa-plus text-[10px]"></i> Add choice
@@ -2259,6 +2323,14 @@ window.AEBuilder = {
                   value="${AEApp.escapeAttr(opt)}"
                   onchange="AEApp.updateQuestionOption('${q.id}', ${idx}, this.value)"
                   class="flex-1 min-w-0 h-8 text-xs bg-white border border-[#CFD5D0] rounded-[5px] px-2.5 text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                ${
+                  scoringOn
+                    ? `<input type="number" min="0" step="1" value="${ptsMap[opt] !== undefined ? Number(ptsMap[opt]) : ''}"
+                        placeholder="pts" title="Point value for this option"
+                        onchange="AEApp.updateQuestionOptionPoints('${q.id}', '${AEApp.escapeAttr(AEApp.escapeJs(opt))}', this.value)"
+                        class="w-16 h-8 text-xs text-right bg-[#F3FBF6] border border-[#247B50]/40 rounded-[5px] px-2 tabular-nums text-[#04250E]" />`
+                    : ''
+                }
                 ${
                   options.length > 1
                     ? `<button onclick="AEApp.removeQuestionOption('${q.id}', ${idx})"
