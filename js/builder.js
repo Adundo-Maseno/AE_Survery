@@ -653,25 +653,33 @@ window.AEBuilder = {
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <!-- LEFT SIDEBAR: Question Bank & Theme -->
           <aside class="lg:col-span-4 xl:col-span-3 bg-white border border-[#E4E7E4] rounded-[8px] lg:sticky lg:top-16 overflow-hidden">
-            <div class="grid grid-cols-3 border-b border-[#EFEFEF] bg-[#F8F9F8]">
+            <div class="grid grid-cols-4 border-b border-[#EFEFEF] bg-[#F8F9F8]">
               <button onclick="AEApp.setBuilderLeftTab('questions')"
-                class="h-10 px-2 text-xs font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                class="h-10 px-1 text-[11px] font-medium flex items-center justify-center gap-1 border-b-2 transition-colors ${
                   this.leftTab === 'questions'
                     ? 'border-[#247B50] text-[#111613] font-semibold bg-white'
                     : 'border-transparent text-[#525B56] hover:text-[#111613]'
                 }">
-                <i class="fa-solid fa-plus text-[#247B50]"></i> Questions
+                <i class="fa-solid fa-plus text-[#247B50]"></i> Add
+              </button>
+              <button onclick="AEApp.setBuilderLeftTab('library')"
+                class="h-10 px-1 text-[11px] font-medium flex items-center justify-center gap-1 border-b-2 transition-colors ${
+                  this.leftTab === 'library'
+                    ? 'border-[#247B50] text-[#111613] font-semibold bg-white'
+                    : 'border-transparent text-[#525B56] hover:text-[#111613]'
+                }">
+                <i class="fa-solid fa-bookmark text-[#247B50]"></i> Library
               </button>
               <button onclick="AEApp.setBuilderLeftTab('translations')"
-                class="h-10 px-2 text-xs font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                class="h-10 px-1 text-[11px] font-medium flex items-center justify-center gap-1 border-b-2 transition-colors ${
                   this.leftTab === 'translations'
                     ? 'border-[#247B50] text-[#111613] font-semibold bg-white'
                     : 'border-transparent text-[#525B56] hover:text-[#111613]'
                 }">
-                <i class="fa-solid fa-language text-[#247B50]"></i> Languages
+                <i class="fa-solid fa-language text-[#247B50]"></i> Lang
               </button>
               <button onclick="AEApp.setBuilderLeftTab('theme')"
-                class="h-10 px-2 text-xs font-medium flex items-center justify-center gap-1.5 border-b-2 transition-colors ${
+                class="h-10 px-1 text-[11px] font-medium flex items-center justify-center gap-1 border-b-2 transition-colors ${
                   this.leftTab === 'theme'
                     ? 'border-[#247B50] text-[#111613] font-semibold bg-white'
                     : 'border-transparent text-[#525B56] hover:text-[#111613]'
@@ -683,6 +691,8 @@ window.AEBuilder = {
             ${
               this.leftTab === 'questions'
                 ? this.renderQuestionBankSidebar(survey)
+                : this.leftTab === 'library'
+                ? this.renderLibrarySidebar(survey)
                 : this.leftTab === 'translations'
                 ? this.renderTranslationsSidebar(survey)
                 : this.renderThemeSidebar(survey)
@@ -1556,6 +1566,110 @@ window.AEBuilder = {
     `;
   },
 
+  STANDARD_LIBRARY_BLOCKS: [
+    {
+      id: 'blk_consent',
+      name: 'Informed Consent & Privacy',
+      desc: 'Voluntary participation & data privacy agreement',
+      icon: 'fa-file-signature',
+      questions: [
+        { type: 'multiple_choice', title: 'Do you voluntarily consent to participate in this survey?', helpText: 'All responses are confidential and used strictly for research.', required: true, options: ['Yes, I consent', 'No, I decline'] }
+      ]
+    },
+    {
+      id: 'blk_demographics',
+      name: 'Standard Demographics (3 Qs)',
+      desc: 'Gender, Age Group, and Education Level',
+      icon: 'fa-users',
+      questions: [
+        { type: 'multiple_choice', title: 'Gender', required: false, options: ['Female', 'Male', 'Prefer not to say'] },
+        { type: 'dropdown', title: 'Age Group', required: false, options: ['18–24', '25–34', '35–44', '45–54', '55+'] },
+        { type: 'dropdown', title: 'Highest Education Level', required: false, options: ['No formal schooling', 'Primary', 'Secondary', 'College / Diploma', 'University Degree'] }
+      ]
+    },
+    {
+      id: 'blk_nps_why',
+      name: 'NPS + Follow-Up "Why?"',
+      desc: '0–10 loyalty score paired with open-ended reason',
+      icon: 'fa-gauge-high',
+      questions: [
+        { type: 'nps', title: 'How likely are you to recommend this program or service to others?', helpText: '0 = Not at all likely, 10 = Extremely likely', required: true },
+        { type: 'long_text', title: 'What is the primary reason for your score?', helpText: 'Please share any specific experience or suggestion.', required: false }
+      ]
+    },
+    {
+      id: 'blk_field_verify',
+      name: 'Field Verification Pack',
+      desc: 'GPS plot lock + photo evidence + enumerator notes',
+      icon: 'fa-location-crosshairs',
+      questions: [
+        { type: 'gps_location', title: 'Capture Site / Plot GPS Coordinates', required: true },
+        { type: 'photo_proof', title: 'Capture Field Verification Photo', required: false },
+        { type: 'long_text', title: 'Enumerator Field Observations', required: false }
+      ]
+    }
+  ],
+
+  getSavedLibraryQuestions() {
+    try {
+      if (typeof localStorage === 'undefined') return [];
+      const raw = localStorage.getItem('ae_question_library_v1');
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  renderLibrarySidebar(survey) {
+    const saved = this.getSavedLibraryQuestions();
+    return `
+      <div class="p-3.5 space-y-4 max-h-[75vh] overflow-y-auto">
+        <div class="space-y-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-[#247B50]">Standard Research Blocks</div>
+          <div class="space-y-1.5">
+            ${this.STANDARD_LIBRARY_BLOCKS.map((blk) => `
+              <button type="button" onclick="AEApp.insertLibraryBlock('${blk.id}')"
+                class="w-full text-left p-2.5 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] hover:border-[#247B50]/50 hover:bg-[#F3FBF6] transition-colors space-y-0.5 ae-press">
+                <div class="flex items-center justify-between gap-2 text-xs font-semibold text-[#111613]">
+                  <span><i class="fa-solid ${blk.icon} text-[#247B50] mr-1.5 text-[11px]"></i>${AEApp.escapeHtml(blk.name)}</span>
+                  <i class="fa-solid fa-plus text-[10px] text-[#247B50]"></i>
+                </div>
+                <div class="text-[11px] text-[#646E68]">${AEApp.escapeHtml(blk.desc)}</div>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-[#EFEFEF] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-semibold uppercase tracking-wide text-[#525B56]">Saved Questions (${saved.length})</span>
+          </div>
+          ${
+            saved.length === 0
+              ? `<div class="p-3 rounded-[6px] bg-[#FAFBF9] border border-dashed border-[#CFD5D0] text-[11px] text-[#646E68] leading-relaxed">
+                  Click the <i class="fa-regular fa-bookmark"></i> icon on any question card to save it here for reuse across surveys.
+                </div>`
+              : `<div class="space-y-1.5">
+                  ${saved.map((item, idx) => `
+                    <div class="p-2.5 rounded-[6px] border border-[#E4E7E4] bg-white flex items-start justify-between gap-2 text-xs">
+                      <button type="button" onclick="AEApp.insertSavedLibraryQuestion(${idx})" class="text-left min-w-0 flex-1 hover:text-[#247B50]">
+                        <div class="font-medium text-[#111613] truncate">${AEApp.escapeHtml(item.title || 'Saved Question')}</div>
+                        <div class="text-[10.5px] text-[#646E68]">${AEApp.escapeHtml(item.type || 'short_text')}</div>
+                      </button>
+                      <button type="button" onclick="AEApp.removeSavedLibraryQuestion(${idx})" title="Remove from library"
+                        class="text-[#646E68] hover:text-[#C4242A] p-1">
+                        <i class="fa-solid fa-xmark text-[11px]"></i>
+                      </button>
+                    </div>
+                  `).join('')}
+                </div>`
+          }
+        </div>
+      </div>
+    `;
+  },
+
   renderTranslationsSidebar(survey) {
     const targetLang = this.targetLang || 'sw';
     const langLabel = targetLang === 'sw' ? 'Kiswahili' : targetLang === 'pt' ? 'Português' : 'Français';
@@ -1880,6 +1994,10 @@ window.AEBuilder = {
             <button onclick="AEApp.moveQuestion('${q.id}', 1)" title="Move down" aria-label="Move Question Down"
               class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#111613] hover:bg-[#F4F6F4] flex items-center justify-center text-xs transition-colors">
               <i class="fa-solid fa-arrow-down"></i>
+            </button>
+            <button onclick="AEApp.saveQuestionToLibrary('${q.id}')" title="Save to reusable Question Library" aria-label="Save to Library"
+              class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#247B50] hover:bg-[#F3FBF6] flex items-center justify-center text-xs transition-colors">
+              <i class="fa-regular fa-bookmark"></i>
             </button>
             <button onclick="AEApp.duplicateQuestion('${q.id}')" title="Duplicate question" aria-label="Duplicate Question"
               class="w-7 h-7 rounded-[6px] text-[#646E68] hover:text-[#247B50] hover:bg-[#F4F6F4] flex items-center justify-center text-xs transition-colors">

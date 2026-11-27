@@ -1770,6 +1770,11 @@ window.AEApp = {
                     <i class="fa-solid fa-layer-group text-[11px] text-[#247B50]"></i>
                     <span>Templates</span>
                   </button>
+                  <button onclick="AEApp.openAiSurveyModal()"
+                    class="h-8 px-3 rounded-[6px] bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] font-semibold text-xs inline-flex items-center gap-1.5 border border-[#247B50]/40 ae-press">
+                    <i class="fa-solid fa-sparkles text-[11px] text-[#247B50]"></i>
+                    <span>AI / Upload Doc</span>
+                  </button>
                   <button onclick="AEApp.openPasteOutlineModal()"
                     class="h-8 px-3 rounded-[6px] bg-white hover:bg-[#F4F6F4] text-[#111613] font-medium text-xs inline-flex items-center gap-1.5 border border-[#CFD5D0] ae-press">
                     <i class="fa-solid fa-wand-magic-sparkles text-[11px] text-[#247B50]"></i>
@@ -3321,8 +3326,95 @@ window.AEApp = {
     const modalRoot = document.getElementById('ae_modal_root');
     if (!modalRoot) return;
 
-    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showVersionHistoryModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
+    if (!this.showSyncModal && !this.showTemplatesModal && !this.showPasteOutlineModal && !this.showAiSurveyModal && !this.showVersionHistoryModal && !this.showAddPersonnelModal && !this.showAssignTaskModal && !this.showResetPinPersonnel && !this.showAssignTeamSurveyId && !this.showStudioMobileMenu) {
       modalRoot.innerHTML = '';
+      return;
+    }
+
+    if (this.showAiSurveyModal) {
+      const f = this.aiSurveyFile;
+      modalRoot.innerHTML = `
+        <div data-ui="modal-overlay"
+          onclick="if(event.target===this && !AEApp.aiSurveyBusy) AEApp.closeAiSurveyModal()"
+          class="fixed inset-0 z-50 ae-glass-scrim flex items-center justify-center p-4 overflow-y-auto">
+          <div data-ui="modal-dialog" role="dialog" aria-modal="true" class="ae-glass-modal rounded-[12px] max-w-2xl w-full p-5 sm:p-6 space-y-4 ae-dialog-animate my-6">
+            <div class="flex items-start justify-between border-b border-[#EFEFEF] pb-3 gap-3">
+              <div>
+                <h2 class="text-base font-semibold text-[#111613] flex items-center gap-2">
+                  <i class="fa-solid fa-sparkles text-[#247B50]"></i>
+                  <span>Generate Survey with AI or Document Upload</span>
+                </h2>
+                <p class="text-xs text-[#525B56] mt-0.5">
+                  Describe your study in plain English, or upload a questionnaire / ToR (PDF, Word .docx, image, TXT, CSV) and let Gemini build it straight into the Builder.
+                </p>
+              </div>
+              <button type="button" ${this.aiSurveyBusy ? 'disabled' : ''} onclick="AEApp.closeAiSurveyModal()" aria-label="Close" class="w-8 h-8 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+
+            <form onsubmit="AEApp.generateSurveyFromAiOrDoc(event)" class="space-y-3.5 text-xs">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="sm:col-span-2">
+                  <label for="ae_ai_survey_title" class="block font-semibold text-[#111613] mb-1">Survey Title (optional)</label>
+                  <input id="ae_ai_survey_title" type="text" maxlength="140"
+                    value="${this.escapeAttr(this.aiSurveyTitle || '')}"
+                    oninput="AEApp.aiSurveyTitle = this.value"
+                    placeholder="e.g. Post-Harvest Seed Adoption Evaluation"
+                    class="w-full h-9 px-3 bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613] focus:outline-none focus:border-[#247B50]" />
+                </div>
+                <div>
+                  <label for="ae_ai_survey_count" class="block font-semibold text-[#111613] mb-1">Target Questions</label>
+                  <select id="ae_ai_survey_count" onchange="AEApp.aiSurveyCount = Number(this.value)"
+                    class="w-full h-9 px-2.5 bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613]">
+                    ${[6, 10, 15, 20, 30].map((n) => `<option value="${n}" ${(this.aiSurveyCount || 10) === n ? 'selected' : ''}>~${n} questions</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+
+              <!-- Document Upload Dropzone -->
+              <div>
+                <label class="block font-semibold text-[#111613] mb-1">Upload Document (Optional — PDF, DOCX, TXT, MD, CSV, PNG, JPG)</label>
+                <div class="p-3.5 rounded-[8px] border border-dashed border-[#247B50]/45 bg-[#F8FBF9] space-y-2">
+                  <input type="file"
+                    accept=".pdf,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp"
+                    onchange="AEApp.handleAiSurveyFileUpload(this)"
+                    class="block w-full text-xs text-[#525B56] file:mr-3 file:py-1.5 file:px-3 file:rounded-[5px] file:border file:border-[#CFD5D0] file:text-xs file:font-semibold file:bg-white file:text-[#111613] hover:file:bg-[#F4F6F4] cursor-pointer" />
+                  ${
+                    f
+                      ? `<div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-[5px] bg-[#DCFAE5] text-[#04250E] text-[11px] font-medium">
+                          <span class="truncate"><i class="fa-solid fa-file-lines mr-1.5"></i>${this.escapeHtml(f.name)} (${f.sizeKb} KB)</span>
+                          <button type="button" onclick="AEApp.clearAiSurveyFile()" class="text-[#04250E] hover:text-[#C4242A] font-semibold">Remove</button>
+                        </div>`
+                      : `<p class="text-[11px] text-[#646E68]">Max 6 MB. Existing Word/PDF questionnaires or photo scans are converted automatically into structured questions.</p>`
+                  }
+                </div>
+              </div>
+
+              <!-- Study Brief -->
+              <div>
+                <label for="ae_ai_survey_brief" class="block font-semibold text-[#111613] mb-1">Study Brief / Instructions ${f ? '(Optional when document uploaded)' : ''}</label>
+                <textarea id="ae_ai_survey_brief" rows="4" maxlength="4000"
+                  oninput="AEApp.aiSurveyBrief = this.value"
+                  placeholder="Describe your research objective, target audience, key metrics (e.g. NPS, Likert grid, yield, open-ended feedback)..."
+                  class="w-full p-3 bg-white border border-[#CFD5D0] rounded-[6px] text-xs text-[#111613] focus:outline-none focus:border-[#247B50]">${this.escapeHtml(this.aiSurveyBrief || '')}</textarea>
+              </div>
+
+              <div class="pt-2 border-t border-[#EFEFEF] flex items-center justify-end gap-2">
+                <button type="button" ${this.aiSurveyBusy ? 'disabled' : ''} onclick="AEApp.closeAiSurveyModal()"
+                  class="h-8 px-3 rounded-[6px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-xs font-medium text-[#525B56]">
+                  Cancel
+                </button>
+                <button type="submit" ${this.aiSurveyBusy ? 'disabled' : ''}
+                  class="h-8 px-4 rounded-[6px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-60 ae-press">
+                  <i class="fa-solid ${this.aiSurveyBusy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'} text-[#3FC07A]"></i>
+                  <span>${this.aiSurveyBusy ? 'Generating Survey…' : 'Generate Survey'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
       return;
     }
 
@@ -4221,6 +4313,40 @@ window.AEApp = {
             </div>
           </div>
 
+          <!-- Cloud & AI Health Diagnostics Card -->
+          <div class="pt-3 border-t border-[#EFEFEF] space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+                <i class="fa-solid fa-heart-pulse text-[#247B50] text-[11px]"></i> Cloud &amp; Gemini AI Health
+              </span>
+              <button type="button" ${this.cloudHealthBusy ? 'disabled' : ''} onclick="AEApp.checkGeminiModelsHealth()"
+                class="h-7 px-2.5 rounded-[5px] border border-[#247B50]/40 bg-[#F3FBF6] hover:bg-[#DCFAE5] text-[#04250E] text-[11px] font-semibold inline-flex items-center gap-1.5 disabled:opacity-60 ae-press">
+                <i class="fa-solid ${this.cloudHealthBusy ? 'fa-spinner fa-spin' : 'fa-microchip'} text-[10px] text-[#247B50]"></i>
+                <span>${this.cloudHealthBusy ? 'Checking…' : 'Check Available Gemini Models'}</span>
+              </button>
+            </div>
+            ${
+              this.cloudHealthResult
+                ? `<div class="p-3 rounded-[6px] border ${this.cloudHealthResult.ok ? 'border-[#247B50]/30 bg-[#F3FBF6]/60' : 'border-[#F5C2C0] bg-[#FFF7F6]'} text-[11px] space-y-1.5">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span class="font-semibold ${this.cloudHealthResult.ok ? 'text-[#04250E]' : 'text-[#831C1E]'}">
+                        ${this.cloudHealthResult.ok ? `Connected (${this.cloudHealthResult.latencyMs}ms)` : this.escapeHtml(this.cloudHealthResult.error || 'Health check failed')}
+                      </span>
+                      ${this.cloudHealthResult.lastWorkingModel ? `<span class="px-1.5 py-0.5 rounded bg-[#DCFAE5] text-[#04250E] font-mono text-[10px]">Active: ${this.escapeHtml(this.cloudHealthResult.lastWorkingModel)}</span>` : ''}
+                    </div>
+                    ${
+                      Array.isArray(this.cloudHealthResult.discoveredModels) && this.cloudHealthResult.discoveredModels.length > 0
+                        ? `<div class="text-[#525B56]">
+                            <span class="font-medium text-[#111613]">Available for key (${this.cloudHealthResult.discoveredModels.length}):</span>
+                            <span class="font-mono text-[10.5px]">${this.escapeHtml(this.cloudHealthResult.discoveredModels.slice(0, 8).join(', '))}${this.cloudHealthResult.discoveredModels.length > 8 ? '…' : ''}</span>
+                          </div>`
+                        : ''
+                    }
+                  </div>`
+                : `<p class="text-[11px] text-[#646E68]">Verify GAS latency, active Gemini fallback model, and live models accessible to your API key.</p>`
+            }
+          </div>
+
           <div class="pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
               ${
@@ -4507,6 +4633,266 @@ window.AEApp = {
     this.showToast(`Created "${survey.title}" from template.`, 'success');
     this.render();
     return survey;
+  },
+
+  openAiSurveyModal() {
+    this.showAiSurveyModal = true;
+    this.aiSurveyBusy = false;
+    this.render();
+  },
+
+  closeAiSurveyModal() {
+    this.showAiSurveyModal = false;
+    this.aiSurveyBusy = false;
+    this.render();
+  },
+
+  clearAiSurveyFile() {
+    this.aiSurveyFile = null;
+    this.render();
+  },
+
+  handleAiSurveyFileUpload(inputEl) {
+    const file = inputEl && inputEl.files && inputEl.files[0];
+    if (!file) return;
+    if (file.size > 6 * 1024 * 1024) {
+      this.showToast('File exceeds 6 MB limit. Please upload a smaller document.', 'warning');
+      return;
+    }
+    const name = file.name || 'document';
+    const mimeType = file.type || '';
+    const sizeKb = Math.max(1, Math.round(file.size / 1024));
+    const isPlainText = /\.(txt|md|csv|json)$/i.test(name) || /^text\//i.test(mimeType);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (isPlainText) {
+        this.aiSurveyFile = { name, mimeType: mimeType || 'text/plain', sizeKb, text: String(reader.result || ''), base64Data: '' };
+      } else {
+        const dataUrl = String(reader.result || '');
+        const commaIdx = dataUrl.indexOf(',');
+        const base64Data = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+        this.aiSurveyFile = { name, mimeType: mimeType || 'application/octet-stream', sizeKb, text: '', base64Data };
+      }
+      this.render();
+    };
+    if (isPlainText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
+  },
+
+  async generateSurveyFromAiOrDoc(event) {
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    if (this.aiSurveyBusy) return null;
+    const brief = String(this.aiSurveyBrief || '').trim();
+    const title = String(this.aiSurveyTitle || '').trim();
+    const f = this.aiSurveyFile;
+
+    if (!brief && !f) {
+      this.showToast('Enter a study brief or upload a document first.', 'warning');
+      return null;
+    }
+
+    this.aiSurveyBusy = true;
+    this.render();
+
+    try {
+      const settings = (window.aeStore && window.aeStore.settings) || {};
+      const gasUrl = String(settings.gasWebAppUrl || '').trim();
+      const currentUser = this.getCurrentUser();
+      let generated = null;
+      let usedModel = '';
+
+      if (gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl) && typeof fetch === 'function') {
+        const res = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'GENERATE_SURVEY_AI',
+            syncToken: settings.syncToken || '',
+            callerId: currentUser ? currentUser.id : '',
+            brief,
+            title,
+            questionCount: this.aiSurveyCount || 10,
+            documentText: f && f.text ? f.text : '',
+            documentFile: f && f.base64Data ? { name: f.name, mimeType: f.mimeType, base64Data: f.base64Data } : null
+          }),
+          redirect: 'follow'
+        });
+        const data = await res.json();
+        if (data && data.ok && data.survey && Array.isArray(data.survey.pages)) {
+          generated = data.survey;
+          usedModel = data.model || 'gemini';
+        } else if (data && data.error) {
+          throw new Error(data.error);
+        }
+      }
+
+      // Offline / text-file fallback using local outline parser
+      if (!generated && f && f.text && window.AETemplates && typeof window.AETemplates.parseOutlineToSurvey === 'function') {
+        generated = window.AETemplates.parseOutlineToSurvey(title || f.name.replace(/\.[^.]+$/, ''), f.text);
+        usedModel = 'offline-parser';
+      }
+
+      if (!generated || !Array.isArray(generated.pages) || generated.pages.length === 0) {
+        throw new Error('Configure GAS Web App URL & GEMINI_API_KEY in Apps Script to generate surveys with AI.');
+      }
+
+      const nowIso = new Date().toISOString();
+      const newSurveyId = 'srv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+      const normalizedPages = generated.pages.map((p, pIdx) => ({
+        id: 'page_' + (pIdx + 1) + '_' + Math.random().toString(36).slice(2, 5),
+        title: String(p.title || `Page ${pIdx + 1}`),
+        description: String(p.description || ''),
+        questions: (Array.isArray(p.questions) ? p.questions : []).map((q, qIdx) => ({
+          id: 'q_' + Date.now().toString(36) + '_' + pIdx + '_' + qIdx + '_' + Math.random().toString(36).slice(2, 4),
+          type: q.type || 'short_text',
+          title: String(q.title || `Question ${qIdx + 1}`),
+          helpText: String(q.helpText || ''),
+          required: q.required !== false,
+          options: Array.isArray(q.options) && q.options.length > 0 ? q.options.map(String) : undefined,
+          rows: Array.isArray(q.rows) && q.rows.length > 0 ? q.rows.map(String) : undefined,
+          columns: Array.isArray(q.columns) && q.columns.length > 0 ? q.columns.map(String) : undefined,
+          unit: q.unit ? String(q.unit) : undefined,
+          logic: { enabled: false, condition: 'equals', value: '', target: '' }
+        }))
+      }));
+
+      const newSurvey = {
+        id: newSurveyId,
+        title: String(title || generated.title || 'AI Generated Survey'),
+        description: String(generated.description || ''),
+        status: 'Active',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        pages: normalizedPages
+      };
+
+      const saved = window.aeStore.upsertSurvey(newSurvey, true);
+      this.showAiSurveyModal = false;
+      this.aiSurveyBrief = '';
+      this.aiSurveyTitle = '';
+      this.aiSurveyFile = null;
+      this.activeSurveyId = saved ? saved.id : newSurveyId;
+      this.currentStage = 'design';
+      this.showToast(`Survey generated (${usedModel})! Review & customize in the Builder.`, 'success');
+      this.render();
+      return saved;
+    } catch (err) {
+      this.showToast((err && err.message) || 'Could not generate survey.', 'error');
+      return null;
+    } finally {
+      this.aiSurveyBusy = false;
+      this.render();
+    }
+  },
+
+  async checkGeminiModelsHealth() {
+    if (this.cloudHealthBusy) return null;
+    const settings = (window.aeStore && window.aeStore.settings) || {};
+    const gasUrl = String(settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !/^https:\/\/script\.google\.com\//i.test(gasUrl)) {
+      this.cloudHealthResult = { ok: false, error: 'Google Apps Script Web App URL is not configured.' };
+      this.render();
+      return this.cloudHealthResult;
+    }
+    this.cloudHealthBusy = true;
+    this.render();
+    const t0 = Date.now();
+    try {
+      const currentUser = this.getCurrentUser();
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'LIST_GEMINI_MODELS',
+          syncToken: settings.syncToken || '',
+          callerId: currentUser ? currentUser.id : '',
+          forceRefresh: true
+        }),
+        redirect: 'follow'
+      });
+      const data = await res.json();
+      this.cloudHealthResult = {
+        ...data,
+        latencyMs: Date.now() - t0
+      };
+      return this.cloudHealthResult;
+    } catch (err) {
+      this.cloudHealthResult = { ok: false, error: (err && err.message) || 'Network error', latencyMs: Date.now() - t0 };
+      return this.cloudHealthResult;
+    } finally {
+      this.cloudHealthBusy = false;
+      this.render();
+    }
+  },
+
+  saveQuestionToLibrary(questionId) {
+    const ctx = this.findQuestionContext(questionId);
+    if (!ctx || !ctx.question) return;
+    const saved = window.AEBuilder && typeof window.AEBuilder.getSavedLibraryQuestions === 'function'
+      ? window.AEBuilder.getSavedLibraryQuestions()
+      : [];
+    const clone = JSON.parse(JSON.stringify(ctx.question));
+    delete clone.id;
+    delete clone.parentQuestionId;
+    delete clone.subQuestionPart;
+    saved.unshift(clone);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ae_question_library_v1', JSON.stringify(saved.slice(0, 40)));
+      }
+    } catch (e) {}
+    this.showToast('Question saved to reusable Library.', 'success');
+    this.render();
+  },
+
+  insertLibraryBlock(blockId) {
+    const survey = window.aeStore.getSurveyById(this.activeSurveyId);
+    if (!survey || !window.AEBuilder) return;
+    const blk = (window.AEBuilder.STANDARD_LIBRARY_BLOCKS || []).find((b) => b.id === blockId);
+    if (!blk) return;
+    const pageIdx = Math.min(window.AEBuilder.activePageIndex || 0, Math.max(0, (survey.pages || []).length - 1));
+    const page = survey.pages[pageIdx];
+    if (!page) return;
+    page.questions = page.questions || [];
+    blk.questions.forEach((tpl, i) => {
+      const q = JSON.parse(JSON.stringify(tpl));
+      q.id = 'q_' + Date.now().toString(36) + '_' + i + '_' + Math.random().toString(36).slice(2, 4);
+      q.logic = q.logic || { enabled: false, condition: 'equals', value: '', target: '' };
+      page.questions.push(q);
+    });
+    window.aeStore.upsertSurvey(survey);
+    this.showToast(`Inserted "${blk.name}" (${blk.questions.length} ${blk.questions.length === 1 ? 'question' : 'questions'}).`, 'success');
+    this.render();
+  },
+
+  insertSavedLibraryQuestion(idx) {
+    const survey = window.aeStore.getSurveyById(this.activeSurveyId);
+    const saved = window.AEBuilder ? window.AEBuilder.getSavedLibraryQuestions() : [];
+    const tpl = saved[idx];
+    if (!survey || !tpl) return;
+    const pageIdx = Math.min(window.AEBuilder.activePageIndex || 0, Math.max(0, (survey.pages || []).length - 1));
+    const page = survey.pages[pageIdx];
+    if (!page) return;
+    const q = JSON.parse(JSON.stringify(tpl));
+    q.id = 'q_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5);
+    page.questions = page.questions || [];
+    page.questions.push(q);
+    window.aeStore.upsertSurvey(survey);
+    this.showToast('Inserted question from Library.', 'success');
+    this.render();
+  },
+
+  removeSavedLibraryQuestion(idx) {
+    const saved = window.AEBuilder ? window.AEBuilder.getSavedLibraryQuestions() : [];
+    if (idx < 0 || idx >= saved.length) return;
+    saved.splice(idx, 1);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ae_question_library_v1', JSON.stringify(saved));
+      }
+    } catch (e) {}
+    this.render();
   },
 
   openPasteOutlineModal() {
@@ -6445,21 +6831,46 @@ window.AEApp = {
     }
   },
 
+  async syncResponseReviewToCloud(respId, reviewStatus, reviewedBy, reviewNote) {
+    const settings = (window.aeStore && window.aeStore.settings) || {};
+    const gasUrl = String(settings.gasWebAppUrl || '').trim();
+    if (!gasUrl || !/^https:\/\/script\.google\.com\//i.test(gasUrl) || typeof fetch !== 'function') return;
+    try {
+      await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'UPDATE_RESPONSE_REVIEW',
+          syncToken: settings.syncToken || '',
+          deviceId: settings.deviceId || '',
+          responseId: respId,
+          reviewStatus,
+          reviewedBy,
+          reviewNote: reviewNote || ''
+        }),
+        redirect: 'follow'
+      });
+    } catch (e) {}
+  },
+
   approveSingleResponse(respId) {
     const cur = this.getCurrentUser();
-    const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Peter Kamau)';
-    window.aeStore.approveResponse(respId, userSup, 'Verified and sign-off by regional supervisor');
-    this.showToast('Response verified & approved by supervisor.', 'success');
+    const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Supervisor)';
+    const note = 'Verified and signed off by supervisor';
+    window.aeStore.approveResponse(respId, userSup, note);
+    this.syncResponseReviewToCloud(respId, 'approved', userSup, note);
+    this.showToast('Response approved & synced to Google Sheets.', 'success');
     this.render();
   },
 
   flagSingleResponse(respId) {
-    const reason = window.prompt('Enter reason for flagging this response for field re-check:', 'Agronomic yield or GPS anomaly requires verification');
+    const reason = window.prompt('Enter reason for flagging this response for field re-check:', 'Data anomaly requires verification');
     if (!reason) return;
     const cur = this.getCurrentUser();
-    const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Peter Kamau)';
+    const userSup = cur ? `${cur.id} (${cur.fullName})` : 'SUP-01 (Supervisor)';
     window.aeStore.flagResponse(respId, userSup, reason);
-    this.showToast('Response flagged for enumerator follow-up.', 'warning');
+    this.syncResponseReviewToCloud(respId, 'flagged', userSup, reason);
+    this.showToast('Response flagged & synced to Google Sheets.', 'warning');
     this.render();
   },
 

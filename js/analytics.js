@@ -2971,6 +2971,17 @@ window.AEAnalytics = {
                     </button>`
                   : ''
               }
+              <button type="button"
+                onclick="AEAnalytics.setFilter('reviewStatus', '${f.reviewStatus === 'approved' ? 'all' : 'approved'}')"
+                title="Show only supervisor-approved responses for clean official reporting"
+                class="ml-auto h-7 px-2.5 rounded-[5px] border text-[11px] font-semibold inline-flex items-center gap-1.5 ae-press ${
+                  f.reviewStatus === 'approved'
+                    ? 'border-[#247B50] bg-[#247B50] text-white'
+                    : 'border-[#CFD5D0] bg-white hover:bg-[#F3FBF6] text-[#111613]'
+                }">
+                <i class="fa-solid fa-user-check text-[10px]"></i>
+                <span>${f.reviewStatus === 'approved' ? 'Approved Only ✓' : 'Approved Only'}</span>
+              </button>
             </div>
           `;
         })()}
@@ -6241,6 +6252,11 @@ window.AEAnalytics = {
                 : `<span class="px-2.5 py-1 rounded-[4px] text-xs font-medium bg-[#FFFBEB] text-[#92400E] border border-[#FDE68A] inline-flex items-center gap-1.5">
                     <i class="fa-regular fa-clock text-xs"></i> Pending Review
                   </span>`
+            }
+            ${
+              r.reviewNote
+                ? `<span class="text-[11px] text-[#525B56] italic max-w-[220px] truncate" title="${AEApp.escapeAttr(r.reviewNote)}">&ldquo;${AEApp.escapeHtml(r.reviewNote)}&rdquo;</span>`
+                : ''
             }
             ${
               r.reviewStatus !== 'approved'

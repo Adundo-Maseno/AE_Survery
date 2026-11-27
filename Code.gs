@@ -518,6 +518,14 @@ function doPost(e) {
       return jsonResponse_(listAvailableGeminiModels(Boolean(payload.forceRefresh)));
     }
 
+    // AI Survey Generator from Prompt or Uploaded Document (PDF, DOCX, Image, Text) — runs outside ScriptLock
+    if (action === 'GENERATE_SURVEY_AI') {
+      if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
+        return jsonResponse_({ ok: false, error: 'Unauthorized: Action requires Admin role.' });
+      }
+      return jsonResponse_(generateSurveyWithGemini_(payload));
+    }
+
     // Daily Digest Email Endpoint (Admin-only) — runs outside ScriptLock
     if (action === 'SEND_DAILY_DIGEST') {
       if (!isAuthorizedAdmin_(payload.callerId, clientSyncToken)) {
@@ -592,6 +600,23 @@ function doPost(e) {
           action: action,
           collectorId: String(payload.collector.id || ''),
           version: upsertCollectorVersion,
+          serverTime: new Date().toISOString()
+        });
+      }
+
+      if (action === 'UPDATE_RESPONSE_REVIEW' && payload.responseId) {
+        var revRes = updateResponseReviewStatus_(payload.responseId, payload.reviewStatus, payload.reviewedBy, payload.reviewNote);
+        if (!revRes.ok) {
+          return jsonResponse_(revRes);
+        }
+        var revVer = bumpDbVersion_();
+        logSyncEvent_('UPDATE_RESPONSE_REVIEW', deviceId, 0, 1, 0, 'OK');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          responseId: String(payload.responseId),
+          reviewStatus: revRes.reviewStatus,
+          version: revVer,
           serverTime: new Date().toISOString()
         });
       }
@@ -2998,6 +3023,179 @@ function maybeFireSurveyWebhooks_(surveyMap, insertedResponses) {
     } catch (e) {
       // Never break sync if downstream webhook is unreachable
     }
+  }
+}
+
+/**
+ * Updates ReviewStatus / SupervisorID / QAFlags on a response row in the Responses sheet.
+ */
+function updateResponseReviewStatus_(responseId, reviewStatus, reviewedBy, reviewNote) {
+  var targetId = String(responseId || '').trim();
+  if (!targetId) return { ok: false, error: 'Missing responseId.' };
+  var allowed = { approved: 'approved', flagged: 'flagged', pending: 'pending_review', pending_review: 'pending_review', rejected: 'rejected' };
+  var cleanStatus = allowed[String(reviewStatus || '').toLowerCase()] || 'pending_review';
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
+  if (!sheet || sheet.getLastRow() < 2) return { ok: false, error: 'Responses sheet is empty.' };
+
+  var lastRow = sheet.getLastRow();
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === targetId) {
+      var rowNum = i + 2;
+      sheet.getRange(rowNum, 12).setValue(sanitizeSheetCell_(cleanStatus));
+      if (reviewedBy) {
+        sheet.getRange(rowNum, 14).setValue(sanitizeSheetCell_(String(reviewedBy).substring(0, 120)));
+      }
+      if (reviewNote) {
+        var existingFlags = String(sheet.getRange(rowNum, 13).getValue() || '').trim();
+        var noteTag = '[Review: ' + String(reviewNote).substring(0, 180) + ']';
+        sheet.getRange(rowNum, 13).setValue(sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + noteTag) : noteTag));
+      }
+      return { ok: true, responseId: targetId, reviewStatus: cleanStatus };
+    }
+  }
+  return { ok: false, error: 'Response not found in Responses sheet: ' + targetId };
+}
+
+/**
+ * Extracts plain text from a base64-encoded .docx file using native Apps Script Utilities.unzip.
+ */
+function extractDocxTextFromBase64_(base64Data) {
+  try {
+    var bytes = Utilities.base64Decode(base64Data);
+    var zipBlob = Utilities.newBlob(bytes, 'application/zip', 'upload.docx');
+    var entries = Utilities.unzip(zipBlob);
+    for (var i = 0; i < entries.length; i++) {
+      var name = String(entries[i].getName() || '').toLowerCase();
+      if (name === 'word/document.xml') {
+        var xml = entries[i].getDataAsString('UTF-8') || '';
+        return xml
+          .replace(/<w:p\b[^>]*>/gi, '\n')
+          .replace(/<w:tab\b[^>]*\/>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim()
+          .substring(0, 28000);
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
+/**
+ * Generates a structured multi-page survey JSON from a plain-English brief
+ * and/or an uploaded document (PDF, DOCX, TXT, MD, CSV, PNG, JPG, WEBP)
+ * using callGeminiWithFallback_.
+ */
+function generateSurveyWithGemini_(payload) {
+  var nowIso = new Date().toISOString();
+  var geminiKey = '';
+  try {
+    geminiKey = String(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
+  } catch (e) {
+    geminiKey = '';
+  }
+  if (!geminiKey) {
+    return {
+      ok: false,
+      configured: false,
+      error: 'GEMINI_API_KEY is not set in Apps Script Project Properties.'
+    };
+  }
+
+  var brief = String((payload && payload.brief) || '').trim().substring(0, 4000);
+  var preferredTitle = String((payload && payload.title) || '').trim().substring(0, 140);
+  var targetCount = Math.max(3, Math.min(40, parseInt((payload && payload.questionCount) || 10, 10) || 10));
+  var docText = String((payload && payload.documentText) || '').trim().substring(0, 28000);
+  var docFile = payload && payload.documentFile && typeof payload.documentFile === 'object' ? payload.documentFile : null;
+
+  var parts = [];
+  if (docFile && docFile.base64Data) {
+    var mime = String(docFile.mimeType || '').toLowerCase();
+    var fname = String(docFile.name || '').toLowerCase();
+    if (mime.indexOf('wordprocessingml') !== -1 || fname.indexOf('.docx') !== -1) {
+      var extractedDocx = extractDocxTextFromBase64_(docFile.base64Data);
+      if (extractedDocx) {
+        docText = (docText ? (docText + '\n\n') : '') + extractedDocx;
+      }
+    } else if (/^(application\/pdf|image\/(png|jpeg|jpg|webp))$/i.test(mime)) {
+      parts.push({
+        inlineData: {
+          mimeType: mime === 'image/jpg' ? 'image/jpeg' : mime,
+          data: String(docFile.base64Data)
+        }
+      });
+    }
+  }
+
+  if (!brief && !docText && parts.length === 0) {
+    return { ok: false, error: 'Please provide a study brief or upload a document.' };
+  }
+
+  var promptLines = [
+    'You are an expert survey methodologist and questionnaire designer.',
+    'Design a clean, unbiased, field-ready survey based on the user brief and/or attached document.',
+    preferredTitle ? ('Preferred Survey Title: "' + preferredTitle + '"') : '',
+    brief ? ('User Brief / Instructions:\n' + brief) : 'Convert the attached document into a well-structured survey capturing all its questions, sections, and options accurately.',
+    docText ? ('Extracted Document Content:\n' + docText) : '',
+    'Target approximately ' + targetCount + ' questions (or preserve all distinct questions if the uploaded document is already a questionnaire), organized into 1 to 3 logical pages.',
+    'Use ONLY these exact question types: "multiple_choice", "checkboxes", "dropdown", "star_rating", "nps", "matrix", "short_text", "long_text", "number_yield", "date_time", "gps_location", "photo_proof".',
+    'Return strictly valid JSON with this exact schema:',
+    '{',
+    '  "title": "Concise Survey Title",',
+    '  "description": "1-2 sentence respondent introduction",',
+    '  "pages": [',
+    '    {',
+    '      "title": "Section Title",',
+    '      "description": "Optional brief section instruction",',
+    '      "questions": [',
+    '        {',
+    '          "type": "multiple_choice",',
+    '          "title": "Question text",',
+    '          "helpText": "Optional short hint",',
+    '          "required": true,',
+    '          "options": ["Option 1", "Option 2"],',
+    '          "rows": ["Row 1"],',
+    '          "columns": ["Poor", "Fair", "Good", "Excellent"],',
+    '          "unit": ""',
+    '        }',
+    '      ]',
+    '    }',
+    '  ]',
+    '}'
+  ].filter(Boolean);
+
+  parts.unshift({ text: promptLines.join('\n\n') });
+
+  try {
+    var geminiRes = callGeminiWithFallback_(geminiKey, {
+      contents: [{ role: 'user', parts: parts }],
+      generationConfig: { temperature: 0.25, responseMimeType: 'application/json' }
+    });
+    var jsonText = geminiRes.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    var parsed = JSON.parse(jsonText);
+    if (!parsed || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
+      throw new Error('AI returned an invalid survey structure.');
+    }
+    return {
+      ok: true,
+      provider: 'gemini',
+      model: geminiRes.model,
+      survey: parsed,
+      serverTime: nowIso
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: String(err && err.message ? err.message : err)
+    };
   }
 }
 

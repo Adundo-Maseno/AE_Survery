@@ -140,6 +140,7 @@ window.AECollector = {
     this.startedAtMs = Date.now();
     this.draftAnswers = {};
     this.validationErrors = {};
+    this.campaignMeta = this.parseCampaignAndPrefillParams(survey);
     if (forceReset) {
       window.aeStore.clearRunnerDraft(survey.id);
     }
@@ -147,6 +148,55 @@ window.AECollector = {
       this.activeCollectorId = defaultColId;
     }
     this.enumeratorName = resolvedEnum;
+  },
+
+  // --------------------------------------------------------------------------
+  // FEATURE: URL PRE-FILL (?prefill_<qId>=...) & CAMPAIGN TRACKING (?utm_...)
+  // --------------------------------------------------------------------------
+  parseCampaignAndPrefillParams(survey) {
+    const utm = {};
+    if (typeof window === 'undefined' || !window.location || !window.location.search) return utm;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const src = params.get('utm_source');
+      const med = params.get('utm_medium');
+      const cmp = params.get('utm_campaign');
+      if (src) utm.source = src.trim().slice(0, 80);
+      if (med) utm.medium = med.trim().slice(0, 80);
+      if (cmp) utm.campaign = cmp.trim().slice(0, 100);
+
+      const qIds = new Set(
+        (window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+          ? window.aeStore.getQuestionsForSurvey(survey)
+          : (survey?.pages || []).flatMap((p) => p.questions || [])
+        ).map((q) => q.id)
+      );
+
+      params.forEach((val, key) => {
+        if (key.startsWith('prefill_')) {
+          const qId = key.slice('prefill_'.length);
+          if (qId && qIds.has(qId) && val !== '' && this.draftAnswers[qId] === undefined) {
+            this.draftAnswers[qId] = val;
+          }
+        }
+      });
+    } catch (e) {}
+    return utm;
+  },
+
+  buildPrefilledCampaignUrl(surveyId, opts = {}) {
+    const base = (typeof window !== 'undefined' && window.location)
+      ? `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}field.html`
+      : 'https://ae-survey.pages.dev/field.html';
+    const params = new URLSearchParams();
+    params.set('survey', String(surveyId || ''));
+    params.set('mode', 'respondent');
+    if (opts.utmSource) params.set('utm_source', String(opts.utmSource).trim());
+    if (opts.utmCampaign) params.set('utm_campaign', String(opts.utmCampaign).trim());
+    if (opts.prefillQId && opts.prefillValue) {
+      params.set(`prefill_${String(opts.prefillQId).trim()}`, String(opts.prefillValue).trim());
+    }
+    return `${base}?${params.toString()}`;
   },
 
   persistDraft(surveyId) {
@@ -1525,6 +1575,48 @@ window.AECollector = {
             </div>
           </div>
         </div>
+
+        <!-- Pre-Filled & Campaign Link Builder (?prefill_ & ?utm_) -->
+        ${(() => {
+          const allQs = window.aeStore && typeof window.aeStore.getQuestionsForSurvey === 'function'
+            ? window.aeStore.getQuestionsForSurvey(survey)
+            : [];
+          const prefillQs = allQs.filter((q) => ['multiple_choice', 'dropdown', 'short_text'].includes(q.type));
+          const safeSid = AEApp.escapeJs(survey.id);
+          return `
+            <div class="bg-[#FAFBF9] border border-[#E4E7E4] rounded-[8px] p-4 space-y-3 text-xs">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-semibold text-[#111613] flex items-center gap-1.5">
+                  <i class="fa-solid fa-link text-[#247B50]"></i> Pre-Filled &amp; Campaign Link Builder
+                </span>
+                <span class="text-[11px] text-[#646E68]">Track channel (<code>utm_source</code>) &amp; pre-populate answers</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <select id="ae_pf_utm_src" class="h-8 px-2 bg-white border border-[#CFD5D0] rounded-[5px] text-xs text-[#111613]">
+                  <option value="whatsapp">Channel: WhatsApp</option>
+                  <option value="sms">Channel: SMS</option>
+                  <option value="email">Channel: Email</option>
+                  <option value="poster">Channel: QR Poster</option>
+                  <option value="field">Channel: Field Team</option>
+                </select>
+                <input id="ae_pf_utm_cmp" type="text" placeholder="Campaign (e.g. rift_q4)"
+                  class="h-8 px-2.5 bg-white border border-[#CFD5D0] rounded-[5px] text-xs text-[#111613]" />
+                <select id="ae_pf_qid" class="h-8 px-2 bg-white border border-[#CFD5D0] rounded-[5px] text-xs text-[#111613]">
+                  <option value="">Optional pre-fill question…</option>
+                  ${prefillQs.map((q) => `<option value="${AEApp.escapeAttr(q.id)}">${AEApp.escapeHtml((q.title || q.id).slice(0, 38))}</option>`).join('')}
+                </select>
+                <input id="ae_pf_val" type="text" placeholder="Pre-fill value (e.g. Nakuru)"
+                  class="h-8 px-2.5 bg-white border border-[#CFD5D0] rounded-[5px] text-xs text-[#111613]" />
+              </div>
+              <div class="flex items-center justify-end">
+                <button type="button" onclick="AEApp.copyText(AECollector.buildPrefilledCampaignUrl('${safeSid}', { utmSource: document.getElementById('ae_pf_utm_src')?.value, utmCampaign: document.getElementById('ae_pf_utm_cmp')?.value, prefillQId: document.getElementById('ae_pf_qid')?.value, prefillValue: document.getElementById('ae_pf_val')?.value }), 'Pre-filled campaign link copied!')"
+                  class="h-7 px-3 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-xs font-semibold inline-flex items-center gap-1.5 ae-press">
+                  <i class="fa-regular fa-copy text-[11px]"></i> Copy Tracked &amp; Pre-Filled Link
+                </button>
+              </div>
+            </div>
+          `;
+        })()}
 
         ${(() => {
           const curUser = (window.AESession && typeof window.AESession.getCurrentUser === 'function')
