@@ -95,7 +95,7 @@ window.AEBuilder = {
       // Broken skip-logic target check
       if (q.logic && q.logic.enabled && q.logic.target) {
         const tgt = String(q.logic.target).trim();
-        if (tgt !== 'submit' && tgt !== 'end' && !pageIdSet.has(tgt) && !qIdSet.has(tgt)) {
+        if (tgt !== 'submit' && tgt !== 'end' && tgt !== 'END_SURVEY' && !pageIdSet.has(tgt) && !qIdSet.has(tgt)) {
           issues.push({ severity: 'error', code: 'BROKEN_LOGIC', qId: q.id, message: `${label} skip-logic points to a missing target ("${tgt}").` });
         }
       }
@@ -162,6 +162,69 @@ window.AEBuilder = {
       estimatedMinutes,
       issues
     };
+  },
+
+  renderLogicFlowMap(survey) {
+    const pages = Array.isArray(survey?.pages) ? survey.pages : [];
+    const pageTitleById = Object.fromEntries(pages.map((p, idx) => [p.id, `Page ${idx + 1}: ${p.title || 'Section'}`]));
+    const allQs = pages.flatMap((p) => p.questions || []);
+    const qLabelById = {};
+    allQs.forEach((q, idx) => { qLabelById[q.id] = `Q${idx + 1}`; });
+
+    let totalRules = 0;
+    pages.forEach((p) => {
+      (p.questions || []).forEach((q) => {
+        if (q.logic && q.logic.enabled && q.logic.target) totalRules++;
+        if (q.displayRule && q.displayRule.enabled && q.displayRule.sourceQuestionId) totalRules++;
+      });
+    });
+
+    return `
+      <div class="bg-white border border-[#247B50]/40 rounded-[8px] p-4 space-y-3 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#EFEFEF]">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="font-semibold text-[#111613]"><i class="fa-solid fa-diagram-project text-[#247B50] mr-1.5"></i>Survey Logic &amp; Branching Flow Map</span>
+            <span class="px-2 py-0.5 rounded bg-[#F3FBF6] text-[#04250E] font-semibold tabular-nums">${pages.length} pages &middot; ${allQs.length} questions &middot; ${totalRules} ${totalRules === 1 ? 'rule' : 'rules'}</span>
+          </div>
+          <button type="button" onclick="window.AEBuilder.showLogicMap=false; window.AEApp.render();"
+            class="w-7 h-7 rounded-full hover:bg-[#F4F6F4] text-[#525B56] flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          ${pages.map((p, pIdx) => `
+            <div class="p-3 rounded-[6px] border border-[#E4E7E4] bg-[#FAFBF9] space-y-2">
+              <div class="font-semibold text-[#04250E] flex items-center justify-between">
+                <span class="truncate">Page ${pIdx + 1}: ${AEApp.escapeHtml(p.title || 'Untitled')}</span>
+                <span class="text-[10px] text-[#646E68] tabular-nums">${(p.questions || []).length} Qs</span>
+              </div>
+              <div class="space-y-1.5">
+                ${(p.questions || []).map((q) => {
+                  const hasSkip = Boolean(q.logic && q.logic.enabled && q.logic.target);
+                  const hasDisp = Boolean(q.displayRule && q.displayRule.enabled && q.displayRule.sourceQuestionId);
+                  const skipTargetLabel = hasSkip
+                    ? (q.logic.target === 'END_SURVEY' || q.logic.target === 'end' || q.logic.target === 'submit'
+                        ? 'End Survey'
+                        : (pageTitleById[q.logic.target] || qLabelById[q.logic.target] || 'Missing Target!'))
+                    : '';
+                  const isBroken = skipTargetLabel === 'Missing Target!';
+                  return `
+                    <div class="p-2 rounded bg-white border ${isBroken ? 'border-[#C4242A]' : 'border-[#EFEFEF]'} space-y-1">
+                      <button type="button" onclick="AEBuilder.scrollToQuestion('${AEApp.escapeJs(q.id)}')" class="text-left w-full flex items-center gap-1.5 hover:text-[#247B50]">
+                        <span class="font-semibold text-[#247B50] shrink-0">${qLabelById[q.id]}</span>
+                        <span class="truncate text-[#111613]">${AEApp.escapeHtml((q.title || 'Untitled').slice(0, 42))}</span>
+                      </button>
+                      ${hasDisp ? `<div class="text-[10.5px] text-[#0369A1] bg-[#F0F9FF] px-1.5 py-0.5 rounded">&#8627; Shown when ${AEApp.escapeHtml(qLabelById[q.displayRule.sourceQuestionId] || 'Q')} ${q.displayRule.mode === 'equals' ? `= "${AEApp.escapeHtml(q.displayRule.value || '')}"` : 'is answered'}</div>` : ''}
+                      ${hasSkip ? `<div class="text-[10.5px] ${isBroken ? 'text-[#831C1E] bg-[#FEE2E2]' : 'text-[#04250E] bg-[#DCFAE5]'} px-1.5 py-0.5 rounded">&#8594; If "${AEApp.escapeHtml(q.logic.value || '*')}" jump to <strong>${AEApp.escapeHtml(skipTargetLabel)}</strong></div>` : ''}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
   },
 
   renderPreFlightPanel(survey, audit) {
@@ -540,6 +603,13 @@ window.AEBuilder = {
               ${this.previewMode ? 'Editor Canvas' : 'Live Simulator'}
             </button>
 
+            <!-- Visual Logic & Branching Map -->
+            <button onclick="window.AEBuilder.showLogicMap = !window.AEBuilder.showLogicMap; window.AEApp.render();"
+              title="Visualize survey pages, conditional sub-questions, and skip-logic jumps"
+              class="h-8 px-2.5 rounded-[6px] border ${this.showLogicMap ? 'bg-[#141A17] text-white border-[#141A17]' : 'border-[#CFD5D0] bg-white text-[#111613] hover:bg-[#F4F6F4]'} text-xs font-medium inline-flex items-center gap-1.5 ae-press">
+              <i class="fa-solid fa-diagram-project ${this.showLogicMap ? 'text-[#3FC07A]' : 'text-[#247B50]'}"></i> Logic Map
+            </button>
+
             <!-- Print Blank Paper Form -->
             <button onclick="AEReportExport.exportBlankFormPDF('${AEApp.escapeJs(survey.id)}')"
               title="Export print-ready A4 blank paper questionnaire for client sign-off or offline backup"
@@ -563,6 +633,9 @@ window.AEBuilder = {
 
         <!-- 1a. Pre-Flight Quality Linter Drawer (when toggled) -->
         ${this.renderPreFlightPanel(survey, preFlightAudit)}
+
+        <!-- 1a2. Visual Survey Logic & Branching Map (when toggled) -->
+        ${this.showLogicMap ? this.renderLogicFlowMap(survey) : ''}
 
         <!-- 1b. Active Instrument & Access Control Bar (Matching Overview Scope Bar) -->
         <div class="bg-white p-3 rounded-[8px] border border-[#E4E7E4] flex flex-col lg:flex-row lg:items-center justify-between gap-3">

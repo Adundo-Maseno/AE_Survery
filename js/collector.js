@@ -184,6 +184,47 @@ window.AECollector = {
     return utm;
   },
 
+  buildEmbedIframeSnippet(surveyId, heightPx = 680) {
+    const base = (typeof window !== 'undefined' && window.location)
+      ? `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}field.html`
+      : 'https://ae-survey.pages.dev/field.html';
+    const src = `${base}?survey=${encodeURIComponent(String(surveyId || ''))}&mode=respondent&embed=1`;
+    const h = Math.max(360, Math.min(1400, parseInt(heightPx, 10) || 680));
+    return `<iframe src="${src}" width="100%" height="${h}" style="border:1px solid #E4E7E4;border-radius:10px;background:#fff;" loading="lazy" title="AE Survey"></iframe>`;
+  },
+
+  compressFieldPhotoDataUrl(dataUrl, maxDim = 1280, quality = 0.72) {
+    return new Promise((resolve) => {
+      if (typeof document === 'undefined' || typeof Image === 'undefined' || !dataUrl || !String(dataUrl).startsWith('data:image/')) {
+        resolve(dataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let w = img.naturalWidth || img.width;
+          let h = img.naturalHeight || img.height;
+          if (w > maxDim || h > maxDim) {
+            const scale = maxDim / Math.max(w, h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed.length < dataUrl.length ? compressed : dataUrl);
+        } catch (e) {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  },
+
   buildPrefilledCampaignUrl(surveyId, opts = {}) {
     const base = (typeof window !== 'undefined' && window.location)
       ? `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}field.html`
@@ -1693,6 +1734,36 @@ window.AECollector = {
                     </div>`
                   : ''
               }
+            </div>
+          `;
+        })()}
+
+        <!-- Website Embed (<iframe> Snippet with Chromeless ?embed=1 Mode) -->
+        ${(() => {
+          const safeSid = AEApp.escapeJs(survey.id);
+          const defaultSnippet = this.buildEmbedIframeSnippet(survey.id, 680);
+          return `
+            <div class="bg-[#FAFBF9] border border-[#E4E7E4] rounded-[8px] p-4 space-y-2.5 text-xs">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="font-semibold text-[#111613] flex items-center gap-1.5">
+                  <i class="fa-solid fa-code text-[#247B50]"></i> Embed on Your Website (<code>&lt;iframe&gt;</code>)
+                </span>
+                <div class="flex items-center gap-2">
+                  <select id="ae_embed_height_sel"
+                    onchange="const el=document.getElementById('ae_embed_code_box'); if(el) el.value = AECollector.buildEmbedIframeSnippet('${safeSid}', this.value);"
+                    class="h-7 px-2 bg-white border border-[#CFD5D0] rounded-[5px] text-[11px] text-[#111613]">
+                    <option value="560">Height: 560px</option>
+                    <option value="680" selected>Height: 680px</option>
+                    <option value="820">Height: 820px</option>
+                  </select>
+                  <button type="button" onclick="AEApp.copyText(document.getElementById('ae_embed_code_box')?.value || AECollector.buildEmbedIframeSnippet('${safeSid}', 680), 'Embed snippet copied!')"
+                    class="h-7 px-2.5 rounded-[5px] bg-[#141A17] hover:bg-[#232C27] text-white text-[11px] font-semibold ae-press">
+                    <i class="fa-regular fa-copy mr-1"></i> Copy Embed Code
+                  </button>
+                </div>
+              </div>
+              <textarea id="ae_embed_code_box" readonly rows="2"
+                class="w-full p-2 bg-white border border-[#CFD5D0] rounded-[5px] font-mono text-[11px] text-[#2C3530] resize-none">${AEApp.escapeHtml(defaultSnippet)}</textarea>
             </div>
           `;
         })()}

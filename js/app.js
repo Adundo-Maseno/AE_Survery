@@ -4465,6 +4465,39 @@ window.AEApp = {
             }
           </div>
 
+          <!-- Offline Storage Quota Meter & Media Cache Guard -->
+          <div class="pt-3 border-t border-[#EFEFEF] space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-xs font-semibold text-[#111613] flex items-center gap-1.5">
+                <i class="fa-solid fa-hard-drive text-[#247B50] text-[11px]"></i> Device Storage &amp; Offline Vault
+              </span>
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="AEApp.refreshStorageEstimate()"
+                  class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#F4F6F4] text-[11px] font-medium text-[#111613]">
+                  Check Storage
+                </button>
+                <button type="button" onclick="AEApp.purgeSyncedMediaCache()"
+                  title="Clears cached base64 photos ONLY on already-synced responses; never touches unsynced offline records"
+                  class="h-7 px-2 rounded-[5px] border border-[#CFD5D0] bg-white hover:bg-[#FFFBEB] text-[11px] font-medium text-[#92400E]">
+                  Purge Synced Media
+                </button>
+              </div>
+            </div>
+            ${
+              this.storageEstimateInfo
+                ? `<div class="p-2.5 rounded-[6px] bg-[#FAFBF9] border border-[#E4E7E4] text-[11px] space-y-1.5 tabular-nums">
+                    <div class="flex items-center justify-between">
+                      <span class="text-[#525B56]">Used: <strong class="text-[#111613]">${this.storageEstimateInfo.usedMb} MB</strong> of ${this.storageEstimateInfo.quotaMb} MB</span>
+                      <span class="font-semibold ${this.storageEstimateInfo.pct >= 80 ? 'text-[#C4242A]' : 'text-[#247B50]'}">${this.storageEstimateInfo.pct}%</span>
+                    </div>
+                    <div class="w-full h-1.5 rounded-full bg-[#EAECE9] overflow-hidden">
+                      <div class="h-full rounded-full ${this.storageEstimateInfo.pct >= 80 ? 'bg-[#C4242A]' : 'bg-[#247B50]'}" style="width: ${Math.max(2, this.storageEstimateInfo.pct)}%;"></div>
+                    </div>
+                  </div>`
+                : `<p class="text-[11px] text-[#646E68]">Photos captured offline are auto-compressed (max 1280px JPEG). Check quota or safely clear synced media cache anytime.</p>`
+            }
+          </div>
+
           <div class="pt-3 border-t border-[#EFEFEF] flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
               ${
@@ -7467,6 +7500,114 @@ window.AEApp = {
         redirect: 'follow'
       });
     } catch (e) {}
+  },
+
+  async refreshStorageEstimate() {
+    let usedBytes = 0;
+    let quotaBytes = 50 * 1024 * 1024;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.estimate === 'function') {
+        const est = await navigator.storage.estimate();
+        usedBytes = Number(est.usage || 0);
+        quotaBytes = Number(est.quota || quotaBytes);
+      } else if (typeof localStorage !== 'undefined') {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          usedBytes += (String(k || '').length + String(localStorage.getItem(k) || '').length) * 2;
+        }
+      }
+    } catch (e) {}
+    const usedMb = Number((usedBytes / (1024 * 1024)).toFixed(2));
+    const quotaMb = Math.max(1, Math.round(quotaBytes / (1024 * 1024)));
+    const pct = Math.min(100, Math.round((usedBytes / Math.max(1, quotaBytes)) * 100));
+    this.storageEstimateInfo = { usedMb, quotaMb, pct };
+    this.render();
+    return this.storageEstimateInfo;
+  },
+
+  purgeSyncedMediaCache() {
+    if (!window.aeStore || !Array.isArray(window.aeStore.responses)) return 0;
+    let cleared = 0;
+    window.aeStore.responses.forEach((r) => {
+      if (!r || r.syncStatus !== 'synced' || !r.answers) return;
+      Object.keys(r.answers).forEach((k) => {
+        const v = r.answers[k];
+        if (typeof v === 'string' && v.startsWith('data:image/') && v.length > 2000) {
+          r.answers[k] = '[Synced Photo Cleared Locally]';
+          cleared++;
+        }
+      });
+    });
+    if (cleared > 0 && typeof window.aeStore.saveToLocalStorage === 'function') {
+      window.aeStore.saveToLocalStorage({ stores: ['responses'] });
+    }
+    this.showToast(
+      cleared > 0 ? `Cleared ${cleared} cached synced ${cleared === 1 ? 'photo' : 'photos'} to free device space.` : 'No large cached synced photos found.',
+      'info'
+    );
+    this.refreshStorageEstimate();
+    return cleared;
+  },
+
+  applyResponseAnswerEdit(respId, qId, newVal, reason = '') {
+    if (!window.aeStore || !Array.isArray(window.aeStore.responses)) return null;
+    const r = window.aeStore.responses.find((item) => item && (item.id === respId || item.clientResponseId === respId));
+    if (!r) return null;
+    r.answers = r.answers || {};
+    const oldValue = r.answers[qId];
+    if (String(oldValue ?? '') === String(newVal ?? '')) return r;
+
+    const cur = typeof this.getCurrentUser === 'function' ? this.getCurrentUser() : null;
+    const editedBy = cur ? `${cur.id} (${cur.fullName})` : 'Supervisor';
+    r.editHistory = Array.isArray(r.editHistory) ? r.editHistory : [];
+    r.editHistory.push({
+      questionId: qId,
+      oldValue,
+      newValue: newVal,
+      editedBy,
+      editedAt: new Date().toISOString(),
+      reason: String(reason || '').trim()
+    });
+    r.answers[qId] = newVal;
+
+    if (typeof window.aeStore.saveToLocalStorage === 'function') {
+      window.aeStore.saveToLocalStorage({ stores: ['responses'] });
+    }
+
+    const settings = window.aeStore.settings || {};
+    const gasUrl = String(settings.gasWebAppUrl || '').trim();
+    if (gasUrl && /^https:\/\/script\.google\.com\//i.test(gasUrl) && typeof fetch === 'function') {
+      fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'UPDATE_RESPONSE_ANSWER',
+          syncToken: settings.syncToken || '',
+          deviceId: settings.deviceId || '',
+          responseId: r.id || r.clientResponseId,
+          questionId: qId,
+          newValue: newVal,
+          editedBy,
+          reason: String(reason || '').trim()
+        }),
+        redirect: 'follow'
+      }).catch(() => {});
+    }
+    return r;
+  },
+
+  editResponseAnswerPrompt(respId, qId) {
+    if (!window.aeStore || !Array.isArray(window.aeStore.responses)) return;
+    const r = window.aeStore.responses.find((item) => item && (item.id === respId || item.clientResponseId === respId));
+    if (!r) return;
+    const currentVal = r.answers && r.answers[qId] !== undefined ? String(r.answers[qId]) : '';
+    const nextVal = window.prompt(`Edit answer for ${qId}:`, currentVal);
+    if (nextVal === null || nextVal === currentVal) return;
+    const reason = window.prompt('Reason for correction (logged in Audit Trail):', 'Fixed field entry typo');
+    if (reason === null) return;
+    this.applyResponseAnswerEdit(respId, qId, nextVal, reason);
+    this.showToast('Answer updated & logged in Audit Trail.', 'success');
+    this.render();
   },
 
   approveSingleResponse(respId) {

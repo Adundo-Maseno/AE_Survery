@@ -6355,10 +6355,22 @@ window.AEAnalytics = {
                   const formatted = this.formatAnswerDisplay(ans, q.type);
                   const displayNum = numMap[q.id]?.label || String(qIdx + 1);
                   const resolvedTitle = this.cleanQuestionTitle(q, r.answers || {}, survey);
+                  const canEditAns = !Boolean(window.AEApp && window.AEApp.isPublicReportMode) && q.type !== 'photo_proof' && q.type !== 'signature' && q.type !== 'gps_location';
                   return `
-                    <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 hover:bg-[#FAFBF9]">
+                    <div class="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-[#FAFBF9]">
                       <div class="font-medium text-[#525B56] sm:max-w-md ae-break-words"><span class="font-semibold text-[#247B50] mr-1.5">Q${AEApp.escapeHtml(displayNum)}</span>${AEApp.escapeHtml(resolvedTitle)}</div>
-                      <div class="font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(formatted)}</div>
+                      <div class="flex items-center gap-2 shrink-0">
+                        <div class="font-semibold text-[#111613] ae-break-words">${AEApp.escapeHtml(formatted)}</div>
+                        ${
+                          canEditAns
+                            ? `<button type="button" onclick="AEApp.editResponseAnswerPrompt('${AEApp.escapeJs(r.id)}', '${AEApp.escapeJs(q.id)}')"
+                                title="Edit answer (logged in audit trail)"
+                                class="w-6 h-6 rounded border border-[#CFD5D0] bg-white hover:bg-[#F3FBF6] text-[#525B56] hover:text-[#247B50] flex items-center justify-center shrink-0">
+                                <i class="fa-solid fa-pen text-[10px]"></i>
+                              </button>`
+                            : ''
+                        }
+                      </div>
                     </div>
                   `;
                 })
@@ -6374,6 +6386,24 @@ window.AEAnalytics = {
               return rowsHtml;
             })()}
           </div>
+
+          ${
+            Array.isArray(r.editHistory) && r.editHistory.length > 0
+              ? `<details class="p-3 rounded-[6px] bg-[#FFFBEB]/60 border border-[#FDE68A] text-xs">
+                  <summary class="cursor-pointer font-semibold text-[#92400E]">Audit Trail (${r.editHistory.length} ${r.editHistory.length === 1 ? 'correction' : 'corrections'})</summary>
+                  <ul class="mt-2 space-y-1 text-[11px] text-[#525B56]">
+                    ${r.editHistory.map((eh) => `
+                      <li>
+                        <strong class="text-[#111613]">${AEApp.escapeHtml(eh.questionId)}</strong>:
+                        <span class="line-through text-[#C4242A]">${AEApp.escapeHtml(String(eh.oldValue ?? '—'))}</span>
+                        &rarr; <strong class="text-[#247B50]">${AEApp.escapeHtml(String(eh.newValue ?? '—'))}</strong>
+                        (${AEApp.escapeHtml(eh.editedBy || 'Supervisor')}${eh.reason ? ` &middot; ${AEApp.escapeHtml(eh.reason)}` : ''})
+                      </li>
+                    `).join('')}
+                  </ul>
+                </details>`
+              : ''
+          }
         </div>
       </div>
     `;

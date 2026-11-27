@@ -621,6 +621,23 @@ function doPost(e) {
         });
       }
 
+      if (action === 'UPDATE_RESPONSE_ANSWER' && payload.responseId && payload.questionId) {
+        var editRes = updateResponseAnswerWithAudit_(payload.responseId, payload.questionId, payload.newValue, payload.editedBy, payload.reason);
+        if (!editRes.ok) {
+          return jsonResponse_(editRes);
+        }
+        var editVer = bumpDbVersion_();
+        logSyncEvent_('UPDATE_RESPONSE_ANSWER', deviceId, 0, 1, 0, 'OK');
+        return jsonResponse_({
+          ok: true,
+          action: action,
+          responseId: String(payload.responseId),
+          questionId: String(payload.questionId),
+          version: editVer,
+          serverTime: new Date().toISOString()
+        });
+      }
+
       if (action === 'UPSERT_PERSONNEL' && (payload.personnel || payload.person)) {
         var targetPerson = Array.isArray(payload.personnel) ? payload.personnel[0] : (payload.personnel || payload.person);
         var isSelf = payload.callerId && String(payload.callerId).trim() === String(targetPerson.id || '').trim();
@@ -3197,6 +3214,38 @@ function generateSurveyWithGemini_(payload) {
       error: String(err && err.message ? err.message : err)
     };
   }
+}
+
+/**
+ * Updates a single answer in AnswersJSON (col 18) with an immutable audit entry in QAFlags (col 13).
+ */
+function updateResponseAnswerWithAudit_(responseId, questionId, newValue, editedBy, reason) {
+  var targetId = String(responseId || '').trim();
+  var qId = String(questionId || '').trim();
+  if (!targetId || !qId) return { ok: false, error: 'Missing responseId or questionId.' };
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(DB_CONFIG.SHEETS.RESPONSES);
+  if (!sheet || sheet.getLastRow() < 2) return { ok: false, error: 'Responses sheet is empty.' };
+
+  var lastRow = sheet.getLastRow();
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === targetId) {
+      var rowNum = i + 2;
+      var rawAnswers = String(sheet.getRange(rowNum, 18).getValue() || '{}');
+      var answersObj = {};
+      try { answersObj = JSON.parse(rawAnswers) || {}; } catch (e) { answersObj = {}; }
+      var oldVal = answersObj[qId];
+      answersObj[qId] = newValue;
+      sheet.getRange(rowNum, 18).setValue(JSON.stringify(answersObj));
+
+      var existingFlags = String(sheet.getRange(rowNum, 13).getValue() || '').trim();
+      var auditTag = '[Edit ' + qId + ': ' + String(oldVal === undefined ? '' : oldVal).substring(0, 40) + ' -> ' + String(newValue === undefined ? '' : newValue).substring(0, 40) + ' by ' + String(editedBy || 'Supervisor').substring(0, 40) + (reason ? (' (' + String(reason).substring(0, 80) + ')') : '') + ']';
+      sheet.getRange(rowNum, 13).setValue(sanitizeSheetCell_(existingFlags ? (existingFlags + ' ' + auditTag) : auditTag));
+      return { ok: true, responseId: targetId, questionId: qId };
+    }
+  }
+  return { ok: false, error: 'Response not found: ' + targetId };
 }
 
 function jsonResponse_(obj) {

@@ -63,6 +63,29 @@
       --ground: #F4F6F4;
       --surface: #FFFFFF;
       --raised: #F8F9F8;
+    }
+
+    /* Chromeless Website Embed Mode (?embed=1) */
+    body.ae-embed-mode #ae_field_header,
+    body.ae-embed-mode header,
+    body.ae-embed-mode footer,
+    body.ae-embed-mode .ae-embed-hide {
+      display: none !important;
+    }
+    body.ae-embed-mode main {
+      padding-top: 8px !important;
+      padding-bottom: 12px !important;
+    }
+  </style>
+  <script>
+    if (/[?&]embed=1(?:&|$)/i.test(window.location.search)) {
+      document.addEventListener('DOMContentLoaded', function () {
+        document.body.classList.add('ae-embed-mode');
+      });
+    }
+  </script>
+  <style>
+    :root {
       --border: #E4E7E4;
       --rule: #EFEFEF;
       --control: #CFD5D0;
